@@ -1,4 +1,9 @@
-# Alleen voor lokale ontwikkeling. Productie draait op beheerde PostgreSQL in de EU.
+# Lokaal draaien. Productie draait op beheerde PostgreSQL en containers in de EU.
+#
+#   docker compose up -d db                                  database starten
+#   docker compose run --rm scanner voorbeeld.nl             één domein scannen
+#   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
+#                                                            testset scannen (map ./testset)
 services:
   db:
     image: postgres:16
@@ -10,5 +15,31 @@ services:
       - "5432:5432"
     volumes:
       - qbicle-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qbicle"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    image: postgres:16
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
+    volumes:
+      - ./:/repo:ro
+    entrypoint: ["bash", "/repo/scripts/db-migrate.sh"]
+
+  scanner:
+    build: .
+    profiles: ["tools"]
+    environment:
+      QBICLE_SCANNER_INFO_URL: ${QBICLE_SCANNER_INFO_URL:-https://qbicle.example/scanner}
+      QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
+    volumes:
+      - ./testset:/data
+
 volumes:
   qbicle-db:

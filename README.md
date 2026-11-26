@@ -11,7 +11,8 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Passieve scanner (DNS, SPF, DKIM, DMARC, DNSSEC, CAA, certificaat, https, security headers, cookies, softwareversies, security.txt) | Werkt, met tests en opdrachtregel |
 | Scoremodel (urgentie, banden, dekking, top 3 acties) | Werkt, gewichten voorlopig |
 | Datamodel PostgreSQL | Eerste migratie |
-| CI (typecheck, tests, migraties) | GitHub Actions |
+| CI (typecheck, tests, migraties, Docker-image) | GitHub Actions |
+| Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
 | Web-app en API (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
@@ -46,6 +47,20 @@ DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
 ```
 
 Instellingen staan in [.env.example](.env.example).
+
+### Met Docker (zonder Node.js op je laptop)
+
+```bash
+docker compose up -d db                              # PostgreSQL 16
+docker compose run --rm migrate                      # migraties toepassen
+docker compose run --rm scanner voorbeeld.nl         # één domein scannen
+
+# Testset (toets fase 1): zet ~20 domeinen in testset/testset.txt
+cp testset/testset.voorbeeld.txt testset/testset.txt
+docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
+```
+
+De resultaten komen in `testset/resultaten/`: per domein een JSON-rapport en een `overzicht.csv` om naast het oordeel van een specialist te leggen. Zonder Docker kan hetzelfde met `npm run scan -- --bestand testset/testset.txt --uit testset/resultaten`.
 
 ## Projectstructuur
 

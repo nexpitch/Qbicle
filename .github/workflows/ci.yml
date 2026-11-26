@@ -44,3 +44,12 @@ jobs:
         run: bash scripts/db-migrate.sh
       - name: Nogmaals toepassen (moet niets doen)
         run: bash scripts/db-migrate.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scanner-image bouwen
+        run: docker build -t qbicle-scanner .
+      - name: Image start (help-tekst)
+        run: docker run --rm qbicle-scanner --help
