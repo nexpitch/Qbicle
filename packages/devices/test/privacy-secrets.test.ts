@@ -14,6 +14,7 @@ import {
   orgPseudonymKey,
   sealCredentials,
 } from '../src/index.ts';
+import { createTestPlatform, hasDb } from '../../platform/test/support/db.ts';
 
 const ctx = { organizationId: 'org-1', sourceId: 'bron-1' };
 
@@ -104,14 +105,12 @@ describe('AVG: minimalisatie', () => {
   });
 });
 
-const DATABASE_URL = process.env.DATABASE_URL;
-describe.skipIf(!DATABASE_URL)('geheimen in PostgreSQL', () => {
+// Eigen, verse database per testbestand (sjabloon met alle migraties), zoals de platformtests.
+describe.skipIf(!hasDb)('geheimen in PostgreSQL', () => {
   it('slaat alleen versleuteld op en alleen voor een bron van dezelfde organisatie', async () => {
-    const pg = (await import('pg')).default;
-    const client = new pg.Client({ connectionString: DATABASE_URL });
-    await client.connect();
+    const platform = await createTestPlatform();
+    const client = await platform.pool.connect();
     try {
-      await client.query('BEGIN');
       const org = (await client.query("INSERT INTO organization (name, kind) VALUES ('Test BV', 'klant') RETURNING id")).rows[0].id as string;
       const other = (await client.query("INSERT INTO organization (name, kind) VALUES ('Ander BV', 'klant') RETURNING id")).rows[0].id as string;
       const src = (await client.query("INSERT INTO source (organization_id, kind, product, level) VALUES ($1, 'netwerk', 'unifi', '1C') RETURNING id", [org])).rows[0].id as string;
@@ -127,8 +126,8 @@ describe.skipIf(!DATABASE_URL)('geheimen in PostgreSQL', () => {
       expect(await store.get({ organizationId: other, sourceId: src })).toBeUndefined();
       await expect(client.query("INSERT INTO source_secret (source_id, organization_id, sealed) VALUES ($1, $2, 'platte tekst')", [src, org])).rejects.toThrow();
     } finally {
-      await client.query('ROLLBACK').catch(() => undefined);
-      await client.end();
+      client.release();
+      await platform.close();
     }
   });
 });
