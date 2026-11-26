@@ -4,6 +4,7 @@
 #   docker compose run --rm scanner voorbeeld.nl             één domein scannen
 #   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
 #                                                            testset scannen (map ./testset)
+#   docker compose --profile api up api                      API op http://localhost:8080/api/v1
 services:
   db:
     image: postgres:16
@@ -40,6 +41,22 @@ services:
       QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     volumes:
       - ./testset:/data
+
+  api:
+    build: .
+    profiles: ["api"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
+      QBICLE_APP_ORIGIN: ${QBICLE_APP_ORIGIN:-http://localhost:3000}
+      # Lokaal zonder https; in productie altijd aan laten.
+      QBICLE_SECURE_COOKIES: "uit"
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    entrypoint: ["npx", "--no-install", "tsx", "apps/api/src/server.ts"]
 
 volumes:
   qbicle-db:
