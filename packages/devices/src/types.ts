@@ -17,7 +17,7 @@ export type RouterProduct = 'unifi' | 'fritzbox' | 'mikrotik' | 'meraki';
  * onbekende apparatuur: SNMP (standaard-MIB's die bijna elke router en switch kent)
  * en "tabel" (ARP- en DHCP-tabellen die de lokale connector of een beheerder aanlevert).
  */
-export type ConnectorProduct = RouterProduct | 'snmp' | 'tabel';
+export type ConnectorProduct = RouterProduct | 'snmp' | 'tabel' | 'upnp';
 
 /** Het netwerkapparaat zelf (router, firewall, accesspoint, switch). */
 export interface NetworkDevice {
@@ -35,6 +35,23 @@ export interface NetworkDevice {
   firmwareProduct?: string;
   /** Het apparaat meldt zelf dat er een nieuwere firmware is. */
   updateAvailable?: boolean;
+  /** Providermodem: de provider (KPN, Ziggo, Odido, ...) beheert dit apparaat en zijn firmware. */
+  provider?: string;
+}
+
+/**
+ * Een poort die de router doorzet van internet naar een apparaat binnen.
+ * Dit lezen we uit de router (UPnP-portmappings, NAT-regels); we scannen er niet voor.
+ */
+export interface PortForward {
+  protocol: 'tcp' | 'udp';
+  externalPort: number;
+  internalIp: string;
+  internalPort: number;
+  description?: string;
+  enabled: boolean;
+  /** upnp: een apparaat heeft de poort zelf geopend; regel: door een beheerder ingesteld. */
+  origin: 'upnp' | 'regel';
 }
 
 /** Een apparaat dat de router kent (client). */
@@ -68,6 +85,15 @@ export interface Readout {
   clients: ClientDevice[];
   /** Publieke IP-adressen van de internetaansluiting, als de router die meldt. */
   wanIps: string[];
+  /** Poorten die vanaf internet naar binnen worden doorgezet, als de router dat meldt. */
+  portForwards?: PortForward[];
+  /**
+   * WAN-adres van de router zelf als dat een privé-adres is: dan staat deze router
+   * achter een andere router, meestal het modem van de provider (dubbele NAT).
+   */
+  privateWanIp?: string;
+  /** UPnP staat aan op dit apparaat (apparaten kunnen zelf poorten openzetten). */
+  upnpEnabled?: boolean;
   /** Wat niet gelukt is (deel van de uitlezing), in gewone taal. Nooit met wachtwoorden of tokens. */
   warnings: string[];
 }

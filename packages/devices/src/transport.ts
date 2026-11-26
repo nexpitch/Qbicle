@@ -94,9 +94,11 @@ export class HttpTransport implements Transport {
   constructor(private readonly opts: HttpTransportOptions) {
     this.base = new URL(opts.baseUrl);
     if (this.base.protocol !== 'https:' && this.base.protocol !== 'http:') throw new Error('Alleen http(s) wordt ondersteund');
-    if (this.base.protocol === 'http:' && opts.auth?.scheme !== 'digest') {
+    const hasSecretHeader = Object.values(opts.headers ?? {}).some((v) => typeof v !== 'string');
+    if (this.base.protocol === 'http:' && (opts.auth?.scheme === 'basic' || hasSecretHeader)) {
       // Basic-auth of API-sleutels over onversleuteld http zou het wachtwoord meesturen in leesbare tekst.
-      throw new Error('Gebruik https; over http is alleen Digest-authenticatie toegestaan');
+      // Zonder inloggegevens (UPnP) of met Digest mag http wel.
+      throw new Error('Gebruik https; over http is alleen Digest-authenticatie of geen inloggegevens toegestaan');
     }
     if (opts.tls.mode === 'vastgepind' && !opts.tls.certPem) {
       // Alleen een vingerafdruk is niet genoeg: dan moet de controle ná de handshake,
@@ -219,13 +221,15 @@ export function parseDigestChallenge(header: string): { realm: string; nonce: st
  */
 export class FixtureTransport implements Transport {
   readonly requests: HttpRequest[] = [];
-  constructor(private readonly responses: Record<string, string | HttpResponse>) {}
+  /** Een lijst als waarde: antwoorden op opeenvolgende verzoeken (de laatste blijft staan). */
+  constructor(private readonly responses: Record<string, string | HttpResponse | Array<string | HttpResponse>>) {}
 
   async send(req: HttpRequest): Promise<HttpResponse> {
     this.requests.push(req);
     const action = req.headers?.SOAPAction;
     const key = `${req.method} ${req.path}${action ? '#' + action.replace(/"/g, '').split('#')[1] : ''}`;
-    const r = this.responses[key];
+    let r = this.responses[key];
+    if (Array.isArray(r)) r = r.length > 1 ? r.shift() : r[0];
     if (r === undefined) return { status: 404, headers: {}, body: '' };
     return typeof r === 'string' ? { status: 200, headers: {}, body: r } : r;
   }

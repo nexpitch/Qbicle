@@ -125,6 +125,16 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'De fabrikant dicht nieuwe lekken in deze apparaten niet meer. Vooral bij een router is dat een open deur.',
     forWho: 'it-partner',
   },
+  'poort-sluiten': {
+    title: 'Sluit poorten die vanaf internet naar binnen open staan',
+    why: 'Via een open poort kan iedereen op internet je apparaat proberen. Gebruik voor toegang op afstand een VPN.',
+    forWho: 'it-partner',
+  },
+  'upnp-uitzetten': {
+    title: 'Zet UPnP uit op je router',
+    why: 'Met UPnP kunnen apparaten en malware zelf ongemerkt een opening naar internet maken.',
+    forWho: 'it-partner',
+  },
   'mfa-aanzetten': {
     title: 'Zet tweestapsverificatie aan voor beheerders',
     why: 'Met alleen een gestolen wachtwoord kan iemand anders alles overnemen.',
@@ -189,6 +199,9 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'netwerkapparaat.einde_ondersteuning_binnenkort': { b: 5, action: 'apparaat-vervangen', voorlopig: true },
   'apparaat.einde_ondersteuning': { b: 10, action: 'apparaat-vervangen', voorlopig: true },
   'apparaat.einde_ondersteuning_binnenkort': { b: 2, action: 'apparaat-vervangen', voorlopig: true },
+  'apparaat.beheerpoort_open_naar_internet': { b: 30, action: 'poort-sluiten', voorlopig: true },
+  'apparaat.poort_open_naar_internet': { b: 10, action: 'poort-sluiten', voorlopig: true },
+  'netwerkapparaat.upnp_aan': { b: 3, action: 'upnp-uitzetten', voorlopig: true },
   'apparaat.onbeheerd': { b: 5, action: 'apparaat-in-beheer', voorlopig: true },
   'apparaat.updates_achter': { b: 10, action: 'updates-installeren', voorlopig: true },
   'account.admin_zonder_mfa': { b: 30, action: 'mfa-aanzetten', voorlopig: true },

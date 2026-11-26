@@ -66,6 +66,7 @@ export function readoutToObservations(readout: Readout, opts: ToObservationsOpti
         os: d.firmwareProduct,
         firmware: d.firmware,
         updateAvailable: d.updateAvailable,
+        provider: d.provider,
       },
     });
   }

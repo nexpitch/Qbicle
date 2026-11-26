@@ -9,7 +9,7 @@ import { MerakiConnector } from './meraki.ts';
 export { UnifiConnector, UNIFI_RULES } from './unifi.ts';
 export { MerakiConnector, MERAKI_RULES } from './meraki.ts';
 export { FritzboxConnector, FRITZ_RULES, fritzOsVersion } from './fritzbox.ts';
-export { MikrotikConnector, MIKROTIK_RULES, lastSeenFrom } from './mikrotik.ts';
+export { MikrotikConnector, MIKROTIK_RULES, lastSeenFrom, expandPorts } from './mikrotik.ts';
 
 /** "Bearer <sleutel>" als Secret, zodat ook de header nooit in een log belandt. */
 class BearerSecret extends Secret {
@@ -57,3 +57,4 @@ export function createConnector(
 }
 export { TableConnector, parseTable, mergeClients, type TableFormat, type TableInput } from './tables.ts';
 export { SnmpConnector, FixtureSnmpSession, OID, SNMP_ALLOWED, vendorFrom, firmwareFrom, type SnmpSession, type SnmpVarbind, type SnmpCredentials } from './snmp.ts';
+export { UpnpIgdConnector, UPNP_RULES } from './upnp.ts';

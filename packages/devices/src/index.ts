@@ -3,6 +3,7 @@ export * from './secrets.ts';
 export * from './transport.ts';
 export * from './connectors/index.ts';
 export * from './oui.ts';
+export * from './providers.ts';
 export * from './classify.ts';
 export * from './privacy.ts';
 export * from './observations.ts';

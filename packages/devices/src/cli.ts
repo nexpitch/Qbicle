@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import type { Source } from '@qbicle/inventory';
 import { createConnector } from './connectors/index.ts';
-import { DEMO_PSEUDONYM_KEY, DEMO_SOURCES, demoConnector, demoEolDb, demoOui, demoVulnDb } from './demo.ts';
+import { type DemoProduct, DEMO_PSEUDONYM_KEY, DEMO_SOURCES, demoBehindModem, demoConnector, demoEolDb, demoOui, demoVulnDb } from './demo.ts';
 import type { EolDb } from './eol.ts';
 import { discover, type DiscoveryResult } from './discover.ts';
 import { OuiDb } from './oui.ts';
@@ -53,9 +53,11 @@ async function main(): Promise<number> {
   let eolDb: EolDb | undefined;
 
   if (values.demo) {
-    const wanted = (positionals[0] ? [positionals[0]] : PRODUCTS) as RouterProduct[];
-    for (const p of wanted) if (!PRODUCTS.includes(p)) throw new Error(`Onbekend product ${p}`);
+    const demoProducts: DemoProduct[] = [...PRODUCTS, 'upnp'];
+    const wanted = (positionals[0] ? [positionals[0]] : demoProducts) as DemoProduct[];
+    for (const p of wanted) if (!demoProducts.includes(p)) throw new Error(`Onbekend product ${p}`);
     connectors = wanted.map((p) => ({ connector: demoConnector(p, now).connector, source: DEMO_SOURCES[p] }));
+    if (wanted.includes('upnp')) connectors.push(demoBehindModem(now));
     oui = demoOui();
     vulnDb = demoVulnDb();
     eolDb = demoEolDb();

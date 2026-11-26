@@ -157,6 +157,7 @@ export function shortVendor(org: string): string {
     [/samsung/i, 'Samsung'],
     [/google/i, 'Google'],
     [/ubiquiti/i, 'Ubiquiti'],
+    [/intel corp/i, 'Intel'],
   ];
   for (const [re, name] of known) if (re.test(org)) return name;
   return org.replace(/[,.]?\s*(co\.?,?\s*ltd\.?|inc\.?|gmbh|ag|b\.?v\.?|corporation|corp\.?|limited|llc|as|ab|s\.?a\.?)\.?$/i, '').trim();

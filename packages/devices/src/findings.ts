@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import { exposureFactor, inventoryFindings, type InventoryAsset, type InventoryFinding } from '@qbicle/inventory';
 import type { Asset as ScoreAsset, Finding, LinkedVuln } from '@qbicle/score';
+import { shortVendor } from './classify.ts';
 import { componentsFor, type Component } from './vulns/cpe.ts';
 import type { ComponentVuln, VulnDb } from './vulns/db.ts';
 import type { EolDb } from './eol.ts';
+import type { Readout } from './types.ts';
 
 /** Zelfde vorm als de vingerafdruk van de scanner: zelfde fout op hetzelfde asset = zelfde waarde. */
 export function fingerprint(assetType: string, assetValue: string, key: string, discriminator = ''): string {
@@ -13,6 +15,11 @@ export function fingerprint(assetType: string, assetValue: string, key: string, 
 const EDGE = new Set(['router', 'firewall']);
 
 const CATEGORY_LABEL: Record<string, string> = {
+  laptop: 'laptop',
+  desktop: 'computer',
+  telefoon: 'telefoon',
+  tablet: 'tablet',
+  server: 'server',
   router: 'router',
   firewall: 'firewall',
   accesspoint: 'wifi-accesspoint',
@@ -48,8 +55,10 @@ function scoreAsset(asset: InventoryAsset): ScoreAsset {
 }
 
 function label(asset: InventoryAsset): string {
-  const what = CATEGORY_LABEL[asset.category] ?? 'apparaat';
-  const model = [asset.attributes.vendor?.value, asset.attributes.model?.value].filter(Boolean).join(' ');
+  const provider = asset.attributes.provider?.value;
+  const what = provider ? `modem van ${provider}` : (CATEGORY_LABEL[asset.category] ?? 'apparaat');
+  const vendor = asset.attributes.vendor?.value;
+  const model = [vendor ? shortVendor(vendor) : undefined, asset.attributes.model?.value].filter(Boolean).join(' ');
   return model ? `${what} (${model})` : what;
 }
 
@@ -153,4 +162,74 @@ function fromInventoryFinding(f: InventoryFinding, assets: InventoryAsset[]): Fi
     fingerprint: fingerprint(sa.type, sa.value, f.key),
     z: zFor(asset),
   };
+}
+
+/** Poorten die je nooit rechtstreeks open naar internet wilt hebben (ontwerp: "beheerpoort open naar internet"). */
+export const RISKY_PORTS: Record<number, string> = {
+  21: 'FTP',
+  22: 'SSH',
+  23: 'Telnet',
+  139: 'Windows-bestandsdeling (NetBIOS)',
+  445: 'Windows-bestandsdeling (SMB)',
+  1433: 'SQL Server',
+  3306: 'MySQL',
+  3389: 'Extern bureaublad (RDP)',
+  5432: 'PostgreSQL',
+  5900: 'VNC',
+  8291: 'MikroTik Winbox',
+};
+const WEB_ADMIN = new Set([80, 443, 8080, 8443]);
+const SENSITIVE = new Set(['router', 'firewall', 'camera', 'nas', 'alarmsysteem', 'zonnepanelen', 'laadpaal', 'iot', 'printer']);
+
+/**
+ * Bevindingen uit wat de router zelf over doorgezette poorten meldt (UPnP en NAT-regels).
+ * Geen scan: de router vertelt welke poorten hij van internet naar binnen doorzet.
+ */
+export function forwardFindings(readouts: Readout[], assets: InventoryAsset[]): Finding[] {
+  const out: Finding[] = [];
+  for (const r of readouts) {
+    const router = assets.find((a) => a.kind === 'netwerkapparaat' && r.devices.some((d) => (d.serial && a.identifiers.some((i) => i.type === 'serial' && i.value === d.serial!.toUpperCase())) || (d.mac && a.identifiers.some((i) => i.type === 'mac' && i.value === d.mac!.toLowerCase()))));
+    for (const f of r.portForwards ?? []) {
+      if (!f.enabled) continue;
+      const known = assets.find((a) => a.status === 'actief' && a.identifiers.some((i) => i.type === 'ip' && i.value === f.internalIp));
+      const target = known ?? router;
+      if (!target) continue;
+      const sa = scoreAsset(target);
+      const risky = RISKY_PORTS[f.internalPort] ?? RISKY_PORTS[f.externalPort];
+      // Een beheerpagina (80/443/...) telt alleen zwaar als we weten dat het een gevoelig apparaat is.
+      const admin = risky !== undefined || (known !== undefined && WEB_ADMIN.has(f.internalPort) && SENSITIVE.has(known.category));
+      const key = admin ? 'apparaat.beheerpoort_open_naar_internet' : 'apparaat.poort_open_naar_internet';
+      const what = known ? (known === router ? 'router' : label(known)) : `apparaat op ${f.internalIp}`;
+      out.push({
+        key,
+        checkKey: 'inventaris.doorgezette_poorten',
+        asset: sa,
+        certainty: 'vastgesteld',
+        title: admin
+          ? `${known ? 'Je ' : 'Een '}${what} is vanaf internet bereikbaar via ${risky ?? 'de beheerpagina'}`
+          : `Een poort van ${known ? 'je ' : 'een '}${what} staat open naar internet`,
+        detail:
+          `De router zet ${f.protocol.toUpperCase()}-poort ${f.externalPort} door naar ${f.internalIp}:${f.internalPort}` +
+          `${f.description ? ` ("${f.description}")` : ''}, ${f.origin === 'upnp' ? 'zelf geopend door het apparaat via UPnP' : 'ingesteld als regel in de router'}.` +
+          (admin ? ' Dit soort toegang is een van de meest misbruikte ingangen; gebruik een VPN in plaats van een open poort.' : ''),
+        fingerprint: fingerprint(sa.type, sa.value, key, `${f.protocol}/${f.externalPort}`),
+        z: 1.0, // Direct bereikbaar vanaf internet.
+      });
+    }
+    if (r.upnpEnabled && router) {
+      const sa = scoreAsset(router);
+      const key = 'netwerkapparaat.upnp_aan';
+      out.push({
+        key,
+        checkKey: 'inventaris.upnp',
+        asset: sa,
+        certainty: 'vastgesteld',
+        title: 'Op je router staat UPnP aan: apparaten kunnen zelf poorten naar internet openzetten',
+        detail: `UPnP staat aan op ${label(router)}. Handig voor spelcomputers, maar ook camera's en malware kunnen zo ongemerkt een opening maken.`,
+        fingerprint: fingerprint(sa.type, sa.value, key),
+        z: 1.0,
+      });
+    }
+  }
+  return out;
 }

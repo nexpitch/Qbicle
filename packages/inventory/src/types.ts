@@ -126,6 +126,8 @@ export interface Attributes {
   guest?: boolean;
   /** De bron meldt dat er een firmware-update klaarstaat. */
   updateAvailable?: boolean;
+  /** Providermodem: de provider die apparaat en firmware beheert (KPN, Ziggo, ...). */
+  provider?: string;
 }
 
 export type AttributeKey = keyof Attributes;

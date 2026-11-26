@@ -32,14 +32,46 @@ firmware, het internetadres (WAN) en de lijst met verbonden apparaten. Daaruit:
 | Cisco Meraki | Dashboard API v1 (cloud), API-sleutel van een alleen-lezen beheerder, alleen GET | 1C | Cloud |
 | FRITZ!Box (AVM) | TR-064 (SOAP), https-poort 49443, Digest, 4 vaste leesacties | 1C | Lokaal (connector) |
 | MikroTik | RouterOS 7 REST API, Basic over https, groep met alleen `read,api,rest-api` | 1C | Lokaal (connector) |
+| Providermodem / router via UPnP (generiek) | UPnP IGD: beschrijving, `GetExternalIPAddress`, `GetGenericPortMappingEntry`; geen login | 2P | Lokaal (connector) |
 | Tabellen (generiek) | ARP/DHCP: `arp -a` (Windows, macOS/Linux), `ip neigh`, dnsmasq, ISC dhcpd, Windows DHCP-export; mDNS via `avahi-browse` | 2P | Lokaal (connector) |
 | SNMP (generiek) | Alleen SNMPv2-MIB en IP-MIB, alleen lezen, één IP | **2A** | Pas na akkoord |
 
-Volgorde (marktonderzoek 26-11; er zijn geen openbare marktaandelen per merk voor het
-Nederlandse MKB, dus dit is een schatting): UniFi, FRITZ!Box, MikroTik en Meraki voor 1.0,
-FortiGate als eerste daarna. Bevestigen bij 3 tot 5 IT-partners. De generieke laag
-(ARP, DHCP, mDNS, MAC-prefix, SNMP, end-of-life) dekt oudere routers en providermodems
-van elk merk. Een nieuwe connector is één bestand dat `RouterConnector` implementeert.
+Volgorde. De eerste router bij bijna elk MKB-bedrijf en thuis is het **modem van de
+provider** (KPN, Ziggo, Odido). Daarachter zit vaak een eigen router of wifi-systeem.
+Daarom:
+
+1. **Generieke laag, voor iedereen:** providermodem via UPnP, apparaten via ARP, DHCP en
+   mDNS van de lokale connector, MAC-prefix, end-of-life. SNMP na akkoord.
+2. **Eigen routers en wifi in bedrijven en thuis:** UniFi, FRITZ!Box, MikroTik en Meraki
+   voor 1.0 (marktonderzoek 26-11; geen openbare marktaandelen per merk voor het NL-MKB,
+   dus een schatting). FortiGate als eerste daarna. Bevestigen bij 3 tot 5 IT-partners.
+
+Een nieuwe connector is één bestand dat `RouterConnector` implementeert.
+
+## Providermodems (KPN, Ziggo, Odido)
+
+De klant heeft meestal geen beheerdersgegevens van het modem, en de provider beheert de
+firmware op afstand. Wat we zonder providerlogin uitlezen:
+
+| Wat | Hoe | Grens |
+|---|---|---|
+| Welk modem, van welke provider | UPnP-beschrijving (fabrikant, model), MAC-prefix van de gateway, netwerkeigenaar (ASN) van het WAN-adres | Model genoemd = vastgesteld; alleen fabrikant of ASN = mogelijk |
+| Internetadres | UPnP `GetExternalIPAddress` | Alleen als UPnP aanstaat |
+| Poorten die apparaten zelf openzetten | UPnP `GetGenericPortMappingEntry` | Handmatig doorgezette poorten zie je zo niet |
+| Of UPnP aanstaat | UPnP-beschrijving | Zelf al een bevinding (klein gewicht) |
+| Apparaten achter het modem | ARP, DHCP en mDNS via de lokale connector | Het modem geeft zonder login geen lijst |
+| Firmware | Meestal niet zichtbaar; beheerd door de provider | Bevinding alleen via end-of-life van het model |
+| Wat echt openstaat van buiten | Buitenkant (gegevens van derden, eigen poortcheck) | Stap 2, na akkoord op de scangrenzen |
+
+Doorgezette poorten (uit UPnP of uit de NAT-regels van een eigen router zoals MikroTik)
+worden bevindingen. RDP, SMB, Telnet, SSH, VNC, databases en beheerpagina's van camera's,
+NAS en routers tellen zwaar ("beheerpoort open naar internet"). Staat een eigen router
+achter het modem (privé-WAN-adres, dubbele NAT), dan meldt Qbicle dat ook het modem
+gekoppeld moet worden, omdat dat de echte rand van het netwerk is.
+
+Niet gedaan: inloggen op de webinterface van het modem met het wachtwoord van de sticker.
+Dat werkt per model anders, is niet officieel ondersteund door de providers en vraagt om
+een wachtwoord dat de klant vaak niet heeft. Kan later per model als een partner erom vraagt.
 
 ## End-of-life
 
@@ -86,6 +118,9 @@ opgegeven router ook niet.
   zodat MAC-adressen van klanten niet naar een derde gaan.
 
 ## Open
+
+- Providermodems: per model (KPN Box, Experia Box, Ziggo SmartWifi/Connect Box, Odido) testen wat UPnP echt teruggeeft; de modellijst en de ASN-tabel aanvullen en controleren via RIPEstat.
+- SSDP: de lokale connector luistert naar aankondigingen om het adres van de UPnP-beschrijving te vinden (Go-connector).
 
 - Echte apparaten: de fixtures zijn naar de documentatie gemaakt. Per merk één keer
   testen tegen een echt apparaat en de fixture vervangen door een geanonimiseerde opname.

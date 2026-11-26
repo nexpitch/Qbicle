@@ -55,6 +55,7 @@ describe('van router tot score', () => {
     ]);
     const keys = r.findings.map((f) => `${f.key}@${f.asset.value}`).sort();
     expect(keys).toEqual([
+      'apparaat.beheerpoort_open_naar_internet@serial:9A1B0C2D3E4F', // Winbox doorgezet in de NAT-regels
       'netwerkapparaat.kwetsbaarheid@serial:989BCB000001',
       'netwerkapparaat.kwetsbaarheid@serial:9A1B0C2D3E4F',
       'netwerkapparaat.update_beschikbaar@mac:24:a4:3c:00:00:02',
@@ -70,9 +71,12 @@ describe('van router tot score', () => {
   });
 
   it('zet een KEV-lek minstens op "Hoge urgentie", ook als het het enige is', async () => {
+    const { score } = await import('@qbicle/score');
     const r = await run(['mikrotik']);
-    expect(r.findings).toHaveLength(1);
-    expect(r.score.band.key === 'hoog' || r.score.band.key === 'direct').toBe(true);
+    const kevOnly = r.findings.filter((f) => f.key === 'netwerkapparaat.kwetsbaarheid');
+    expect(kevOnly).toHaveLength(1);
+    const s = score({ findings: kevOnly, outcomes: ['finding'] });
+    expect(['hoog', 'direct']).toContain(s.band.key);
   });
 
   it('voegt de laptop uit de router samen met dezelfde laptop uit Intune', async () => {

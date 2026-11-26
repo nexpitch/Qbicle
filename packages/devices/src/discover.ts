@@ -1,6 +1,6 @@
 import { buildInventory, type InventoryAsset, type Observation, type Source } from '@qbicle/inventory';
 import { score, type Outcome, type ScoreResult } from '@qbicle/score';
-import { deviceFindings, type DeviceFindingResult } from './findings.ts';
+import { deviceFindings, forwardFindings, type DeviceFindingResult } from './findings.ts';
 import { readoutToObservations, type ClassifiedClient } from './observations.ts';
 import type { OuiDb } from './oui.ts';
 import type { PrivacyPolicy } from './privacy.ts';
@@ -58,6 +58,11 @@ export async function discover(input: DiscoveryInput): Promise<DiscoveryResult> 
 
   const assets = buildInventory(observations, { now: input.now });
   const found = deviceFindings(assets, input.vulnDb, input.now, input.eolDb);
+  found.findings.push(...forwardFindings(readouts, assets));
+  // Router met een privé-WAN-adres: hij staat achter een ander apparaat, meestal het providermodem.
+  for (const r of readouts) {
+    if (r.privateWanIp) r.warnings.push(`Deze router staat achter een ander modem of router (WAN-adres ${r.privateWanIp}, dubbele NAT). Koppel ook het modem van de provider, anders zien we de echte rand van het netwerk niet.`);
+  }
   const outcomes: Outcome[] = sources.map((s) => (s.outcome === 'ok' && found.findings.length > 0 ? 'finding' : s.outcome));
   return { readouts, sources, observations, clients, assets, ...found, score: score({ findings: found.findings, outcomes }) };
 }

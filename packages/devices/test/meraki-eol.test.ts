@@ -82,10 +82,11 @@ describe('end-of-life', () => {
       now: NOW,
     });
     expect(r.findings.map((f) => f.key).sort()).toEqual([
+      'apparaat.beheerpoort_open_naar_internet',
       'netwerkapparaat.einde_ondersteuning',
       'netwerkapparaat.einde_ondersteuning_binnenkort',
       'netwerkapparaat.kwetsbaarheid',
     ]);
-    expect(r.score.topActions.map((a) => a.key)).toEqual(['firmware-bijwerken', 'apparaat-vervangen']);
+    expect(r.score.topActions.map((a) => a.key)).toEqual(['firmware-bijwerken', 'apparaat-vervangen', 'poort-sluiten']);
   });
 });

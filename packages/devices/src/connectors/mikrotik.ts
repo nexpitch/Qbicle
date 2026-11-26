@@ -1,5 +1,5 @@
 import { ReadOnlyGuard, type AllowRule, type Transport } from '../transport.ts';
-import type { ClientDevice, Readout, RouterConnector } from '../types.ts';
+import type { ClientDevice, PortForward, Readout, RouterConnector } from '../types.ts';
 import { isPublicIpv4, json } from './util.ts';
 
 /**
@@ -10,7 +10,7 @@ import { isPublicIpv4, json } from './util.ts';
  */
 export const MIKROTIK_RULES: AllowRule[] = [
   { method: 'GET', path: /^\/rest\/system\/(resource|routerboard|identity)$/ },
-  { method: 'GET', path: /^\/rest\/ip\/(dhcp-server\/lease|arp|address)$/ },
+  { method: 'GET', path: /^\/rest\/ip\/(dhcp-server\/lease|arp|address|firewall\/nat|upnp)$/ },
 ];
 
 interface Resource {
@@ -38,6 +38,16 @@ interface Arp {
   'mac-address'?: string;
   interface?: string;
   complete?: string;
+}
+interface NatRule {
+  chain?: string;
+  action?: string;
+  protocol?: string;
+  'dst-port'?: string;
+  'to-addresses'?: string;
+  'to-ports'?: string;
+  disabled?: string;
+  comment?: string;
 }
 interface Address {
   address?: string;
@@ -105,6 +115,30 @@ export class MikrotikConnector implements RouterConnector {
       .map((a) => a.address?.split('/')[0] ?? '')
       .filter(isPublicIpv4);
 
+    // Doorgezette poorten (dst-nat) en of UPnP aanstaat: configuratie lezen, niet scannen.
+    const portForwards: PortForward[] = [];
+    let upnpEnabled: boolean | undefined;
+    try {
+      for (const r of await this.get<NatRule[]>('/rest/ip/firewall/nat', 'NAT-regels')) {
+        if (r.chain !== 'dstnat' || r.action !== 'dst-nat' || !r['to-addresses'] || !r['dst-port']) continue;
+        for (const port of expandPorts(r['dst-port'])) {
+          portForwards.push({
+            protocol: r.protocol === 'udp' ? 'udp' : 'tcp',
+            externalPort: port,
+            internalIp: r['to-addresses'].split('-')[0]!,
+            internalPort: Number(r['to-ports'] ?? port) || port,
+            description: r.comment,
+            enabled: r.disabled !== 'true',
+            origin: 'regel',
+          });
+        }
+      }
+      upnpEnabled = (await this.get<{ enabled?: string }>('/rest/ip/upnp', 'UPnP')).enabled === 'true';
+    } catch {
+      warnings.push('NAT-regels of UPnP-instelling niet uitgelezen');
+    }
+
+    const privateWan = addresses.find((a) => a.interface && /ether1|wan|pppoe/i.test(a.interface) && a.address && !isPublicIpv4(a.address.split('/')[0]!));
     const version = resource.version?.match(/^[\d.]+/)?.[0];
     return {
       product: 'mikrotik',
@@ -122,6 +156,9 @@ export class MikrotikConnector implements RouterConnector {
       ],
       clients: [...byMac.values()],
       wanIps,
+      privateWanIp: wanIps.length === 0 ? privateWan?.address?.split('/')[0] : undefined,
+      portForwards,
+      upnpEnabled,
       warnings,
     };
   }
@@ -139,4 +176,15 @@ export function lastSeenFrom(raw: string | undefined, now: Date): string | undef
   }
   if (!matched) return undefined;
   return new Date(now.getTime() - secs * 1000).toISOString();
+}
+
+/** "80,443,8000-8002" naar losse poorten (maximaal 64 per regel). */
+export function expandPorts(spec: string): number[] {
+  const out: number[] = [];
+  for (const part of spec.split(',')) {
+    const [a, b] = part.split('-').map(Number);
+    if (!Number.isInteger(a)) continue;
+    for (let p = a!; p <= (Number.isInteger(b) ? b! : a!) && out.length < 64; p++) out.push(p);
+  }
+  return out;
 }
