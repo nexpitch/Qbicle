@@ -1,11 +1,15 @@
 import { serve } from '@hono/node-server';
-import { ConsoleMailer, createPool, DEFAULT_CONFIG, systemTxtResolver, type Platform } from '@qbicle/platform';
+import { existsSync } from 'node:fs';
+import { createPool, DEFAULT_CONFIG, mailerFromEnv, systemTxtResolver, type Platform } from '@qbicle/platform';
 import { createApi } from './app.ts';
 
 /**
- * Start de API lokaal:  DATABASE_URL=... npm run api
- * Mail gaat voorlopig naar de console (er is nog geen maildienst gekozen).
+ * Start de API lokaal:  npm run api
+ * Instellingen komen uit de omgeving of uit .env in de hoofdmap (niet gecommit).
+ * Met BREVO_API_KEY gaat mail via Brevo, zonder sleutel naar de console.
  */
+if (existsSync('.env')) process.loadEnvFile('.env');
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.error('Zet DATABASE_URL, zie .env.example');
@@ -15,7 +19,7 @@ if (!databaseUrl) {
 const appOrigin = process.env.QBICLE_APP_ORIGIN ?? DEFAULT_CONFIG.appOrigin;
 const platform: Platform = {
   pool: createPool(databaseUrl),
-  mailer: new ConsoleMailer(),
+  mailer: mailerFromEnv(),
   dns: systemTxtResolver(process.env.QBICLE_DNS_SERVERS?.split(',').filter(Boolean)),
   config: { ...DEFAULT_CONFIG, appOrigin },
 };
@@ -27,5 +31,6 @@ const app = createApi(platform, {
 
 const port = Number(process.env.PORT ?? 8080);
 serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`Qbicle API luistert op http://localhost:${info.port}/api/v1 (app: ${appOrigin})`);
+  const mail = process.env.BREVO_API_KEY ? 'Brevo' + (process.env.QBICLE_MAIL_SANDBOX === 'aan' ? ' (sandbox)' : '') : 'console';
+  console.log(`Qbicle API luistert op http://localhost:${info.port}/api/v1 (app: ${appOrigin}, mail: ${mail})`);
 });

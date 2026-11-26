@@ -47,7 +47,7 @@ npm run scan -- voorbeeld.nl --niveau 0   # alleen DNS, geen verbinding met de s
 docker compose up -d db
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
 
-# API lokaal (mail verschijnt in de console)
+# API lokaal (mail via Brevo met BREVO_API_KEY in .env, anders in de console; zie docs/email.md)
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIES=uit npm run api
 
 # Ook de databasetests draaien

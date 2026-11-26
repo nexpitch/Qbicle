@@ -5,6 +5,7 @@ export * from './roles.ts';
 export * from './audit.ts';
 export * from './ratelimit.ts';
 export * from './mailer.ts';
+export * from './brevo.ts';
 export * from './dns.ts';
 export * from './context.ts';
 export * from './auth.ts';
