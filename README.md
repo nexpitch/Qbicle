@@ -15,6 +15,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
 | Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
+| Cookiecheck (proof of concept): drie browserbezoeken (niets klikken, weigeren, accepteren), trackers en cookies vóór en na toestemming | Werkt tegen lokale testpagina's, zie [docs/compliance.md](docs/compliance.md) |
 | Apparaatherkenning via routers (providermodems via UPnP, UniFi, Meraki, FRITZ!Box, MikroTik, generieke ARP/DHCP/mDNS-route, SNMP achter akkoord), categorieën, CVE/KEV/NCSC, end-of-life, scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
@@ -44,11 +45,14 @@ npm run scan -- voorbeeld.nl
 npm run scan -- voorbeeld.nl --json       # volledig rapport met bewijs
 npm run scan -- voorbeeld.nl --niveau 0   # alleen DNS, geen verbinding met de site
 
+# Cookiecheck (headless Chromium nodig, zie docs/compliance.md)
+npm run consent -- https://www.voorbeeld.nl
+
 # Database lokaal
 docker compose up -d db
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
 
-# API lokaal (mail verschijnt in de console)
+# API lokaal (mail via Brevo met BREVO_API_KEY in .env, anders in de console; zie docs/email.md)
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIES=uit npm run api
 
 # Apparaatherkenning zonder hardware (fixtures)
@@ -78,6 +82,7 @@ De resultaten komen in `testset/resultaten/`: per domein een JSON-rapport en een
 
 ```
 packages/
+  compliance/       cookiecheck met headless browser (proof of concept)
   scanner/          passieve checks, runner, opdrachtregel
     src/checks/     één bestand per groep checks (spf, dmarc, dkim, dns, tls, web)
     src/net.ts      alle netwerktoegang, achter één interface (in tests vervangen)
