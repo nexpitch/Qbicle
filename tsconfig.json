@@ -15,7 +15,9 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/meetset/**/*.ts", "apps/*/src/**/*.ts", "apps/*/test/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/*/meetset/**/*.ts", "apps/*/src/**/*.ts", "apps/*/src/**/*.tsx", "apps/*/test/**/*.ts", "vitest.config.ts"]
 }

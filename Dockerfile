@@ -13,10 +13,12 @@ COPY packages/devices/package.json packages/devices/
 COPY packages/inventory/package.json packages/inventory/
 COPY packages/platform/package.json packages/platform/
 COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
 # tsx draait de TypeScript direct; een aparte build-stap volgt bij de web-app.
 RUN npm ci --ignore-scripts && npm cache clean --force
 
 COPY tsconfig.json ./
+COPY config ./config
 COPY packages ./packages
 COPY apps ./apps
 RUN rm -rf packages/*/test apps/*/test

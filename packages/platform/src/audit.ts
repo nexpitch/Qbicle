@@ -32,7 +32,18 @@ export type AuditAction =
   | 'domein.verificatiemail_verstuurd'
   | 'domein.verificatie_vervallen'
   | 'domein.verwijderd'
-  | 'scan.aangevraagd';
+  | 'scan.aangevraagd'
+  | 'registratie.aangevraagd'
+  | 'registratie.afgerond'
+  | 'abonnement.gestart'
+  | 'abonnement.gewijzigd'
+  | 'abonnement.opgezegd'
+  | 'abonnement.geactiveerd'
+  | 'betaling.aangemaakt'
+  | 'betaling.status'
+  | 'factuur.uitgegeven'
+  | 'factuurgegevens.gewijzigd'
+  | 'audit_opdracht.aangemaakt';
 
 export interface AuditEntry {
   organizationId: string | null;

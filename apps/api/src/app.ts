@@ -1,4 +1,20 @@
 import {
+  cancelSubscription,
+  checkoutSubscription,
+  completeSignup,
+  createAuditOrder,
+  getBilling,
+  getBillingDetails,
+  getInvoice,
+  getPayment,
+  listInvoices,
+  publicCatalog,
+  registerSignup,
+  settleTestPayment,
+  startSubscription,
+  syncPayment,
+  updateBillingDetails,
+  BILLING_INTERVALS,
   acceptInvitation,
   addDomain,
   authenticate,
@@ -84,6 +100,29 @@ const schemas = {
   addDomain: z.object({ name: z.string().max(300) }),
   emailVerify: z.object({ address: z.string().max(320) }),
   scan: z.object({ maxLevel: z.union([z.literal(0), z.literal(1)]).optional() }),
+  signup: z.object({
+    email,
+    organisatie: z.string().max(200),
+    pakket: z.string().max(40),
+    interval: z.enum(BILLING_INTERVALS).default('jaar'),
+  }),
+  subscription: z.object({ pakket: z.string().max(40), interval: z.enum(BILLING_INTERVALS) }),
+  auditOrder: z.object({
+    pakket: z.string().max(40),
+    doelbedrijf: z.string().max(200),
+    domeinen: z.array(z.string().max(300)).min(1).max(100),
+  }),
+  billingDetails: z.object({
+    naam: z.string().max(200).nullish(),
+    email: z.string().max(254).nullish(),
+    adres: z.string().max(400).nullish(),
+    postcode: z.string().max(16).nullish(),
+    plaats: z.string().max(100).nullish(),
+    land: z.string().max(2).nullish(),
+    kvk: z.string().max(20).nullish(),
+    btwNummer: z.string().max(30).nullish(),
+  }),
+  testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
 };
 
 function clientIp(c: Context, trustProxy: boolean): string | null {
@@ -199,7 +238,10 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
       path: '/',
       expires: result.session.expiresAt,
     });
-    return c.json({ gebruiker: result.session.user, nieuw: result.isNewUser });
+    // Openstaande registratie voor dit adres? Dan nu de organisatie en de proef aanmaken.
+    const u = result.session.user;
+    const registratie = await completeSignup(p, { ...c.get('actor'), userId: u.id, email: u.email });
+    return c.json({ gebruiker: u, nieuw: result.isNewUser, registratie: registratie ?? null });
   });
 
   v1.post('/auth/uitloggen', requireUser, async (c) => {
@@ -304,6 +346,55 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const input = await body(c, schemas.scan);
     const opts = input.maxLevel === undefined ? {} : { maxLevel: input.maxLevel };
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
+  });
+
+  // Pakketten, registratie en abonnement ---------------------------------------------
+  v1.get('/abonnementen', (c) => c.json(publicCatalog(p.catalog)));
+
+  v1.post('/registratie', async (c) => {
+    const input = await body(c, schemas.signup);
+    await registerSignup(p, { email: input.email, organizationName: input.organisatie, plan: input.pakket, interval: input.interval }, c.get('actor'));
+    return c.json({ bericht: 'Check je mail: daar staat een link om je account te bevestigen en in te loggen.' }, 202);
+  });
+
+  v1.get('/organisaties/:org/abonnement', requireUser, async (c) => c.json(await getBilling(p, user(c).userId, param(c, 'org'))));
+  v1.put('/organisaties/:org/abonnement', requireUser, async (c) => {
+    const input = await body(c, schemas.subscription);
+    return c.json(await startSubscription(p, user(c), param(c, 'org'), { plan: input.pakket, interval: input.interval }));
+  });
+  v1.post('/organisaties/:org/abonnement/betalen', requireUser, async (c) => {
+    const r = await checkoutSubscription(p, user(c), param(c, 'org'));
+    return c.json({ betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
+  });
+  v1.post('/organisaties/:org/abonnement/opzeggen', requireUser, async (c) => c.json(await cancelSubscription(p, user(c), param(c, 'org'))));
+
+  v1.post('/organisaties/:org/audit-opdrachten', requireUser, async (c) => {
+    const input = await body(c, schemas.auditOrder);
+    const r = await createAuditOrder(p, user(c), param(c, 'org'), { package: input.pakket, targetName: input.doelbedrijf, domains: input.domeinen });
+    return c.json({ opdracht: r.orderId, betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
+  });
+
+  v1.get('/organisaties/:org/factuurgegevens', requireUser, async (c) => c.json(await getBillingDetails(p, user(c).userId, param(c, 'org'))));
+  v1.put('/organisaties/:org/factuurgegevens', requireUser, async (c) => {
+    const input = await body(c, schemas.billingDetails);
+    const clean = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v ?? null]));
+    return c.json(await updateBillingDetails(p, user(c), param(c, 'org'), clean));
+  });
+  v1.get('/organisaties/:org/facturen', requireUser, async (c) => c.json(await listInvoices(p, user(c).userId, param(c, 'org'))));
+  v1.get('/organisaties/:org/facturen/:inv', requireUser, async (c) =>
+    c.json(await getInvoice(p, user(c).userId, param(c, 'org'), param(c, 'inv'))),
+  );
+
+  // Betalingen ----------------------------------------------------------------------
+  // Status opvragen haalt ook de actuele stand bij de provider op (na terugkomen van de betaalpagina).
+  v1.get('/betalingen/:pay', requireUser, async (c) => {
+    const pay = await getPayment(p, user(c).userId, param(c, 'pay'));
+    return c.json(pay.status === 'open' ? { ...(await syncPayment(p, pay.id, user(c))), organizationId: pay.organizationId } : pay);
+  });
+  // Alleen bij testbetalingen (nep-provider); bij Mollie bestaat dit adres niet.
+  v1.post('/betalingen/:pay/test-uitkomst', requireUser, async (c) => {
+    const { uitkomst } = await body(c, schemas.testPayment);
+    return c.json(await settleTestPayment(p, user(c), param(c, 'pay'), uitkomst));
   });
 
   // Audit-log ---------------------------------------------------------------------

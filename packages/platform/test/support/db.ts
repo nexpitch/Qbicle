@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { DEFAULT_CONFIG, MemoryMailer, type Platform, type TxtResolver } from '../../src/index.ts';
+import { DEFAULT_CONFIG, loadCatalog, MemoryMailer, NepBetaalprovider, type Platform, type TxtResolver } from '../../src/index.ts';
 
 /**
  * Databasetests draaien tegen een echte PostgreSQL (zoals in CI). Elk testbestand
@@ -70,6 +70,7 @@ export class FakeDns implements TxtResolver {
 
 export interface TestPlatform extends Platform {
   mailer: MemoryMailer;
+  payments: NepBetaalprovider;
   dns: FakeDns;
   close(): Promise<void>;
 }
@@ -83,6 +84,8 @@ export async function createTestPlatform(): Promise<TestPlatform> {
     mailer: new MemoryMailer(),
     dns: new FakeDns(),
     config: { ...DEFAULT_CONFIG, appOrigin: 'https://app.qbicle.test' },
+    catalog: loadCatalog(),
+    payments: new NepBetaalprovider('https://app.qbicle.test'),
     async close() {
       await pool.end();
       await admin((c) => c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
