@@ -17,7 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "scan": "tsx packages/scanner/src/cli.ts",
     "db:migrate": "bash scripts/db-migrate.sh",
-    "api": "tsx apps/api/src/server.ts"
+    "api": "tsx apps/api/src/server.ts",
+    "consent": "tsx packages/compliance/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",
