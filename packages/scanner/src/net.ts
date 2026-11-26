@@ -77,7 +77,7 @@ export class NetError extends Error {
   }
 }
 
-export const SCANNER_VERSION = '0.2.0';
+export const SCANNER_VERSION = '0.3.0';
 export const MAX_BODY_BYTES = 256 * 1024;
 
 export interface NodeNetOptions {

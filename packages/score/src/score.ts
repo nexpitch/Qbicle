@@ -4,6 +4,7 @@ import {
   BANDS,
   CERTAINTY_FACTOR,
   CERT_BROKEN_KEYS,
+  COVERAGE_WARN_PCT,
   REPEAT_FACTOR,
   DIVISOR,
   FALLBACK_WEIGHT,
@@ -68,6 +69,11 @@ export interface ScoreResult {
   actionCount: number;
   /** Sleutels zonder gewicht in het model; die tellen mee met FALLBACK_WEIGHT. */
   unknownKeys: string[];
+  /**
+   * Gezet als de dekking onder COVERAGE_WARN_PCT ligt: dan is een lage score geen
+   * goed nieuws, want een groot deel is niet gecontroleerd. Het rapport toont dit naast de score.
+   */
+  coverageWarning: string | null;
 }
 
 export interface ScoreInput {
@@ -161,7 +167,8 @@ export function score(input: ScoreInput): ScoreResult {
   const urgency = urgencyFromWeight(totalWeight);
   let band = bandFor(urgency);
 
-  const hasKev = input.findings.some((f) => f.vulns?.some((v) => v.inKev));
+  // Alleen een vastgesteld actief misbruikt lek tilt de band op; "mogelijk" telt via m en k mee.
+  const hasKev = input.findings.some((f) => f.certainty === 'vastgesteld' && f.vulns?.some((v) => v.inKev));
   let bandRaisedByKev = false;
   const hoog = BANDS.find((b) => b.key === 'hoog')!;
   if (hasKev && band.min < hoog.min) {
@@ -197,16 +204,23 @@ export function score(input: ScoreInput): ScoreResult {
     (x, y) => y.weight - x.weight || x.key.localeCompare(y.key),
   );
 
+  const coverage = coverageOf(input.outcomes);
+  const coverageWarning =
+    coverage.applicable > 0 && coverage.pct < COVERAGE_WARN_PCT
+      ? `Let op: we konden maar ${coverage.pct}% van de controles afronden. De score zegt daardoor minder dan normaal; de rest is niet gecontroleerd en dus niet per se in orde.`
+      : null;
+
   return {
     modelVersion: MODEL_VERSION,
     urgency,
     band: { key: band.key, label: band.label },
     bandRaisedByKev,
     totalWeight: Math.round(totalWeight * 100) / 100,
-    coverage: coverageOf(input.outcomes),
+    coverage,
     contributions,
     topActions: actions.slice(0, MAX_ACTIONS),
     actionCount: actions.length,
     unknownKeys: [...unknownKeys].sort(),
+    coverageWarning,
   };
 }

@@ -51,6 +51,13 @@ export interface LinkedVuln {
   dtcWarning?: boolean;
 }
 
+/** Bron waar een bevinding op steunt (bronvermelding in het rapport). */
+export interface Source {
+  /** Bijvoorbeeld "NVD", "CISA KEV", "endoflife.date", "php.net". */
+  name: string;
+  url: string;
+}
+
 export interface Finding {
   /** Vaste sleutel van het type bevinding, bijvoorbeeld "spf.plus_all". */
   key: string;
@@ -65,6 +72,8 @@ export interface Finding {
   /** Zelfde fout op hetzelfde asset = zelfde vingerafdruk, over scans heen. */
   fingerprint: string;
   vulns?: LinkedVuln[];
+  /** Waar deze bevinding op steunt, zodat de klant het zelf kan nalezen. */
+  sources?: Source[];
   /**
    * Factor z voor assets uit de inventaris (blootstelling × beheerd, zie
    * exposureFactor in packages/inventory). Zonder dit veld volgt z uit

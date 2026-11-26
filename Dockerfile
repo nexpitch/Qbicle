@@ -8,6 +8,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/scanner/package.json packages/scanner/
 COPY packages/score/package.json packages/score/
+# De scanner gebruikt de kwetsbaarheidsdatabase uit packages/devices (en die packages/inventory).
+COPY packages/devices/package.json packages/devices/
+COPY packages/inventory/package.json packages/inventory/
 COPY packages/platform/package.json packages/platform/
 COPY apps/api/package.json apps/api/
 # tsx draait de TypeScript direct; een aparte build-stap volgt bij de web-app.

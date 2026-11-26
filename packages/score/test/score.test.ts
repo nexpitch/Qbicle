@@ -154,7 +154,7 @@ describe('v0.2: herhaling, certificaat en plafond', () => {
       findings: [f('cert.invalid', { asset: apex }), f('cert.name_mismatch', { asset: apex })],
       outcomes: [],
     });
-    expect(r.totalWeight).toBe(40);
+    expect(r.totalWeight).toBe(45);
   });
 
   it('kapot certificaat op een tweede asset telt als herhaling', () => {
@@ -162,7 +162,7 @@ describe('v0.2: herhaling, certificaat en plafond', () => {
       findings: [f('cert.expired', { asset: apex }), f('cert.name_mismatch', { asset: www })],
       outcomes: [],
     });
-    expect(r.totalWeight).toBe(50);
+    expect(r.totalWeight).toBe(56.25);
   });
 
   it('headers hebben een plafond van 10', () => {
@@ -177,3 +177,21 @@ describe('v0.2: herhaling, certificaat en plafond', () => {
   });
 });
 
+
+describe('v0.3: dekking en KEV', () => {
+  const apex = { type: 'website' as const, value: 'https://voorbeeld.nl', source: 'dns', visibility: 'primair' as const };
+  const base = { checkKey: 'x', asset: apex, title: 't', detail: 'd' };
+
+  it('waarschuwt onder 80% dekking, niet daarboven', () => {
+    expect(score({ findings: [], outcomes: ['ok', 'unknown', 'unknown', 'ok', 'ok'] }).coverageWarning).toMatch(/60%/);
+    expect(score({ findings: [], outcomes: ['ok', 'ok', 'ok', 'ok', 'unknown'] }).coverageWarning).toBeNull();
+  });
+
+  it('een "mogelijk" KEV-lek tilt de band niet op, een vastgesteld wel', () => {
+    const vulns = [{ cveId: 'CVE-2021-41773', inKev: true }];
+    const mog = score({ findings: [{ ...base, key: 'web.software_kwetsbaar', certainty: 'mogelijk', fingerprint: 'a', vulns }], outcomes: [] });
+    expect(mog.bandRaisedByKev).toBe(false);
+    const vast = score({ findings: [{ ...base, key: 'web.software_kwetsbaar', certainty: 'vastgesteld', fingerprint: 'b', vulns }], outcomes: [] });
+    expect(vast.band.key).toBe('hoog');
+  });
+});

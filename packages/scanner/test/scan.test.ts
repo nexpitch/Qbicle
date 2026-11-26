@@ -16,7 +16,9 @@ describe('scanDomain', () => {
     expect(r.score.urgency).toBe(0);
     expect(r.score.band.label).toBe('Weinig urgent');
     // DKIM is ok, alles is gecontroleerd
-    expect(r.score.coverage).toEqual({ done: CHECKS.length, applicable: CHECKS.length, pct: 100 });
+    // De softwarecheck is n.v.t.: de website vertelt geen versies.
+    expect(r.score.coverage).toEqual({ done: CHECKS.length - 1, applicable: CHECKS.length - 1, pct: 100 });
+    expect(r.score.coverageWarning).toBeNull();
   });
 
   it('typisch MKB-domein: geen DMARC, verouderde website', async () => {

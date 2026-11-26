@@ -54,7 +54,29 @@ export async function fetchChain(ctx: CheckContext, start: string): Promise<Chai
   });
 }
 
-function leftDomain(chain: Chain) {
+/**
+ * Stuurt de website door naar een toestemmingspagina (cookiemuur) op een ander
+ * domein, zoals myprivacy.dpgmedia.nl? Dan hebben we de echte website niet gezien.
+ */
+export function isConsentWall(chain: Chain): boolean {
+  if (!chain.leftDomainTo) return false;
+  const to = new URL(chain.leftDomainTo);
+  if (/(^|[.-])(consent|privacy|myprivacy|cookie|cookies|gdpr|cmp)([.-]|$)/i.test(to.hostname)) return true;
+  // Toestemmingsplatforms geven het oorspronkelijke adres mee om terug te kunnen sturen.
+  const start = new URL(chain.hops[0]!.url).hostname;
+  return [...to.searchParams.values()].some((v) => v.includes(start)) && /consent|privacy|cookie/i.test(to.pathname + to.search);
+}
+
+function consentWall(chain: Chain) {
+  return {
+    outcome: 'unknown' as const,
+    evidence: { redirectsTo: chain.leftDomainTo },
+    message: `De website stuurt eerst door naar een toestemmingspagina (${new URL(chain.leftDomainTo!).hostname}), dus de website zelf is niet beoordeeld.`,
+  };
+}
+
+export function leftDomain(chain: Chain) {
+  if (isConsentWall(chain)) return consentWall(chain);
   const to = new URL(chain.leftDomainTo!).hostname;
   return {
     outcome: 'not_applicable' as const,
@@ -254,7 +276,9 @@ export const cookiesCheck: Check = {
     }
     const findings: FindingDraft[] = [];
     const insecure = [...new Set(cookies.filter((c) => !c.secure).map((c) => c.name))];
-    const noHttpOnly = [...new Set(cookies.filter((c) => !c.httpOnly).map((c) => c.name))];
+    // Alleen sessie- en inlogcookies horen HttpOnly te hebben; toestemmings- en
+    // analysecookies moeten vaak juist door scripts gelezen worden.
+    const noHttpOnly = [...new Set(cookies.filter((c) => !c.httpOnly && isSessionCookie(c.name)).map((c) => c.name))];
     if (insecure.length) {
       findings.push({
         key: 'web.cookie_insecure',
@@ -269,12 +293,18 @@ export const cookiesCheck: Check = {
         // Sommige cookies moeten door scripts gelezen kunnen worden; daarom "mogelijk".
         certainty: 'mogelijk',
         title: 'Cookies zijn leesbaar voor scripts op de pagina',
-        detail: `Deze cookies missen de HttpOnly-vlag: ${noHttpOnly.join(', ')}. Voor inlog- of sessiecookies is dat een risico.`,
+        detail: `Deze sessie- of inlogcookies missen de HttpOnly-vlag: ${noHttpOnly.join(', ')}. Een ingevoegd script kan ze dan stelen en zo een sessie overnemen.`,
       });
     }
     return { outcome: findings.length ? 'finding' : 'ok', findings, evidence };
   },
 };
+
+const SESSION_COOKIE = /^(phpsessid|jsessionid|asp\.net_sessionid|aspsessionid\w*|connect\.sid|laravel_session|ci_session|wordpress_logged_in\w*|wordpress_sec\w*|wp-settings\w*)$|sess|(^|[_.-])sid($|[_.-])|auth|token|login/i;
+
+export function isSessionCookie(name: string): boolean {
+  return SESSION_COOKIE.test(name);
+}
 
 export function parseCookie(header: string) {
   const [pair, ...attrs] = header.split(';');
@@ -363,15 +393,28 @@ export const securityTxtCheck: Check = {
     } catch (e) {
       return unreachable(host, e);
     }
-    if (chain.leftDomainTo) return leftDomain(chain);
-    const res = chain.final;
+    let res = chain.final;
+    let delegated: string | null = null;
+    if (chain.leftDomainTo) {
+      // Doorverwijzen naar de security.txt van een andere organisatie (bijvoorbeeld
+      // rijksoverheid.nl naar ncsc.nl) is toegestaan (RFC 9116, par. 3). Eén bezoek,
+      // net als een browser of melder zou doen.
+      const to = new URL(chain.leftDomainTo);
+      if (to.protocol !== 'https:' || !to.pathname.endsWith('security.txt')) return leftDomain(chain);
+      try {
+        res = await ctx.memo(`get:${to}`, () => ctx.net.httpGet(to.toString()));
+      } catch (e) {
+        return unreachable(to.hostname, e);
+      }
+      delegated = to.toString();
+    }
     if (res.status >= 400 && res.status !== 404 && res.status !== 410) {
       const bad = notTheRealPage(res)!;
       return bad;
     }
     const isText = (res.headers['content-type'] ?? '').toLowerCase().startsWith('text/plain');
     const contact = /^contact:\s*\S+/im.test(res.body);
-    const evidence = { url: res.url, status: res.status, contentType: res.headers['content-type'] ?? null };
+    const evidence = { url: res.url, status: res.status, contentType: res.headers['content-type'] ?? null, delegatedTo: delegated };
     if (res.status === 200 && isText && contact) {
       const exp = res.body.match(/^expires:\s*(.+)$/im)?.[1];
       if (exp && !Number.isNaN(Date.parse(exp)) && new Date(exp) < ctx.now) {
