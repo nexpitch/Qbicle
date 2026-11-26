@@ -1,0 +1,16 @@
+{
+  "name": "@qbicle/scanner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "qbicle-scan": "src/cli.ts"
+  },
+  "dependencies": {
+    "@qbicle/score": "*"
+  }
+}

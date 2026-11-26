@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qbicle
+          POSTGRES_PASSWORD: qbicle
+          POSTGRES_DB: qbicle
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qbicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://qbicle:qbicle@localhost:5432/qbicle
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migraties toepassen
+        run: bash scripts/db-migrate.sh
+      - name: Nogmaals toepassen (moet niets doen)
+        run: bash scripts/db-migrate.sh
