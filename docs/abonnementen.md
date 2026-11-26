@@ -7,7 +7,7 @@ De klantomgeving staat in `apps/web` (Licht-stijl, server-side gerenderd). De AP
 ```
 docker compose up -d db
 docker compose --profile tools run --rm migrate
-docker compose --profile web up --build web
+bash scripts/klantomgeving.sh
 ```
 
 Open http://localhost:3000. Zonder Brevo-sleutel staat de inloglink in het venster waarin de app draait (zoek op `inloggen/bevestigen`).
