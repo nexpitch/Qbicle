@@ -66,6 +66,8 @@ export function normalizeIdentifier(id: Identifier): Identifier | undefined {
     }
     case 'fqdn':
       return value ? { type: 'fqdn', value: value.toLowerCase().replace(/\.$/, '') } : undefined;
+    case 'mac-hash':
+      return /^[0-9a-f]{32,64}$/i.test(value) ? { type: 'mac-hash', value: value.toLowerCase() } : undefined;
     case 'ip':
     case 'cloud-id':
     case 'url':

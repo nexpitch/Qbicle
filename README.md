@@ -16,6 +16,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
 | Cookiecheck (proof of concept): drie browserbezoeken (niets klikken, weigeren, accepteren), trackers en cookies vóór en na toestemming | Werkt tegen lokale testpagina's, zie [docs/compliance.md](docs/compliance.md) |
+| Apparaatherkenning via routers (providermodems via UPnP, UniFi, Meraki, FRITZ!Box, MikroTik, generieke ARP/DHCP/mDNS-route, SNMP achter akkoord), categorieën, CVE/KEV/NCSC, end-of-life, scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
@@ -54,6 +55,9 @@ DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
 # API lokaal (mail via Brevo met BREVO_API_KEY in .env, anders in de console; zie docs/email.md)
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIES=uit npm run api
 
+# Apparaatherkenning zonder hardware (fixtures)
+npm run apparaten -- --demo
+
 # Ook de databasetests draaien
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm test
 ```
@@ -86,10 +90,13 @@ packages/
     test/           tests met een nep-netwerk; draaien zonder internet
   score/            scoremodel: gewichten, factoren, banden, acties in gewone taal
   platform/         accounts, organisaties, rollen, IT-partners, domeinverificatie, audit-log
+  inventory/        assetmodel: waarnemingen samenvoegen tot assets, met herkomst per kenmerk
+  devices/          apparaatherkenning via routers: connectors, categorieën, CVE-koppeling, geheimen
+    fixtures/       antwoorden van routers en voorbeeld-kwetsbaarheidsdata, voor tests en demo
 apps/
   api/              HTTP-API (Hono), los te draaien of later achter Next.js
 db/migrations/      SQL-migraties voor PostgreSQL
-scripts/            hulpscripts (migraties)
+scripts/            hulpscripts (migraties, MAC-prefixregister ophalen)
 docs/               uitleg over scanner en scoremodel
 ```
 

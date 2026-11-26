@@ -23,7 +23,10 @@ export type AssetType =
   | 'mailserver'
   | 'website'
   | 'certificaat'
-  | 'dienst';
+  | 'dienst'
+  // Uit de infra-inventaris (routers en netwerkapparatuur, zie packages/devices).
+  | 'apparaat'
+  | 'netwerkapparaat';
 
 export interface Asset {
   type: AssetType;
@@ -62,6 +65,12 @@ export interface Finding {
   /** Zelfde fout op hetzelfde asset = zelfde vingerafdruk, over scans heen. */
   fingerprint: string;
   vulns?: LinkedVuln[];
+  /**
+   * Factor z voor assets uit de inventaris (blootstelling × beheerd, zie
+   * exposureFactor in packages/inventory). Zonder dit veld volgt z uit
+   * asset.visibility, zoals in Light.
+   */
+  z?: number;
 }
 
 /**

@@ -1,0 +1,121 @@
+{
+ "resultsPerPage": 3,
+ "startIndex": 0,
+ "totalResults": 3,
+ "format": "NVD_CVE",
+ "version": "2.0",
+ "vulnerabilities": [
+  {
+   "cve": {
+    "id": "CVE-2018-14847",
+    "descriptions": [
+     {
+      "lang": "en",
+      "value": "MikroTik RouterOS through 6.42 allows unauthenticated remote attackers to read arbitrary files (Winbox). Vereenvoudigd voor tests."
+     }
+    ],
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "cvssData": {
+        "baseScore": 9.1
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:mikrotik:routeros:*:*:*:*:*:*:*:*",
+          "versionEndIncluding": "6.42"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "cve": {
+    "id": "CVE-2099-1001",
+    "descriptions": [
+     {
+      "lang": "en",
+      "value": "TESTWAARDE: verzonnen lek in FRITZ!OS voor 7.57."
+     }
+    ],
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "cvssData": {
+        "baseScore": 7.5
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:avm:fritz\\!os:*:*:*:*:*:*:*:*",
+          "versionEndExcluding": "7.57"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "cve": {
+    "id": "CVE-2099-1002",
+    "descriptions": [
+     {
+      "lang": "en",
+      "value": "TESTWAARDE: verzonnen lek in RouterOS 7.0 tot 7.12."
+     }
+    ],
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "cvssData": {
+        "baseScore": 6.5
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:o:mikrotik:routeros:*:*:*:*:*:*:*:*",
+          "versionStartIncluding": "7.0",
+          "versionEndExcluding": "7.12"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

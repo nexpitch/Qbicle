@@ -26,6 +26,8 @@ netwerkcode in. Koppelingen en connector komen pas na akkoord op het ontwerp.
 6. Beheerd = ja als MDM/RMM het apparaat kent; nee als er wel een MDM/RMM gekoppeld is en een laptop/telefoon er niet in staat; anders onbekend.
 7. 30 dagen niet gezien = verdwenen.
 
+Apparaten via routers en netwerkapparatuur: zie [apparaatherkenning.md](apparaatherkenning.md).
+
 ## Koppeling met scanner en scoremodel
 
 - `fromScanAsset`: elk asset van de buitenkant-scanner wordt een waarneming.

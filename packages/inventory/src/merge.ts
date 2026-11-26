@@ -29,6 +29,7 @@ export const SOURCE_PRIORITY: Record<SourceKind, number> = {
   connector: 50,
   scanner: 50,
   internetdata: 40,
+  afleiding: 30,
 };
 
 const CERTAINTY_RANK: Record<Certainty, number> = { vastgesteld: 3, opgegeven: 3, mogelijk: 2, onbekend: 1 };
@@ -151,13 +152,13 @@ function toAsset(cluster: Prepared[], now: Date, goneAfter: number, hasManagemen
     const merged = Object.fromEntries(
       Object.entries(attributes).map(([k, v]) => [k, (v as Provenanced<unknown>).value]),
     ) as Attributes;
-    const services = cluster.flatMap((c) => c.obs.attributes.services ?? []);
+    const services = cluster.flatMap((c) => [...(c.obs.attributes.services ?? []), ...(c.obs.inferred?.services ?? [])]);
     const guess = inferCategory({ ...merged, services });
     if (guess) {
       attributes.category = {
         value: guess,
         sourceId: 'afleiding',
-        sourceKind: 'opgegeven',
+        sourceKind: 'afleiding',
         observedAt: new Date(lastSeenMs).toISOString(),
         certainty: 'mogelijk',
       };
@@ -196,18 +197,18 @@ export function resolveAttributes(observations: Observation[]): {
   conflicts: InventoryAsset['conflicts'];
 } {
   const candidates = new Map<AttributeKey, Provenanced<unknown>[]>();
-  for (const obs of observations) {
-    for (const [k, v] of Object.entries(obs.attributes) as Array<[AttributeKey, unknown]>) {
+  const add = (attrs: Attributes, p: Omit<Provenanced<unknown>, 'value'>) => {
+    for (const [k, v] of Object.entries(attrs) as Array<[AttributeKey, unknown]>) {
       if (v === undefined || k === 'services' || k === 'exposure') continue;
       const list = candidates.get(k) ?? [];
-      list.push({
-        value: v,
-        sourceId: obs.source.id,
-        sourceKind: obs.source.kind,
-        observedAt: obs.observedAt,
-        certainty: obs.certainty ?? 'vastgesteld',
-      });
+      list.push({ value: v, ...p });
       candidates.set(k, list);
+    }
+  };
+  for (const obs of observations) {
+    add(obs.attributes, { sourceId: obs.source.id, sourceKind: obs.source.kind, observedAt: obs.observedAt, certainty: obs.certainty ?? 'vastgesteld' });
+    if (obs.inferred) {
+      add(obs.inferred, { sourceId: `${obs.source.id}:afleiding`, sourceKind: 'afleiding', observedAt: obs.observedAt, certainty: 'mogelijk' });
     }
   }
 
@@ -232,7 +233,7 @@ function compareProvenance(a: Provenanced<unknown>, b: Provenanced<unknown>): nu
   );
 }
 
-const PRIMARY_ORDER = ['serial', 'cloud-id', 'upn', 'fqdn', 'url', 'cert', 'mac', 'hostname', 'ip'] as const;
+const PRIMARY_ORDER = ['serial', 'cloud-id', 'upn', 'fqdn', 'url', 'cert', 'mac', 'mac-hash', 'hostname', 'ip'] as const;
 
 function primaryIdentifier(ids: Identifier[]): Identifier {
   for (const type of PRIMARY_ORDER) {
@@ -246,7 +247,7 @@ function defaultKind(ids: Identifier[]): AssetKind {
   if (ids.some((id) => id.type === 'upn')) return 'account';
   if (ids.some((id) => id.type === 'url')) return 'website';
   if (ids.some((id) => id.type === 'fqdn')) return 'domein';
-  if (ids.some((id) => id.type === 'mac' || id.type === 'serial')) return 'apparaat';
+  if (ids.some((id) => id.type === 'mac' || id.type === 'mac-hash' || id.type === 'serial')) return 'apparaat';
   if (ids.every((id) => id.type === 'ip')) return 'ip-adres';
   return 'apparaat';
 }

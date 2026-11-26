@@ -107,7 +107,7 @@ export function score(input: ScoreInput): ScoreResult {
       def = FALLBACK_WEIGHT;
     }
     const m = exploitFactor(f.vulns);
-    const z = VISIBILITY_FACTOR[f.asset.visibility];
+    const z = f.z ?? VISIBILITY_FACTOR[f.asset.visibility];
     const k = CERTAINTY_FACTOR[f.certainty];
     contributions.push({
       fingerprint: f.fingerprint,
