@@ -32,12 +32,30 @@ describe('certificaat', () => {
     ['2026-12-20T00:00:00Z', ['cert.expires_30d']],
     ['2026-11-01T00:00:00Z', ['cert.expired']],
   ])('verloopt %s → %j', async (validTo, keys) => {
-    const n = net((c) => (c.tls![D] = goodTls(D, validTo)));
+    // Certificaat met een looptijd van een jaar.
+    const n = net((c) => {
+      const t = goodTls(D, validTo);
+      t.cert!.validFrom = '2026-01-01T00:00:00.000Z';
+      c.tls![D] = t;
+    });
+    expect((await keysOf(certificateCheck, webCtx(n))).keys).toEqual(keys);
+  });
+  it.each([
+    ['2026-12-20T00:00:00Z', []],
+    ['2026-12-05T00:00:00Z', []],
+    ['2026-11-30T00:00:00Z', ['cert.expires_14d']],
+  ])('kort certificaat (90 dagen) verloopt %s → %j', async (validTo, keys) => {
+    const n = net((c) => {
+      const t = goodTls(D, validTo);
+      t.cert!.validFrom = new Date(new Date(validTo).getTime() - 90 * 86400000).toISOString();
+      c.tls![D] = t;
+    });
     expect((await keysOf(certificateCheck, webCtx(n))).keys).toEqual(keys);
   });
   it.each([
     ['CERT_HAS_EXPIRED', 'cert.expired'],
     ['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'cert.chain_incomplete'],
+    ['SELF_SIGNED_CERT_IN_CHAIN', 'cert.untrusted_ca'],
     ['DEPTH_ZERO_SELF_SIGNED_CERT', 'cert.self_signed'],
     ['CERT_REVOKED', 'cert.invalid'],
   ])('fout %s → %s', async (err, key) => {
@@ -85,6 +103,12 @@ describe('security headers', () => {
       'web.referrer_missing',
       'web.xcto_missing',
     ]);
+  });
+  it('foutpagina (403 botbescherming) wordt niet beoordeeld', async () => {
+    const n = net((c) => (c.http![`https://${D}/`] = { status: 403, headers: {} }));
+    const r = await keysOf(headersCheck, webCtx(n));
+    expect(r.outcome).toBe('unknown');
+    expect(r.keys).toEqual([]);
   });
   it('X-Frame-Options volstaat zonder frame-ancestors; korte HSTS', async () => {
     const n = net(

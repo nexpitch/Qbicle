@@ -1,5 +1,5 @@
 /**
- * Scoremodel Qbicle Light, versie light-2026.11-v0.1.
+ * Scoremodel Qbicle Light, versie light-2026.11-v0.3.
  *
  * Gewichten (b) komen uit het technisch ontwerp waar ze daar genoemd zijn.
  * Gewichten met `voorlopig: true` staan niet in het ontwerp en zijn een eerste
@@ -9,7 +9,47 @@
  * de versie, zodat oude rapporten niet veranderen.
  */
 
-export const MODEL_VERSION = 'light-2026.11-v0.1';
+export const MODEL_VERSION = 'light-2026.11-v0.3';
+
+/**
+ * v0.2, na de eerste testset (22 domeinen, 26-11-2026):
+ * - dezelfde bevindingssleutel op meerdere assets (apex en www) telt één keer
+ *   volledig en daarna met REPEAT_FACTOR;
+ * - per asset telt alleen de zwaarste "kapot certificaat"-bevinding (CERT_BROKEN_KEYS);
+ * - per actie een plafond (ACTION_CAP), zodat hygiëne niet optelt tot hoge urgentie.
+ */
+export const REPEAT_FACTOR = 0.25;
+
+/**
+ * v0.3, na de vaste meetset (packages/scanner/meetset):
+ * - een kapot certificaat (40 -> 45) komt op zichzelf in Hoge urgentie: bezoekers
+ *   krijgen een blokkerende waarschuwing, net als bij kapotte DNSSEC;
+ * - softwareversies worden gekoppeld aan bekende lekken en einde-ondersteuning
+ *   (web.software_*), met bronvermelding;
+ * - een domein zonder MX krijgt eigen sleutels voor SPF/DMARC (mail-dichtzetten);
+ * - KEV tilt de band alleen op als de bevinding vastgesteld is, niet bij "mogelijk"
+ *   (bijvoorbeeld een distributie die lekken terugzet zonder het versienummer te verhogen);
+ * - onder COVERAGE_WARN_PCT dekking geeft het resultaat een waarschuwing.
+ */
+export const COVERAGE_WARN_PCT = 80;
+
+/** Bevindingen die samen één probleem zijn: een certificaat dat browsers weigeren. */
+export const CERT_BROKEN_KEYS = new Set([
+  'cert.expired',
+  'cert.invalid',
+  'cert.chain_incomplete',
+  'cert.self_signed',
+  'cert.untrusted_ca',
+  'cert.name_mismatch',
+]);
+
+/** Maximaal gewicht per actie (voorlopig). */
+export const ACTION_CAP: Record<string, number> = {
+  'website-headers': 10,
+  'cookies-beveiligen': 5,
+  'versies-verbergen': 5,
+  'mail-dichtzetten': 25,
+};
 
 /** Deler in de afvlakking 100 × (1 − e^(−som/DIVISOR)). */
 export const DIVISOR = 60;
@@ -79,6 +119,16 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'Aanvallers zoeken gericht naar websites met een bekende, kwetsbare versie.',
     forWho: 'webbouwer',
   },
+  'software-bijwerken': {
+    title: 'Laat de software van je website bijwerken naar een ondersteunde versie',
+    why: 'Je website draait software met bekende lekken of zonder beveiligingsupdates. Aanvallers zoeken daar gericht naar.',
+    forWho: 'webbouwer',
+  },
+  'mail-dichtzetten': {
+    title: 'Zet je domein dicht voor nepmail (SPF en DMARC op "weigeren")',
+    why: 'Je mailt niet vanaf dit domein, maar anderen kunnen het wel als afzender misbruiken. Twee DNS-regels voorkomen dat.',
+    forWho: 'it-partner',
+  },
   'dnssec-aanzetten': {
     title: 'Vraag je domeinbeheerder om DNSSEC aan te zetten',
     why: 'DNSSEC voorkomt dat bezoekers en mail via vervalste antwoorden naar een verkeerde server gaan.',
@@ -144,11 +194,12 @@ export const ACTIONS: Record<string, ActionDef> = {
 
 export const WEIGHTS: Record<string, WeightDef> = {
   // Certificaat
-  'cert.expired': { b: 40, action: 'cert-vernieuwen' },
-  'cert.invalid': { b: 40, action: 'cert-vernieuwen' },
-  'cert.chain_incomplete': { b: 40, action: 'cert-vernieuwen' },
-  'cert.self_signed': { b: 40, action: 'cert-vernieuwen' },
-  'cert.name_mismatch': { b: 40, action: 'cert-vernieuwen' },
+  'cert.expired': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
+  'cert.invalid': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
+  'cert.chain_incomplete': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
+  'cert.self_signed': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
+  'cert.untrusted_ca': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
+  'cert.name_mismatch': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
   'cert.expires_14d': { b: 20, action: 'cert-automatisch' },
   'cert.expires_30d': { b: 10, action: 'cert-automatisch', voorlopig: true },
 
@@ -162,6 +213,10 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'spf.neutral_all': { b: 10, action: 'spf-repareren', voorlopig: true },
   'spf.no_all': { b: 5, action: 'spf-repareren', voorlopig: true },
 
+  // E-mail op een domein zonder MX (verstuurt geen mail): dichtzetten, iets lager gewicht.
+  'spf.missing_no_mail': { b: 10, action: 'mail-dichtzetten', voorlopig: true },
+  'dmarc.missing_no_mail': { b: 15, action: 'mail-dichtzetten', voorlopig: true },
+
   // E-mail: DMARC
   'dmarc.missing': { b: 20, action: 'dmarc-instellen' },
   'dmarc.multiple': { b: 20, action: 'dmarc-instellen', voorlopig: true },
@@ -173,7 +228,7 @@ export const WEIGHTS: Record<string, WeightDef> = {
 
   // Domein
   'dnssec.missing': { b: 3, action: 'dnssec-aanzetten' },
-  'dnssec.invalid': { b: 30, action: 'dnssec-repareren', voorlopig: true },
+  'dnssec.invalid': { b: 45, action: 'dnssec-repareren', voorlopig: true },
   'caa.missing': { b: 2, action: 'caa-instellen', voorlopig: true },
 
   // Website
@@ -187,6 +242,10 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'web.cookie_insecure': { b: 5, action: 'cookies-beveiligen', voorlopig: true },
   'web.cookie_no_httponly': { b: 2, action: 'cookies-beveiligen', voorlopig: true },
   'web.version_disclosed': { b: 3, action: 'versies-verbergen', voorlopig: true },
+  // Software met bekende lekken (m volgt uit KEV/EPSS/NCSC) of zonder updates.
+  'web.software_kwetsbaar': { b: 25, action: 'software-bijwerken', voorlopig: true },
+  'web.software_einde_ondersteuning': { b: 15, action: 'software-bijwerken', voorlopig: true },
+  'web.software_einde_binnenkort': { b: 3, action: 'software-bijwerken', voorlopig: true },
   'web.securitytxt_missing': { b: 3, action: 'securitytxt-plaatsen' },
   'web.securitytxt_expired': { b: 2, action: 'securitytxt-plaatsen', voorlopig: true },
 

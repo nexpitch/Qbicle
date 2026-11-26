@@ -25,11 +25,17 @@ export const dmarcCheck: Check = {
     const findings: FindingDraft[] = [];
 
     if (records.length === 0) {
+      // Bij twijfel (MX-opvraging mislukt) gaan we ervan uit dat het domein wel mailt.
+      const mx = await net.resolveMx(domain).catch(() => null);
+      const noMail = mx !== null && mx.length === 0;
+      evidence.mx = mx?.map((m) => m.exchange) ?? null;
       findings.push({
-        key: 'dmarc.missing',
+        key: noMail ? 'dmarc.missing_no_mail' : 'dmarc.missing',
         certainty: 'vastgesteld',
         title: 'DMARC staat niet aan',
-        detail: `Er is geen DMARC-record op ${name}. Ontvangers weten dan niet wat ze moeten doen met mail die zich voordoet als ${domain}.`,
+        detail: noMail
+          ? `Er is geen DMARC-record op ${name}. ${domain} ontvangt geen mail, maar kan wel als afzender van nepmail worden misbruikt. Met "v=DMARC1; p=reject" weigeren ontvangers zulke mail.`
+          : `Er is geen DMARC-record op ${name}. Ontvangers weten dan niet wat ze moeten doen met mail die zich voordoet als ${domain}.`,
       });
       return { outcome: 'finding', findings, evidence };
     }

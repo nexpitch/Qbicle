@@ -4,6 +4,7 @@ import { caaCheck, dnssecCheck } from './checks/dns.ts';
 import { dkimCheck } from './checks/dkim.ts';
 import { dmarcCheck } from './checks/dmarc.ts';
 import { spfCheck } from './checks/spf.ts';
+import { softwareCheck } from './checks/software.ts';
 import { certificateCheck } from './checks/tls.ts';
 import {
   cookiesCheck,
@@ -30,6 +31,7 @@ export const CHECKS: Check[] = [
   headersCheck,
   cookiesCheck,
   versionDisclosureCheck,
+  softwareCheck,
   securityTxtCheck,
 ];
 
@@ -66,9 +68,27 @@ export class OptOutError extends Error {}
 /** Het domein bestaat niet, of DNS werkt niet: dan zeggen we niets, in plaats van alles "ontbreekt". */
 export class DomainNotFoundError extends Error {}
 
+/**
+ * Bestaat www alleen via een wildcard-record (*.domein)? Dan is het geen eigen
+ * website maar een bijproduct, vooral bij subdomeinen als invoer. We vergelijken
+ * met een naam die zeker niet bestaat.
+ */
+async function wwwIsWildcard(net: Net, domain: string): Promise<boolean> {
+  const probe = `qbicle-${Math.random().toString(36).slice(2, 10)}.${domain}`;
+  try {
+    const [wild, www] = await Promise.all([net.resolveAddresses(probe), net.resolveAddresses(`www.${domain}`)]);
+    if (wild.length === 0) return false;
+    const w = new Set(wild);
+    return www.length > 0 && www.every((a) => w.has(a));
+  } catch {
+    return false;
+  }
+}
+
 /** Website-kandidaten: het hoofddomein en www. Subdomeinen via CT-logs volgen in een latere fase. */
 async function discoverWebsites(net: Net, domain: string): Promise<WebsiteNote[]> {
-  const hosts = [domain, `www.${domain}`];
+  const hosts = [domain];
+  if (!domain.startsWith('www.') && !(await wwwIsWildcard(net, domain))) hosts.push(`www.${domain}`);
   return Promise.all(
     hosts.map(async (host): Promise<WebsiteNote> => {
       try {
@@ -166,9 +186,18 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     .filter((w) => w.status === 'gevonden')
     .map((w) => ({ type: 'website', value: `https://${w.host}`, source: 'dns', visibility: 'primair' }));
 
+  // Is DNSSEC kapot, dan geven gewone resolvers geen antwoord en lijkt alles
+  // "ontbreekt". Alleen de DNSSEC-check is dan te vertrouwen.
+  const dnssecStatus = checks.some((c) => c.key === 'dns.dnssec')
+    ? await memo(`dnssec:${domain}`, () => opts.net.dnssec(domain)).catch(() => null)
+    : null;
+  const bogus = dnssecStatus?.bogus === true;
+
   const jobs: Promise<CheckResult>[] = [];
   for (const check of checks) {
-    if (check.appliesTo === 'domein') {
+    if (bogus && check.key !== 'dns.dnssec') {
+      jobs.push(Promise.resolve(bogusResult(check, domainAsset)));
+    } else if (check.appliesTo === 'domein') {
       jobs.push(runCheck(check, { domain, asset: domainAsset, net: opts.net, now, memo }));
     } else if (webAssets.length > 0) {
       for (const asset of webAssets) jobs.push(runCheck(check, { domain, asset, net: opts.net, now, memo }));
@@ -190,6 +219,21 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     checks: results,
     findings,
     score: score({ findings, outcomes: results.map((r) => r.outcome) }),
+  };
+}
+
+function bogusResult(check: Check, asset: Asset): CheckResult {
+  return {
+    checkKey: check.key,
+    level: check.level,
+    group: check.group,
+    title: check.title,
+    asset,
+    outcome: 'unknown',
+    findings: [],
+    evidence: { reason: 'dnssec-bogus' },
+    message: 'Door de DNSSEC-fout geven veel resolvers geen antwoord voor dit domein, dus dit is niet gecontroleerd.',
+    durationMs: 0,
   };
 }
 

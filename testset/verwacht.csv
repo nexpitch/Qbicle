@@ -1,0 +1,28 @@
+# Verwachte urgentieband per domein van de testset (26-11-2026), voor
+#   npm run scan -- --bestand testset/testset.txt --uit testset/resultaten --verwacht testset/verwacht.csv
+# Banden: weinig, aandacht, hoog, direct. Meerdere toegestaan met |.
+# Grondslag: analyse-testset-2026-11-26 (handmatig beoordeeld). Echte sites veranderen;
+# pas een regel aan als de site zelf aantoonbaar is veranderd, niet om de scanner te laten slagen.
+domein;band
+google.com;weinig|aandacht
+bol.com;weinig|aandacht
+microsoft.com;weinig|aandacht
+cloudflare.com;weinig
+github.com;weinig
+nu.nl;weinig|aandacht
+rijksoverheid.nl;weinig
+nlnetlabs.nl;aandacht
+bitsoffreedom.nl;aandacht
+fietsersbond.nl;aandacht
+tweakers.net;weinig|aandacht
+internet.nl;weinig
+ncsc.nl;weinig
+sidn.nl;weinig
+wrong.host.badssl.com;hoog|direct
+incomplete-chain.badssl.com;hoog|direct
+http.badssl.com;hoog|direct
+self-signed.badssl.com;hoog|direct
+untrusted-root.badssl.com;hoog|direct
+expired.badssl.com;hoog|direct
+dnssec-failed.org;hoog|direct
+neverssl.com;aandacht|hoog

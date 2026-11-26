@@ -90,7 +90,8 @@ export const spfCheck: Check = {
 
     if (records.length === 0) {
       findings.push({
-        key: 'spf.missing',
+        // Zonder MX mailt het domein waarschijnlijk niet: dan is het advies "dichtzetten".
+        key: mx.length > 0 ? 'spf.missing' : 'spf.missing_no_mail',
         certainty: 'vastgesteld',
         title: 'Er is niet vastgelegd wie namens dit domein mag mailen',
         detail:

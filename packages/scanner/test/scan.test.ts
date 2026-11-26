@@ -16,7 +16,9 @@ describe('scanDomain', () => {
     expect(r.score.urgency).toBe(0);
     expect(r.score.band.label).toBe('Weinig urgent');
     // DKIM is ok, alles is gecontroleerd
-    expect(r.score.coverage).toEqual({ done: CHECKS.length, applicable: CHECKS.length, pct: 100 });
+    // De softwarecheck is n.v.t.: de website vertelt geen versies.
+    expect(r.score.coverage).toEqual({ done: CHECKS.length - 1, applicable: CHECKS.length - 1, pct: 100 });
+    expect(r.score.coverageWarning).toBeNull();
   });
 
   it('typisch MKB-domein: geen DMARC, verouderde website', async () => {
@@ -62,6 +64,26 @@ describe('scanDomain', () => {
     cfg.addresses![`www.${D}`] = ['203.0.114.11'];
     const r = await scanDomain(D, { net: fakeNet(cfg), now: NOW });
     expect(r.assets.map((a) => a.value)).toEqual([D, `https://${D}`, `https://www.${D}`]);
+  });
+
+  it('www dat alleen via een wildcard bestaat wordt niet gescand', async () => {
+    const cfg = healthyConfig(D);
+    cfg.addresses![`www.${D}`] = ['203.0.114.10'];
+    const net = fakeNet(cfg);
+    const orig = net.resolveAddresses;
+    // Elke onbekende naam onder het domein wijst naar hetzelfde adres (wildcard).
+    net.resolveAddresses = async (n) => (n.startsWith('qbicle-') ? ['203.0.114.10'] : orig(n));
+    const r = await scanDomain(D, { net, now: NOW });
+    expect(r.assets.map((a) => a.value)).toEqual([D, `https://${D}`]);
+  });
+
+  it('kapotte DNSSEC: alleen de DNSSEC-bevinding, de rest onbekend', async () => {
+    const cfg = healthyConfig(D);
+    cfg.dnssec = { [D]: { hasDs: true, validated: false, bogus: true } };
+    cfg.txt = {};
+    const r = await scanDomain(D, { net: fakeNet(cfg), now: NOW });
+    expect(r.findings.map((f) => f.key)).toEqual(['dnssec.invalid']);
+    expect(r.checks.filter((c) => c.checkKey !== 'dns.dnssec').every((c) => c.outcome === 'unknown')).toBe(true);
   });
 
   it('niet-bestaand domein geeft geen valse bevindingen maar een melding', async () => {

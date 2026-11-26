@@ -1,7 +1,11 @@
 import {
   ACTIONS,
+  ACTION_CAP,
   BANDS,
   CERTAINTY_FACTOR,
+  CERT_BROKEN_KEYS,
+  COVERAGE_WARN_PCT,
+  REPEAT_FACTOR,
   DIVISOR,
   FALLBACK_WEIGHT,
   MAX_ACTIONS,
@@ -21,7 +25,13 @@ export interface Contribution {
   m: number;
   z: number;
   k: number;
-  /** b × m × z × k */
+  /**
+   * Herhalingsfactor: 1 voor de zwaarste bevinding per sleutel, REPEAT_FACTOR
+   * voor dezelfde sleutel op een ander asset, 0 als een zwaardere
+   * certificaatfout op hetzelfde asset al meetelt.
+   */
+  r: number;
+  /** b × m × z × k × r, vóór het plafond per actie */
   weight: number;
 }
 
@@ -59,6 +69,11 @@ export interface ScoreResult {
   actionCount: number;
   /** Sleutels zonder gewicht in het model; die tellen mee met FALLBACK_WEIGHT. */
   unknownKeys: string[];
+  /**
+   * Gezet als de dekking onder COVERAGE_WARN_PCT ligt: dan is een lage score geen
+   * goed nieuws, want een groot deel is niet gecontroleerd. Het rapport toont dit naast de score.
+   */
+  coverageWarning: string | null;
 }
 
 export interface ScoreInput {
@@ -96,6 +111,7 @@ export function score(input: ScoreInput): ScoreResult {
   const seen = new Set<string>();
   const contributions: Contribution[] = [];
 
+  const raw: Omit<Contribution, 'r'>[] = [];
   for (const f of input.findings) {
     // Dezelfde bevinding twee keer aanleveren mag de score niet verdubbelen.
     if (seen.has(f.fingerprint)) continue;
@@ -109,23 +125,50 @@ export function score(input: ScoreInput): ScoreResult {
     const m = exploitFactor(f.vulns);
     const z = f.z ?? VISIBILITY_FACTOR[f.asset.visibility];
     const k = CERTAINTY_FACTOR[f.certainty];
-    contributions.push({
-      fingerprint: f.fingerprint,
-      key: f.key,
-      action: def.action,
-      b: def.b,
-      m,
-      z,
-      k,
-      weight: def.b * m * z * k,
-    });
+    raw.push({ fingerprint: f.fingerprint, key: f.key, action: def.action, b: def.b, m, z, k, weight: def.b * m * z * k });
   }
 
-  const totalWeight = contributions.reduce((s, c) => s + c.weight, 0);
+  // Zwaarste eerst, zodat die volledig telt en herhalingen de korting krijgen.
+  const assetOf = new Map(input.findings.map((f) => [f.fingerprint, `${f.asset.type}:${f.asset.value}`]));
+  const order = raw.map((c, i) => i).sort((a, b) => raw[b]!.weight - raw[a]!.weight || a - b);
+  const keySeen = new Set<string>();
+  const certBrokenSeen = new Set<string>();
+  const factors = new Array<number>(raw.length).fill(1);
+  for (const i of order) {
+    const c = raw[i]!;
+    const asset = assetOf.get(c.fingerprint)!;
+    if (CERT_BROKEN_KEYS.has(c.key)) {
+      if (certBrokenSeen.has(asset)) {
+        factors[i] = 0;
+        continue;
+      }
+      certBrokenSeen.add(asset);
+      // Kapot certificaat op een tweede asset telt als herhaling.
+      if (keySeen.has('cert.broken')) factors[i] = REPEAT_FACTOR;
+      keySeen.add('cert.broken');
+      continue;
+    }
+    if (keySeen.has(c.key)) factors[i] = REPEAT_FACTOR;
+    keySeen.add(c.key);
+  }
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]!;
+    const r = factors[i]!;
+    contributions.push({ ...c, r, weight: Math.round(c.weight * r * 100) / 100 });
+  }
+
+  // Plafond per actie.
+  const perAction = new Map<string, number>();
+  for (const c of contributions) perAction.set(c.action, (perAction.get(c.action) ?? 0) + c.weight);
+  const capped = new Map<string, number>();
+  for (const [a, w] of perAction) capped.set(a, Math.min(w, ACTION_CAP[a] ?? Infinity));
+
+  const totalWeight = [...capped.values()].reduce((s, w) => s + w, 0);
   const urgency = urgencyFromWeight(totalWeight);
   let band = bandFor(urgency);
 
-  const hasKev = input.findings.some((f) => f.vulns?.some((v) => v.inKev));
+  // Alleen een vastgesteld actief misbruikt lek tilt de band op; "mogelijk" telt via m en k mee.
+  const hasKev = input.findings.some((f) => f.certainty === 'vastgesteld' && f.vulns?.some((v) => v.inKev));
   let bandRaisedByKev = false;
   const hoog = BANDS.find((b) => b.key === 'hoog')!;
   if (hasKev && band.min < hoog.min) {
@@ -156,9 +199,16 @@ export function score(input: ScoreInput): ScoreResult {
     a.fingerprints.push(c.fingerprint);
     byAction.set(c.action, a);
   }
+  for (const a of byAction.values()) a.weight = Math.round((capped.get(a.key) ?? a.weight) * 100) / 100;
   const actions = [...byAction.values()].sort(
     (x, y) => y.weight - x.weight || x.key.localeCompare(y.key),
   );
+
+  const coverage = coverageOf(input.outcomes);
+  const coverageWarning =
+    coverage.applicable > 0 && coverage.pct < COVERAGE_WARN_PCT
+      ? `Let op: we konden maar ${coverage.pct}% van de controles afronden. De score zegt daardoor minder dan normaal; de rest is niet gecontroleerd en dus niet per se in orde.`
+      : null;
 
   return {
     modelVersion: MODEL_VERSION,
@@ -166,10 +216,11 @@ export function score(input: ScoreInput): ScoreResult {
     band: { key: band.key, label: band.label },
     bandRaisedByKev,
     totalWeight: Math.round(totalWeight * 100) / 100,
-    coverage: coverageOf(input.outcomes),
+    coverage,
     contributions,
     topActions: actions.slice(0, MAX_ACTIONS),
     actionCount: actions.length,
     unknownKeys: [...unknownKeys].sort(),
+    coverageWarning,
   };
 }

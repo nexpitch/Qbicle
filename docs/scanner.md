@@ -25,9 +25,10 @@ Bestaat het domein niet in DNS, of werkt DNS niet, dan stopt de scan met een mel
 | `tls.certificate` | 1 | verlopen, keten onvolledig, zelfgemaakt, ongeldig, verkeerde naam, verloopt binnen 14 of 30 dagen |
 | `web.https_redirect` | 1 | http blijft onbeveiligd |
 | `web.headers` | 1 | HSTS ontbreekt of te kort, geen CSP, geen nosniff, insluiten niet afgeschermd, geen Referrer-Policy |
-| `web.cookies` | 1 | cookie zonder Secure; zonder HttpOnly (Mogelijk risico) |
+| `web.cookies` | 1 | cookie zonder Secure; sessie- of inlogcookie zonder HttpOnly (Mogelijk risico) |
 | `web.version_disclosure` | 1 | softwareversie zichtbaar in headers of meta generator; levert ook de software-inventaris voor fase 4 |
-| `web.security_txt` | 1 | ontbreekt of verlopen |
+| `web.software` | 1 | zichtbare software met bekende lekken (CVE, KEV) of zonder beveiligingsupdates, met bronvermelding; zie [scanner-kwaliteit.md](scanner-kwaliteit.md) |
+| `web.security_txt` | 1 | ontbreekt of verlopen; doorverwijzing naar een geldige security.txt elders is in orde |
 
 Websitechecks draaien op het hoofddomein en `www`, als die een publiek IP-adres hebben.
 

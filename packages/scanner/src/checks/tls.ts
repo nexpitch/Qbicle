@@ -9,7 +9,14 @@ const CHAIN_ERRORS = new Set([
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
 ]);
-const SELF_SIGNED = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN']);
+const SELF_SIGNED = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT']);
+/** Keten eindigt bij een root die browsers niet kennen. */
+const UNTRUSTED_CA = new Set(['SELF_SIGNED_CERT_IN_CHAIN']);
+/**
+ * Certificaten met een korte looptijd (zoals Let's Encrypt, 90 dagen) worden
+ * standaard pas 30 dagen voor afloop vernieuwd; dan is "binnen een maand" normaal.
+ */
+const SHORT_LIVED_DAYS = 100;
 
 export function getTls(ctx: CheckContext, host: string): Promise<TlsInfo> {
   return ctx.memo(`tls:${host}`, () => ctx.net.tlsHandshake(host, 443));
@@ -66,6 +73,13 @@ export const certificateCheck: Check = {
         title: 'Het certificaat is niet door een erkende partij uitgegeven',
         detail: `${host} gebruikt een zelfgemaakt certificaat. Browsers vertrouwen dat niet.`,
       });
+    } else if (err && UNTRUSTED_CA.has(err)) {
+      findings.push({
+        key: 'cert.untrusted_ca',
+        certainty: 'vastgesteld',
+        title: 'Het certificaat komt van een partij die browsers niet vertrouwen',
+        detail: `Het certificaat van ${host} is uitgegeven door ${info.cert.issuer ?? 'een onbekende partij'}, die niet in de lijst van erkende uitgevers staat.`,
+      });
     } else if (err) {
       findings.push({
         key: 'cert.invalid',
@@ -84,15 +98,18 @@ export const certificateCheck: Check = {
       });
     }
 
+    const lifetimeDays = Math.floor((validTo.getTime() - new Date(info.cert.validFrom).getTime()) / DAY);
+    evidence.lifetimeDays = lifetimeDays;
+    const shortLived = lifetimeDays <= SHORT_LIVED_DAYS;
     if (daysLeft >= 0 && err !== 'CERT_HAS_EXPIRED') {
-      if (daysLeft <= 14) {
+      if (daysLeft <= (shortLived ? 7 : 14)) {
         findings.push({
           key: 'cert.expires_14d',
           certainty: 'vastgesteld',
-          title: 'Het certificaat verloopt binnen twee weken',
+          title: shortLived ? 'Het certificaat verloopt binnen een week' : 'Het certificaat verloopt binnen twee weken',
           detail: `Het certificaat van ${host} verloopt op ${dateNl}, over ${daysLeft} dagen.`,
         });
-      } else if (daysLeft <= 30) {
+      } else if (!shortLived && daysLeft <= 30) {
         findings.push({
           key: 'cert.expires_30d',
           certainty: 'vastgesteld',

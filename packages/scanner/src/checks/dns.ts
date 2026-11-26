@@ -34,8 +34,8 @@ export const dnssecCheck: Check = {
   group: 'domein',
   appliesTo: 'domein',
   title: 'DNSSEC: bescherming tegen vervalste DNS-antwoorden',
-  async run({ domain, net }) {
-    const s = await net.dnssec(domain);
+  async run({ domain, net, memo }) {
+    const s = await memo(`dnssec:${domain}`, () => net.dnssec(domain));
     if (!s) {
       return {
         outcome: 'unknown',

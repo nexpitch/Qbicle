@@ -26,6 +26,7 @@ export function formatReport(r: ScanReport): string {
   lines.push('');
   lines.push(`Urgentie: ${s.urgency}/100 (${s.band.label})`);
   lines.push(`Dekking: ${s.coverage.pct}% (${s.coverage.done} van ${s.coverage.applicable} controles afgerond)`);
+  if (s.coverageWarning) lines.push(s.coverageWarning);
   lines.push('');
   if (s.topActions.length === 0) {
     lines.push('Geen acties nodig op basis van wat we konden controleren.');
@@ -41,7 +42,11 @@ export function formatReport(r: ScanReport): string {
   for (const c of r.checks) {
     const where = c.asset.type === 'website' ? ` (${new URL(c.asset.value).hostname})` : '';
     lines.push(`- ${OUTCOME_NL[c.outcome].padEnd(19)} ${c.title}${where}`);
-    for (const f of c.findings) lines.push(`    · ${f.title} [${CERTAINTY_NL[f.certainty]}]`);
+    for (const f of c.findings) {
+      lines.push(`    · ${f.title} [${CERTAINTY_NL[f.certainty]}]`);
+      if (f.vulns?.length) lines.push(`      ${f.detail}`);
+      for (const src of f.sources ?? []) lines.push(`      Bron: ${src.name} ${src.url}`);
+    }
     if (c.message && c.outcome !== 'finding') lines.push(`    ${c.message}`);
   }
   return lines.join('\n');
