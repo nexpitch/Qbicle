@@ -9,9 +9,15 @@
  *   QBICLE_ROUTER_WACHTWOORD=... npm run apparaten -- --product mikrotik --url https://192.168.88.1 --gebruiker qbicle --cert router.pem
  *   QBICLE_ROUTER_SLEUTEL=... npm run apparaten -- --product unifi --url https://192.168.1.1 --cert console.pem
  *
- * Er wordt niets opgeslagen; de uitvoer gaat alleen naar je terminal.
+ *   # Eerste test op je eigen netwerk (providermodem via UPnP + ARP-tabel van je computer).
+ *   # Op een Mac doet scripts/mijn-netwerk.sh dit allemaal voor je, via Docker.
+ *   npm run apparaten -- --lokaal --gateway 192.168.2.254 --arp arp.txt --uit netwerk
+ *
+ * Bij --product en --demo wordt niets opgeslagen; de uitvoer gaat alleen naar je terminal.
+ * Bij --lokaal komen een overzicht (rapport.html) en de inventaris (JSON) in de map van --uit.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Source } from '@qbicle/inventory';
 import { createConnector } from './connectors/index.ts';
@@ -23,6 +29,8 @@ import { DEFAULT_PRIVACY } from './privacy.ts';
 import { Secret, orgPseudonymKey } from './secrets.ts';
 import type { RouterConnector, RouterProduct } from './types.ts';
 import { VulnDb } from './vulns/db.ts';
+import { runLocal } from './lokaal.ts';
+import { renderReport } from './rapport.ts';
 
 const PRODUCTS: RouterProduct[] = ['unifi', 'fritzbox', 'mikrotik', 'meraki'];
 
@@ -37,6 +45,11 @@ async function main(): Promise<number> {
       gebruiker: { type: 'string' },
       cert: { type: 'string' },
       site: { type: 'string' },
+      lokaal: { type: 'boolean' },
+      gateway: { type: 'string' },
+      arp: { type: 'string' },
+      uit: { type: 'string' },
+      ping: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -44,6 +57,8 @@ async function main(): Promise<number> {
     console.log(readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0]!.replace(/^#!.*\n\/\*\*?/, '').replace(/^ \* ?/gm, ''));
     return 0;
   }
+
+  if (values.lokaal) return local(values);
 
   const now = new Date(values.demo ? '2026-11-26T12:00:00Z' : Date.now());
   let connectors: Array<{ connector: RouterConnector; source: Source }>;
@@ -97,6 +112,37 @@ async function main(): Promise<number> {
     console.log(JSON.stringify({ sources: result.sources, readouts: result.readouts.map((r) => ({ ...r, clients: r.clients.length })), clients: result.clients, assets: result.assets, components: result.components, vulns: result.vulns.map((v) => ({ asset: v.component.assetKey, cve: v.cve.id, certainty: v.certainty, kev: Boolean(v.kev), ncsc: v.ncsc?.id })), findings: result.findings, score: result.score }, null, 2));
   } else print(result);
   return result.sources.some((s) => s.outcome === 'error') ? 2 : 0;
+}
+
+async function local(values: { gateway?: string; arp?: string; uit?: string; ping?: boolean; json?: boolean }): Promise<number> {
+  if (!values.gateway || !values.arp) throw new Error('Geef --gateway (adres van je modem) en --arp (bestand met de uitvoer van arp -a)');
+  const ouiFile = process.env.QBICLE_OUI_FILE;
+  const oui = ouiFile && existsSync(ouiFile) ? OuiDb.fromFile(ouiFile) : OuiDb.empty();
+  const now = new Date();
+  const result = await runLocal({ gateway: values.gateway, tables: [{ format: 'arp-unix', content: readFileSync(values.arp, 'utf8') }], oui, now });
+  const out = values.uit ?? '.';
+  mkdirSync(out, { recursive: true });
+  const stamp = now.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+  // De inventaris van deze test, om later te vergelijken of in de database te laden.
+  const inventory = {
+    gemaakt: now.toISOString(),
+    gateway: result.gateway,
+    upnp: result.upnpLocation ?? null,
+    bronnen: result.sources,
+    meldingen: [...result.notes, ...result.readouts.flatMap((r) => r.warnings)],
+    assets: result.assets,
+    bevindingen: result.findings,
+    urgentie: { score: result.score.urgency, band: result.score.band.label },
+  };
+  writeFileSync(join(out, `inventaris-${stamp}.json`), JSON.stringify(inventory, null, 2));
+  writeFileSync(join(out, 'rapport.html'), renderReport(result, { generatedAt: now, pingSweep: Boolean(values.ping) }));
+  if (values.json) console.log(JSON.stringify(inventory, null, 2));
+  else {
+    print(result);
+    for (const n of result.notes) console.log(`! ${n}`);
+    console.log(`\nOverzicht opgeslagen in ${join(out, 'rapport.html')}`);
+  }
+  return 0;
 }
 
 function env(name: string): string {

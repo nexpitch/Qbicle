@@ -20,7 +20,7 @@ import { pseudonymizeMac } from './secrets.ts';
  */
 const DEVICE_WORDS = new Set(
   (
-    'iphone ipad ipod galaxy android pixel macbook pro air max mini plus ultra note tab watch laptop desktop pc tablet phone ' +
+    'deco tapo kasa repeater extender versterker mesh iphone ipad ipod galaxy android pixel macbook pro air max mini plus ultra note tab watch laptop desktop pc tablet phone ' +
     'telefoon van de het den der of s my mijn the and en kantoor office keuken woonkamer hal gang receptie vergaderruimte ' +
     'boven beneden werkplaats magazijn kantine zolder garage local lan home thinkpad surface xps latitude elitebook probook ' +
     'zenbook vivobook chromecast apple samsung xiaomi redmi oneplus huawei google amazon fire stick kindle playstation xbox ' +

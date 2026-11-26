@@ -17,7 +17,7 @@ describe('ARP- en DHCP-tabellen (oudere routers)', () => {
     const out = parseTable({ format: 'arp-unix', content: '? (192.168.1.40) at 0:1b:a9:aa:bb:c on en0 ifscope [ethernet]\nprinter.lan (192.168.1.41) at c0:56:e3:12:34:56 on en0 [ethernet]\n' });
     expect(out.map((c) => [c.ip, c.mac, c.hostname])).toEqual([
       ['192.168.1.40', '00:1b:a9:aa:bb:0c', undefined],
-      ['192.168.1.41', 'c0:56:e3:12:34:56', 'printer.lan'],
+      ['192.168.1.41', 'c0:56:e3:12:34:56', 'printer'], // zoekdomein (.lan, .home) eraf,
     ]);
   });
 

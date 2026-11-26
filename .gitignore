@@ -9,3 +9,6 @@ coverage/
 testset/testset.txt
 testset/resultaten/
 data/oui.csv
+
+# Eerste netwerktest: bevat MAC-adressen en namen van apparaten (persoonsgegevens)
+netwerk/

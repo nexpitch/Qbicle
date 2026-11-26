@@ -5,6 +5,7 @@
 #   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
 #                                                            testset scannen (map ./testset)
 #   docker compose --profile api up api                      API op http://localhost:8080/api/v1
+#   bash scripts/mijn-netwerk.sh                             eerste test eigen netwerk (Mac), zie docs/eerste-netwerktest.md
 services:
   db:
     image: postgres:16
@@ -41,6 +42,16 @@ services:
       QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     volumes:
       - ./testset:/data
+
+  # Eerste test eigen netwerk: start via scripts/mijn-netwerk.sh (maakt de ARP-tabel op de Mac).
+  apparaten:
+    build: .
+    profiles: ["tools"]
+    environment:
+      QBICLE_OUI_FILE: /data/oui.csv
+    volumes:
+      - ./netwerk:/data
+    entrypoint: ["npx", "--no-install", "tsx", "packages/devices/src/cli.ts"]
 
   api:
     build: .

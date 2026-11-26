@@ -54,7 +54,9 @@ const VENDOR_RULES: Rule[] = [
   { category: 'server', on: ['fabrikant'], re: /vmware|supermicro|super micro|proxmox|xen/, points: 3, reason: 'fabrikant {v} wijst op een server of virtuele machine' },
   { category: 'server', on: ['fabrikant'], re: /raspberry pi/, points: 3, reason: 'een Raspberry Pi: kleine computer, meestal als server of besturing' },
   { category: 'router', on: ['fabrikant'], re: /routerboard|mikrotik|avm audiovisuelles|draytek|zyxel|fortinet|sophos|watchguard|netgate|sonicwall|juniper|cisco meraki/, points: 2, reason: 'fabrikant {v} maakt netwerkapparatuur' },
-  { category: 'accesspoint', on: ['fabrikant'], re: /ubiquiti|tp-link|tp link|aruba|ruckus|cambium|engenius|netgear|cisco/, points: 1, reason: 'fabrikant {v} maakt netwerkapparatuur' },
+  { category: 'accesspoint', on: ['fabrikant'], re: /ubiquiti|aruba|ruckus|cambium|engenius|netgear|cisco/, points: 1, reason: 'fabrikant {v} maakt netwerkapparatuur' },
+  // TP-Link: in Nederland vooral Deco-wifi en versterkers; Tapo-camera's en -stekkers herkennen we aan de naam.
+  { category: 'accesspoint', on: ['fabrikant'], re: /tp-link|tp link/, points: 3, reason: 'fabrikant {v} maakt vooral wifi-apparatuur (zoals Deco)' },
 ];
 
 // Hostnamen en modelnamen zoals apparaten ze zelf kiezen.
@@ -71,8 +73,9 @@ const NAME_RULES: Rule[] = [
   { category: 'zonnepanelen', on: ['hostnaam', 'model'], re: /^sma\d|sunny-?(boy|tripower)|solaredge|fronius|envoy|enphase|growatt|goodwe|sungrow|sun2000|omvormer|inverter|solarman|hoymiles|^dtu-/, points: 6, reason: '{s} "{x}" klinkt als een omvormer van zonnepanelen' },
   { category: 'laadpaal', on: ['hostnaam', 'model'], re: /easee|alfen|zaptec|wallbox|evbox|laadpaal|charger|chargepoint|peblar|^eve-/, points: 6, reason: '{s} "{x}" klinkt als een laadpaal' },
   { category: 'alarmsysteem', on: ['hostnaam', 'model'], re: /ajax|alarm|verisure|risco|paradox|jablotron|texecom|hub-?2/, points: 6, reason: '{s} "{x}" klinkt als een alarmsysteem' },
-  { category: 'iot', on: ['hostnaam', 'model'], re: /shelly|tasmota|^esp[-_]|espressif|sonoff|tuya|^hue|philips-hue|tado|nest-?therm|netatmo|^toon|homewizard|^p1|smartplug|^wled|meross|zigbee|thermostat|thermostaat/, points: 5, reason: '{s} "{x}" klinkt als een slim apparaat (IoT)' },
+  { category: 'iot', on: ['hostnaam', 'model'], re: /shelly|tasmota|^esp[-_]|espressif|sonoff|tuya|^hue|philips-hue|tado|nest-?therm|netatmo|^toon|homewizard|^p1|smartplug|^wled|meross|zigbee|thermostat|thermostaat|tapo-?p\d|^kp\d{3}|^hs\d{3}/, points: 5, reason: '{s} "{x}" klinkt als een slim apparaat (IoT)' },
   { category: 'server', on: ['hostnaam', 'model'], re: /^srv|server|^dc\d|^esx|proxmox|hyper-?v|^vm-/, points: 4, reason: '{s} "{x}" klinkt als een server' },
+  { category: 'accesspoint', on: ['hostnaam', 'model'], re: /\bdeco\b|^deco|eap\d{3}|re\d{3}x?\b|repeater|versterker|extender|mesh|^unifi-?ap|^u6-|^uap/, points: 6, reason: '{s} "{x}" klinkt als een wifi-punt of versterker' },
 ];
 
 const SERVICE_RULES: Rule[] = [
@@ -158,6 +161,9 @@ export function shortVendor(org: string): string {
     [/google/i, 'Google'],
     [/ubiquiti/i, 'Ubiquiti'],
     [/intel corp/i, 'Intel'],
+    [/tp-?link/i, 'TP-Link'],
+    [/arcadyan/i, 'Arcadyan'],
+    [/sagemcom/i, 'Sagemcom'],
   ];
   for (const [re, name] of known) if (re.test(org)) return name;
   return org.replace(/[,.]?\s*(co\.?,?\s*ltd\.?|inc\.?|gmbh|ag|b\.?v\.?|corporation|corp\.?|limited|llc|as|ab|s\.?a\.?)\.?$/i, '').trim();

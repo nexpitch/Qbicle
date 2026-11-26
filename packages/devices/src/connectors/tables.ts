@@ -51,7 +51,7 @@ export function parseTable(input: TableInput): ClientDevice[] {
     case 'arp-unix':
       for (const l of lines) {
         const m = l.match(new RegExp(`^(\\S+)\\s+\\(${IPV4}\\)\\s+at\\s+([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5})`, 'i'));
-        if (m) out.push({ ip: m[2], mac: mac(m[3]), hostname: m[1] === '?' ? undefined : m[1], active: true, lastSeen: at });
+        if (m) out.push({ ip: m[2], mac: mac(m[3]), hostname: m[1] === '?' ? undefined : m[1]!.split('.')[0], active: true, lastSeen: at });
       }
       break;
     case 'ip-neigh':
@@ -109,7 +109,18 @@ export function parseTable(input: TableInput): ClientDevice[] {
     }
   }
   // Alleen het eigen netwerk; regels met een publiek adres horen bij de WAN-kant.
-  return out.filter((c) => c.ip && (c.mac || c.services?.length) && !isPublicIpv4(c.ip));
+  return out.filter((c) => c.ip && (c.mac || c.services?.length) && !isPublicIpv4(c.ip) && !isGroupAddress(c));
+}
+
+/**
+ * Multicast- en broadcastregels (224.0.0.251, x.x.x.255, ff:ff:ff:ff:ff:ff, 01:00:5e:...)
+ * staan in elke ARP-tabel van macOS, maar zijn geen apparaten.
+ */
+function isGroupAddress(c: ClientDevice): boolean {
+  const first = Number(c.ip!.split('.')[0]);
+  if (first >= 224 || c.ip!.endsWith('.255')) return true;
+  if (!c.mac) return false;
+  return (parseInt(c.mac.slice(0, 2), 16) & 1) === 1;
 }
 
 /** Voegt tabellen samen op MAC: DHCP geeft de hostnaam, ARP ook vaste adressen. */

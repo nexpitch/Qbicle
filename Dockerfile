@@ -9,6 +9,9 @@ COPY package.json package-lock.json ./
 COPY packages/scanner/package.json packages/scanner/
 COPY packages/score/package.json packages/score/
 COPY packages/platform/package.json packages/platform/
+COPY packages/inventory/package.json packages/inventory/
+COPY packages/devices/package.json packages/devices/
+COPY packages/compliance/package.json packages/compliance/
 COPY apps/api/package.json apps/api/
 # tsx draait de TypeScript direct; een aparte build-stap volgt bij de web-app.
 RUN npm ci --ignore-scripts && npm cache clean --force

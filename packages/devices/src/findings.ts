@@ -14,7 +14,7 @@ export function fingerprint(assetType: string, assetValue: string, key: string, 
 
 const EDGE = new Set(['router', 'firewall']);
 
-const CATEGORY_LABEL: Record<string, string> = {
+export const CATEGORY_LABEL: Record<string, string> = {
   laptop: 'laptop',
   desktop: 'computer',
   telefoon: 'telefoon',
