@@ -36,8 +36,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Headless Chromium voor de cookiecheck (packages/compliance).
+      - name: Chromium installeren
+        run: npx playwright-core install --with-deps chromium
       - run: npm run typecheck
       - run: npm test
+        env:
+          # Browsertests mogen in CI niet stilletjes worden overgeslagen.
+          QBICLE_REQUIRE_BROWSER: '1'
 
   database:
     runs-on: ubuntu-latest

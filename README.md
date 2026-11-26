@@ -15,6 +15,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
 | Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
+| Cookiecheck (proof of concept): drie browserbezoeken (niets klikken, weigeren, accepteren), trackers en cookies vóór en na toestemming | Werkt tegen lokale testpagina's, zie [docs/compliance.md](docs/compliance.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
@@ -42,6 +43,9 @@ npm run typecheck      # TypeScript-controle
 npm run scan -- voorbeeld.nl
 npm run scan -- voorbeeld.nl --json       # volledig rapport met bewijs
 npm run scan -- voorbeeld.nl --niveau 0   # alleen DNS, geen verbinding met de site
+
+# Cookiecheck (headless Chromium nodig, zie docs/compliance.md)
+npm run consent -- https://www.voorbeeld.nl
 
 # Database lokaal
 docker compose up -d db
@@ -74,6 +78,7 @@ De resultaten komen in `testset/resultaten/`: per domein een JSON-rapport en een
 
 ```
 packages/
+  compliance/       cookiecheck met headless browser (proof of concept)
   scanner/          passieve checks, runner, opdrachtregel
     src/checks/     één bestand per groep checks (spf, dmarc, dkim, dns, tls, web)
     src/net.ts      alle netwerktoegang, achter één interface (in tests vervangen)
