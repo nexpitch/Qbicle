@@ -1,0 +1,172 @@
+/* Qbicle platform, Licht-stijl (merkidentiteit v0.1, variant B).
+   Lettertypen staan op onze eigen server: geen verzoeken naar Google (AVG). */
+@font-face { font-family: "Inter"; font-weight: 100 900; font-display: swap; src: url("/static/inter.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 200 800; font-display: swap; src: url("/static/manrope.woff2") format("woff2"); }
+
+:root {
+  --bg: #F3F7F6;          /* mist */
+  --surface: #FFFFFF;
+  --surface-2: #F4F8F8;
+  --fg: #0B2A3B;
+  --muted: #4E6876;
+  --line: #DCE7E6;
+  --line-strong: #CFDCDD;
+  --petrol: #034D6C;      /* knoppen en koppen op licht */
+  --petrol-hover: #023B54;
+  --accent: #1E7F79;
+  --aqua: #48BFB8;
+  --p-mkb: #A9D6A0;       /* productaccenten */
+  --p-corp: #6FA3D9;
+  --p-audit: #9D95E0;
+  /* statuskleuren: nooit als merkkleur */
+  --st-crit-bg: #FBE6E8; --st-crit: #A33442; --st-crit-dot: #CB4654;
+  --st-warn-bg: #FBEFDC; --st-warn: #8A5612; --st-warn-dot: #B8741A;
+  --st-unk-bg: #EDF1F3;  --st-unk: #4F626D;  --st-unk-dot: #6B7F8B;
+  --st-ok-bg: #E1F2EA;   --st-ok: #1B6A4D;   --st-ok-dot: #228560;
+  --f-display: "Manrope", system-ui, sans-serif;
+  --f-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 var(--f-ui); }
+a { color: var(--petrol); }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.15; margin: 0; text-wrap: balance; color: var(--fg); }
+h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 800; letter-spacing: -.02em; }
+h2 { font-size: 1.3rem; font-weight: 800; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+code, .mono { font-family: var(--f-mono); font-size: .88em; }
+[hidden] { display: none !important; }
+
+/* Kop */
+.top { background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1120px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.logo img { display: block; width: 104px; height: auto; }
+.top nav { display: flex; gap: 18px; align-items: center; font-size: .92rem; flex-wrap: wrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover, .top nav a[aria-current="page"] { color: var(--fg); }
+.org-name { font: 600 .9rem var(--f-ui); color: var(--fg); }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 80px; display: grid; gap: 28px; }
+.narrow { max-width: 560px; }
+.intro { display: grid; gap: 10px; }
+.lead { color: var(--muted); font-size: 1.05rem; max-width: 64ch; }
+.eyebrow { font: 600 .74rem/1 var(--f-ui); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.small { font-size: .86rem; color: var(--muted); }
+
+/* Kaarten */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.stack { display: grid; gap: 12px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.between { justify-content: space-between; }
+
+/* Knoppen */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 8px; padding: 12px 18px; font: 700 .95rem var(--f-display); cursor: pointer; text-decoration: none; background: var(--petrol); color: #fff; }
+.btn:hover { background: var(--petrol-hover); }
+.btn:disabled { opacity: .6; cursor: progress; }
+.btn.secondary { background: var(--surface); color: var(--petrol); border: 1px solid var(--line-strong); }
+.btn.secondary:hover { background: var(--surface-2); }
+.btn.danger { background: var(--surface); color: var(--st-crit); border: 1px solid #EBC3C8; }
+.btn.wide { width: 100%; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--petrol); text-decoration: underline; cursor: pointer; font: inherit; }
+:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+
+/* Formulieren */
+label { display: grid; gap: 6px; font-weight: 600; font-size: .92rem; }
+label .hint { font-weight: 400; color: var(--muted); font-size: .84rem; }
+input[type=text], input[type=email], textarea, select { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; font: 400 1rem var(--f-ui); background: #fff; color: var(--fg); }
+textarea { min-height: 96px; resize: vertical; }
+.form-fout { background: var(--st-crit-bg); color: var(--st-crit); border-radius: 8px; padding: 10px 12px; font-size: .92rem; }
+.melding { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: .94rem; }
+.melding.ok { background: var(--st-ok-bg); border-color: #C7E6D6; color: var(--st-ok); }
+.melding.warn { background: var(--st-warn-bg); border-color: #F0DDBB; color: var(--st-warn); }
+
+/* Productkeuze (tabs zonder JavaScript, via :has) */
+.tabs { display: flex; gap: 6px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; width: max-content; max-width: 100%; overflow-x: auto; }
+.tabs label { display: block; cursor: pointer; padding: 9px 16px; border-radius: 7px; font: 700 .92rem var(--f-display); color: var(--muted); white-space: nowrap; }
+.tabs input, .seg input { position: absolute; opacity: 0; pointer-events: none; }
+.tabs label:has(input:checked) { background: var(--bg); color: var(--fg); box-shadow: inset 0 -3px 0 var(--tab-accent, var(--petrol)); }
+.tabs label:has(input:focus-visible), .seg label:has(input:focus-visible) { outline: 2px solid var(--aqua); }
+.tab-mkb { --tab-accent: var(--p-mkb); } .tab-corp { --tab-accent: var(--p-corp); } .tab-audit { --tab-accent: var(--p-audit); }
+
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px; background: var(--surface); }
+.seg label { display: block; cursor: pointer; padding: 6px 14px; border-radius: 999px; font-size: .88rem; font-weight: 600; color: var(--muted); }
+.seg label:has(input:checked) { background: var(--petrol); color: #fff; }
+.korting { font-size: .78rem; font-weight: 700; color: var(--accent); margin-left: 4px; }
+.seg label:has(input:checked) .korting { color: var(--p-mkb); }
+
+form .product-panel { display: none; }
+form:has(#prod-mkb:checked) .product-panel.mkb,
+form:has(#prod-corporate:checked) .product-panel.corporate,
+form:has(#prod-audit:checked) .product-panel.audit { display: grid; }
+form:has(#prod-audit:checked) .alleen-abonnement { display: none; }
+form:not(:has(#prod-audit:checked)) .alleen-audit { display: none; }
+form:has(#iv-maand:checked) .bij-jaar { display: none; }
+form:not(:has(#iv-maand:checked)) .bij-maand { display: none; }
+
+/* Pakketkaarten als keuzerondjes */
+.plans { display: grid; gap: 16px; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.plan { position: relative; cursor: pointer; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 12px; align-content: start; font-weight: 400; }
+.plan:hover { border-color: var(--line-strong); }
+.plan:has(input:checked) { border-color: var(--petrol); box-shadow: 0 0 0 3px rgba(3, 77, 108, .12); }
+.plan input[type=radio] { position: absolute; top: 22px; right: 22px; width: 18px; height: 18px; accent-color: var(--petrol); }
+.plan.disabled { cursor: default; opacity: .75; }
+.plan .accent { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--p-mkb); }
+.plan.corporate .accent { background: var(--p-corp); }
+.plan.audit .accent { background: var(--p-audit); }
+.plan h3 { padding-right: 32px; }
+.price { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.price b { font: 800 2rem/1 var(--f-display); letter-spacing: -.02em; }
+.price span { color: var(--muted); font-size: .9rem; }
+.plan ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: .92rem; color: var(--fg); }
+.badge { display: inline-flex; align-items: center; gap: 6px; font: 600 .72rem/1 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; padding: 5px 8px; border-radius: 4px; width: max-content; background: var(--surface-2); color: var(--muted); }
+.badge.aanbevolen { background: #E3EEF9; color: #2C5E91; }
+
+/* Status */
+.status { display: inline-flex; align-items: center; gap: 6px; font: 600 .74rem/1 var(--f-ui); letter-spacing: .03em; text-transform: uppercase; padding: 5px 8px; border-radius: 4px; width: max-content; }
+.status i { width: 7px; height: 7px; border-radius: 50%; display: block; }
+.st-ok { background: var(--st-ok-bg); color: var(--st-ok); } .st-ok i { background: var(--st-ok-dot); }
+.st-warn { background: var(--st-warn-bg); color: var(--st-warn); } .st-warn i { background: var(--st-warn-dot); }
+.st-crit { background: var(--st-crit-bg); color: var(--st-crit); } .st-crit i { background: var(--st-crit-dot); }
+.st-unk { background: var(--st-unk-bg); color: var(--st-unk); } .st-unk i { background: var(--st-unk-dot); }
+
+/* Tabellen */
+.table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+.table th { text-align: left; font: 600 .76rem var(--f-ui); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.table td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+
+/* Stappen */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; background: var(--surface-2); border-radius: 8px; padding: 12px; }
+.steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; font: 800 .9rem var(--f-display); background: var(--surface); color: var(--petrol); border: 1px solid var(--line); }
+.steps b { display: block; font-family: var(--f-display); }
+
+/* Testbetaling */
+.testbank { border: 2px dashed var(--st-warn-dot); }
+.bedrag { font: 800 2.2rem/1 var(--f-display); letter-spacing: -.02em; }
+
+/* Factuur (ook om te printen) */
+.factuur { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(18px, 4vw, 40px); display: grid; gap: 26px; }
+.factuur .kop { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.factuur .kop img { width: 110px; }
+.factuur dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: .92rem; }
+.factuur dt { color: var(--muted); }
+.factuur dd { margin: 0; }
+.totaal td { font-weight: 700; }
+@media print {
+  body { background: #fff; }
+  .top, .no-print { display: none !important; }
+  .wrap { padding: 0; }
+  .factuur { border: 0; padding: 0; }
+}
+
+.foot { max-width: 1120px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: .84rem; }
+@media (max-width: 600px) { .top nav .hide-sm { display: none; } }
+.top nav form { margin: 0; display: flex; }

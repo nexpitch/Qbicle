@@ -48,6 +48,8 @@ export const PERMISSIONS = [
   'bevindingen:accepteren',
   'delen:aanmaken',
   'audit:lezen',
+  'abonnement:lezen',
+  'abonnement:beheren',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -63,8 +65,10 @@ const BEHEERDER: Permission[] = [
   'bevindingen:accepteren',
   'delen:aanmaken',
   'audit:lezen',
+  'abonnement:lezen',
 ];
-const EIGENAAR: Permission[] = [...BEHEERDER, 'partners:beheren'];
+// Betalen, pakket wijzigen en opzeggen: alleen de eigenaar.
+const EIGENAAR: Permission[] = [...BEHEERDER, 'partners:beheren', 'abonnement:beheren'];
 
 const MATRIX: Record<Role, ReadonlySet<Permission>> = {
   lezer: new Set(LEZER),
@@ -73,7 +77,7 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
 };
 
 /** Rechten die je nooit via een IT-partner krijgt, ook niet als beheerder. */
-const NEVER_VIA_PARTNER: ReadonlySet<Permission> = new Set<Permission>(['partners:beheren', 'klanten:beheren']);
+const NEVER_VIA_PARTNER: ReadonlySet<Permission> = new Set<Permission>(['partners:beheren', 'klanten:beheren', 'abonnement:beheren']);
 
 export type AccessVia = 'lid' | 'partner';
 

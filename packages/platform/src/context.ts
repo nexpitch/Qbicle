@@ -1,6 +1,8 @@
 import type pg from 'pg';
 import type { Mailer } from './mailer.ts';
 import type { TxtResolver } from './dns.ts';
+import type { Catalog } from './catalog.ts';
+import type { PaymentProvider } from './payments.ts';
 
 export interface PlatformConfig {
   /** Basisadres van de web-app, bijv. https://app.qbicle.nl (voor links in e-mails). */
@@ -12,6 +14,8 @@ export interface PlatformConfig {
   domainMailHours: number;
   /** Na zoveel dagen zonder geslaagde hercontrole vervalt een DNS-verificatie. */
   dnsReverifyDays: number;
+  /** Zo lang blijft een registratie geldig als de inloglink nog niet gebruikt is. */
+  signupHours: number;
 }
 
 export const DEFAULT_CONFIG: PlatformConfig = {
@@ -22,6 +26,7 @@ export const DEFAULT_CONFIG: PlatformConfig = {
   invitationDays: 7,
   domainMailHours: 24,
   dnsReverifyDays: 30,
+  signupHours: 24,
 };
 
 /** Alles wat de platformlogica van buiten nodig heeft; in tests vervangen. */
@@ -30,4 +35,8 @@ export interface Platform {
   mailer: Mailer;
   dns: TxtResolver;
   config: PlatformConfig;
+  /** Prijzen en pakketten (config/abonnementen.json). */
+  catalog: Catalog;
+  /** Betaalprovider: nu testbetaling, later Mollie. */
+  payments: PaymentProvider;
 }

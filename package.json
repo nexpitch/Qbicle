@@ -20,7 +20,8 @@
     "db:migrate": "bash scripts/db-migrate.sh",
     "api": "tsx apps/api/src/server.ts",
     "consent": "tsx packages/compliance/src/cli.ts",
-    "apparaten": "tsx packages/devices/src/cli.ts"
+    "apparaten": "tsx packages/devices/src/cli.ts",
+    "web": "tsx apps/web/src/server.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",

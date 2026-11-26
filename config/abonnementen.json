@@ -1,0 +1,85 @@
+{
+  "_uitleg": "Prijzen en pakketten van Qbicle. Bedragen in euro's per maand, exclusief btw. Wijzig hier een prijs en herstart de app; bestaande abonnementen houden hun prijs tot ze verlengd of gewijzigd worden. De ankerprijs van MKB staat nog open (49 of 39): pas alleen 'perMaandBijJaar' en 'perMaandBijMaand' van 'mkb' aan.",
+  "btwPercentage": 21,
+  "proefDagen": 14,
+  "valuta": "EUR",
+  "abonnementen": [
+    {
+      "id": "mkb",
+      "product": "mkb",
+      "naam": "Qbicle MKB",
+      "kort": "Voor bedrijven zonder eigen IT-afdeling",
+      "voorWie": "10 tot 50 medewerkers",
+      "perMaandBijJaar": 49,
+      "perMaandBijMaand": 59,
+      "limieten": { "domeinen": 3, "gebruikers": 5, "itPartners": 1 },
+      "functies": [
+        "Al je internetgerichte systemen in één overzicht: domeinen, websites, e-mail, servers en clouddiensten",
+        "Wekelijkse controle en een korte actielijst in gewone taal",
+        "Bekende kwetsbaarheden met bronvermelding",
+        "Cookie- en toegankelijkheidscheck van je website",
+        "Maandrapport en je IT-partner kijkt gratis mee"
+      ]
+    },
+    {
+      "id": "business",
+      "product": "corporate",
+      "naam": "Qbicle Business",
+      "kort": "Voor groeiende bedrijven en groepen met meerdere vestigingen",
+      "voorWie": "50 tot 250 medewerkers, NIS2-keten",
+      "perMaandBijJaar": 149,
+      "perMaandBijMaand": 179,
+      "limieten": { "domeinen": 10, "gebruikers": 25, "itPartners": 3 },
+      "functies": [
+        "Alles uit MKB",
+        "Infra-inventaris: routers, netwerkapparaten en wat er binnen aan het internet hangt",
+        "Microsoft 365-koppeling (alleen lezen)",
+        "Compliance-overzicht voor Cbw/NIS2, los van de score",
+        "Meerdere gebruikers en kwartaalrapport voor de directie"
+      ],
+      "aanbevolen": true
+    }
+  ],
+  "auditPakketten": [
+    {
+      "id": "audit-quick",
+      "product": "audit",
+      "naam": "Qbicle Audit Quick Scan",
+      "kort": "Snel beeld van de digitale risico's van een overnamekandidaat",
+      "voorWie": "Overnames tot 50 medewerkers",
+      "prijs": 1250,
+      "maxDomeinen": 5,
+      "functies": [
+        "Buitenkant-scan van alle internetgerichte systemen van de doelonderneming",
+        "Software, end-of-life en bekende kwetsbaarheden met bron",
+        "Mail- en domeinhygiëne",
+        "Samenvatting in rood, oranje en groen voor het dealteam"
+      ],
+      "bestelbaar": true
+    },
+    {
+      "id": "audit-deal",
+      "product": "audit",
+      "naam": "Qbicle Audit Deal Scan",
+      "kort": "Uitgebreid rapport voor de dataroom",
+      "voorWie": "50 tot 250 medewerkers",
+      "prijs": 4500,
+      "vanafPrijs": true,
+      "maxDomeinen": 25,
+      "functies": ["Alles uit Quick Scan", "Vergelijking met de assetlijst van de verkoper", "Rapport voor de dataroom"],
+      "bestelbaar": false
+    },
+    {
+      "id": "audit-plus",
+      "product": "audit",
+      "naam": "Qbicle Audit Plus",
+      "kort": "Voor grotere deals en meerdere entiteiten",
+      "voorWie": "Groter of meerdere entiteiten",
+      "prijs": 12500,
+      "vanafPrijs": true,
+      "maxDomeinen": 100,
+      "functies": ["Alles uit Deal Scan", "Gesprek met de IT-partner van de verkoper", "Indicatie van herstelkosten"],
+      "bestelbaar": false
+    }
+  ]
+}
