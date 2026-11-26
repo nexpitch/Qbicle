@@ -37,6 +37,16 @@ export QBICLE_WEB_ORIGIN="http://localhost:$PORT_WEB"
 URL="$QBICLE_WEB_ORIGIN"
 [[ "$PORT_WEB" != "3000" ]] && echo "Poort 3000 is bezet door een ander programma; Qbicle gebruikt poort $PORT_WEB."
 
+# Mail: standaard verschijnen inloglinks hier in Terminal. Echte mail via Brevo:
+#   QBICLE_ECHTE_MAIL=aan bash scripts/klantomgeving.sh
+if [[ "${QBICLE_ECHTE_MAIL:-}" == "aan" ]]; then
+  export QBICLE_MAIL_CONSOLE=""
+  echo "Mail gaat via Brevo (instellingen uit .env)."
+else
+  export QBICLE_MAIL_CONSOLE="aan"
+  echo "Mail (inloglinks) verschijnt in dit Terminal-venster; er gaat geen echte mail uit."
+fi
+
 echo "1/4 Database starten..."
 docker compose up -d db
 
