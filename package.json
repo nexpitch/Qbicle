@@ -1,0 +1,28 @@
+{
+  "name": "qbicle",
+  "private": true,
+  "description": "Qbicle Light: inzicht in de digitale risico's van internetgerichte systemen voor het MKB",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "scan": "tsx packages/scanner/src/cli.ts",
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "api": "tsx apps/api/src/server.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.7",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.2"
+  }
+}

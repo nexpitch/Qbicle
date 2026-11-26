@@ -1,0 +1,6 @@
+# Testset voor fase 1: één domein per regel, # voor commentaar.
+# Kopieer naar testset.txt en vul aan tot ongeveer 20 domeinen.
+# Alleen domeinen van jezelf, van pilotklanten met toestemming, of grote
+# publieke sites; de scanner doet niet meer dan een gewone bezoeker.
+#
+# voorbeeld.nl

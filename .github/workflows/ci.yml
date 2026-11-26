@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Echte PostgreSQL voor de tests van accounts, rechten en de API.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qbicle
+          POSTGRES_PASSWORD: qbicle
+          POSTGRES_DB: qbicle
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qbicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://qbicle:qbicle@localhost:5432/qbicle
+      # Databasetests mogen in CI nooit stilletjes worden overgeslagen.
+      QBICLE_REQUIRE_DB: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qbicle
+          POSTGRES_PASSWORD: qbicle
+          POSTGRES_DB: qbicle
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qbicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://qbicle:qbicle@localhost:5432/qbicle
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migraties toepassen
+        run: bash scripts/db-migrate.sh
+      - name: Nogmaals toepassen (moet niets doen)
+        run: bash scripts/db-migrate.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scanner-image bouwen
+        run: docker build -t qbicle-scanner .
+      - name: Image start (help-tekst)
+        run: docker run --rm qbicle-scanner --help
+      - name: API start in dezelfde image (zonder database stopt hij met een melding)
+        run: |
+          out="$(docker run --rm --entrypoint npx qbicle-scanner --no-install tsx apps/api/src/server.ts 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q "Zet DATABASE_URL"
