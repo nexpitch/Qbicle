@@ -1,0 +1,163 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  addDomain,
+  confirmEmailVerification,
+  createOrganization,
+  extractToken,
+  getDomain,
+  isHostVerifiedFor,
+  listDomains,
+  removeDomain,
+  requestScan,
+  reverifyDomains,
+  startEmailVerification,
+  verifyDomainByDns,
+} from '../src/index.ts';
+import { createTestPlatform, hasDb, type TestPlatform } from './support/db.ts';
+import { loginAs } from './support/users.ts';
+
+type U = Awaited<ReturnType<typeof loginAs>>;
+
+describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
+  let p: TestPlatform;
+  let anna: U;
+  let kees: U;
+  let org: string;
+  let otherOrg: string;
+
+  beforeAll(async () => {
+    p = await createTestPlatform();
+    anna = await loginAs(p, 'anna@bakkerij.nl');
+    kees = await loginAs(p, 'kees@garage.nl');
+    org = (await createOrganization(p, anna, { name: 'Bakkerij', kind: 'klant' })).id;
+    otherOrg = (await createOrganization(p, kees, { name: 'Garage', kind: 'klant' })).id;
+  });
+  afterAll(async () => p?.close());
+
+  it('normaliseert de invoer en geeft instructies voor het TXT-record', async () => {
+    const d = await addDomain(p, anna, org, { name: 'https://www.Bakkerij-Dns.nl/contact' });
+    expect(d.name).toBe('www.bakkerij-dns.nl');
+    expect(d.verified).toBe(false);
+    expect(d.instructions.dns.name).toBe('_qbicle-verificatie.www.bakkerij-dns.nl');
+    expect(d.instructions.dns.value).toMatch(/^qbicle-verificatie=[0-9a-f]{32}$/);
+    expect(d.instructions.emailAddresses).toContain('postmaster@www.bakkerij-dns.nl');
+  });
+
+  it('weigert interne namen en IP-adressen', async () => {
+    await expect(addDomain(p, anna, org, { name: 'server.local' })).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(addDomain(p, anna, org, { name: '10.0.0.1' })).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+  });
+
+  it('hetzelfde domein kan niet twee keer in één organisatie', async () => {
+    await addDomain(p, anna, org, { name: 'dubbel.nl' });
+    await expect(addDomain(p, anna, org, { name: 'DUBBEL.nl' })).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('zonder verificatie geen scan', async () => {
+    const d = await addDomain(p, anna, org, { name: 'nogniet.nl' });
+    await expect(requestScan(p, anna, org, d.id)).rejects.toMatchObject({ code: 'niet_geverifieerd' });
+  });
+
+  it('verificatie via DNS-TXT; daarna kan er gescand worden', async () => {
+    const d = await addDomain(p, anna, org, { name: 'bakkerij.nl' });
+
+    const fail = await verifyDomainByDns(p, anna, org, d.id);
+    expect(fail.verified).toBe(false);
+
+    // Verkeerde code: niet goed.
+    p.dns.set('_qbicle-verificatie.bakkerij.nl', ['qbicle-verificatie=00000000000000000000000000000000']);
+    expect((await verifyDomainByDns(p, anna, org, d.id)).verified).toBe(false);
+
+    p.dns.set('_qbicle-verificatie.bakkerij.nl', ['v=spf1 -all', d.instructions.dns.value]);
+    const ok = await verifyDomainByDns(p, anna, org, d.id);
+    expect(ok.verified).toBe(true);
+    expect(ok.domain.verificationMethod).toBe('dns-txt');
+
+    const scan = await requestScan(p, anna, org, d.id);
+    expect(scan.status).toBe('wachtrij');
+    // Een tweede verzoek terwijl er een in de wachtrij staat geeft dezelfde scan.
+    expect((await requestScan(p, anna, org, d.id)).id).toBe(scan.id);
+
+    expect(await isHostVerifiedFor(p, org, 'www.bakkerij.nl')).toBe(true);
+    expect(await isHostVerifiedFor(p, org, 'nepbakkerij.nl')).toBe(false);
+    expect(await isHostVerifiedFor(p, otherOrg, 'bakkerij.nl')).toBe(false);
+  });
+
+  it('het TXT-record mag ook op het domein zelf staan', async () => {
+    const d = await addDomain(p, anna, org, { name: 'apex.nl' });
+    p.dns.set('apex.nl', [d.instructions.dns.value]);
+    expect((await verifyDomainByDns(p, anna, org, d.id)).verified).toBe(true);
+  });
+
+  it('een DNS-fout telt nooit als geslaagd', async () => {
+    const d = await addDomain(p, anna, org, { name: 'storing.nl' });
+    p.dns.fail.add('_qbicle-verificatie.storing.nl');
+    p.dns.fail.add('storing.nl');
+    expect((await verifyDomainByDns(p, anna, org, d.id)).verified).toBe(false);
+  });
+
+  it('de code van een andere organisatie werkt niet', async () => {
+    const mine = await addDomain(p, anna, org, { name: 'gedeeld.nl' });
+    const theirs = await addDomain(p, kees, otherOrg, { name: 'gedeeld.nl' });
+    p.dns.set('_qbicle-verificatie.gedeeld.nl', [mine.instructions.dns.value]);
+    expect((await verifyDomainByDns(p, kees, otherOrg, theirs.id)).verified).toBe(false);
+    expect((await verifyDomainByDns(p, anna, org, mine.id)).verified).toBe(true);
+  });
+
+  it('verificatie via een beheeradres op het domein', async () => {
+    const d = await addDomain(p, anna, org, { name: 'mail-verificatie.nl' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'anna@gmail.com')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'info@mail-verificatie.nl')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+
+    await startEmailVerification(p, anna, org, d.id, 'Postmaster@mail-verificatie.nl');
+    const mail = p.mailer.last('postmaster@mail-verificatie.nl')!;
+    expect(mail.text).toContain('mail-verificatie.nl');
+    const token = extractToken(mail.text, 'qbd_')!;
+
+    expect(await confirmEmailVerification(p, token, { userId: null })).toEqual({ domain: 'mail-verificatie.nl' });
+    await expect(confirmEmailVerification(p, token, { userId: null })).rejects.toMatchObject({ code: 'verlopen' });
+    const after = await getDomain(p, anna.userId, org, d.id);
+    expect(after).toMatchObject({ verified: true, verificationMethod: 'email' });
+  });
+
+  it('een andere klant kan niets met jouw domeinen', async () => {
+    const [d] = await listDomains(p, anna.userId, org);
+    await expect(getDomain(p, kees.userId, org, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    await expect(getDomain(p, kees.userId, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    await expect(requestScan(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    await expect(verifyDomainByDns(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    await expect(removeDomain(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+  });
+
+  it('opt-out wordt gerespecteerd, ook na verificatie', async () => {
+    const d = await addDomain(p, anna, org, { name: 'nietscannen.nl' });
+    p.dns.set('nietscannen.nl', [d.instructions.dns.value]);
+    await verifyDomainByDns(p, anna, org, d.id);
+    await p.pool.query("INSERT INTO scan_opt_out (name) VALUES ('nietscannen.nl')");
+    await expect(requestScan(p, anna, org, d.id)).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('hercontrole: verdwenen TXT-record laat de verificatie na de termijn vervallen', async () => {
+    const d = await addDomain(p, anna, org, { name: 'vervalt.nl' });
+    p.dns.set('vervalt.nl', [d.instructions.dns.value]);
+    await verifyDomainByDns(p, anna, org, d.id);
+    p.dns.set('vervalt.nl', []);
+
+    // Net gecontroleerd: nog niets.
+    await reverifyDomains(p);
+    expect((await getDomain(p, anna.userId, org, d.id)).verified).toBe(true);
+
+    // Laatste geslaagde controle langer dan 30 dagen geleden: vervalt.
+    await p.pool.query("UPDATE domain SET verification_checked_at = now() - interval '31 days' WHERE id = $1", [d.id]);
+    const r = await reverifyDomains(p);
+    expect(r.lapsed).toBeGreaterThanOrEqual(1);
+    expect((await getDomain(p, anna.userId, org, d.id)).verified).toBe(false);
+    await expect(requestScan(p, anna, org, d.id)).rejects.toMatchObject({ code: 'niet_geverifieerd' });
+  });
+
+  it('beperkt het aantal DNS-controles per domein', async () => {
+    const d = await addDomain(p, anna, org, { name: 'druk.nl' });
+    for (let i = 0; i < 10; i++) await verifyDomainByDns(p, anna, org, d.id);
+    await expect(verifyDomainByDns(p, anna, org, d.id)).rejects.toMatchObject({ code: 'te_veel_verzoeken' });
+  });
+});

@@ -8,14 +8,16 @@
     "node": ">=22"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "scan": "tsx packages/scanner/src/cli.ts",
-    "db:migrate": "bash scripts/db-migrate.sh"
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "api": "tsx apps/api/src/server.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",
