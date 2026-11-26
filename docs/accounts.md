@@ -103,7 +103,7 @@ DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIE
 docker compose --profile api up api
 ```
 
-E-mail gaat voorlopig naar de console; een EU-maildienst moet nog gekozen worden.
+E-mail gaat via Brevo als `BREVO_API_KEY` is gezet, anders naar de console. Zie [email.md](email.md).
 
 ## Tests
 

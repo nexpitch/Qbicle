@@ -1,7 +1,6 @@
 /**
- * Uitgaande e-mail achter één interface. Voor productie komt hier een
- * EU-gevestigde verzender (bijv. Brevo of Mailjet); die keuze ligt nog bij Erik.
- * Tot dan: ConsoleMailer (lokaal) en MemoryMailer (tests).
+ * Uitgaande e-mail achter één interface: BrevoMailer (productie, zie brevo.ts),
+ * ConsoleMailer (lokaal, zonder sleutel) en MemoryMailer (tests).
  */
 export interface Mail {
   to: string;
