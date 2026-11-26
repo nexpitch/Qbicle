@@ -78,8 +78,9 @@ describe('factoren', () => {
       ],
       outcomes: [],
     });
-    expect(r.contributions.map((c) => c.weight)).toEqual([20, 14, 1, 0]);
-    expect(r.totalWeight).toBe(35);
+    // De tweede dmarc.missing is een herhaling van dezelfde sleutel: 14 × 0,25.
+    expect(r.contributions.map((c) => c.weight)).toEqual([20, 3.5, 1, 0]);
+    expect(r.totalWeight).toBe(24.5);
   });
 
   it('Onbekend telt nooit mee en levert geen actie op', () => {
@@ -134,3 +135,45 @@ describe('dekking', () => {
 it('banden zijn oplopend', () => {
   for (let i = 1; i < BANDS.length; i++) expect(BANDS[i]!.min).toBeGreaterThan(BANDS[i - 1]!.min);
 });
+
+describe('v0.2: herhaling, certificaat en plafond', () => {
+  const www = { type: 'website' as const, value: 'https://www.voorbeeld.nl', source: 'dns' as const, visibility: 'primair' as const };
+  const apex = { type: 'website' as const, value: 'https://voorbeeld.nl', source: 'dns' as const, visibility: 'primair' as const };
+
+  it('dezelfde sleutel op apex en www telt één keer volledig', () => {
+    const r = score({
+      findings: [f('web.no_https_redirect', { asset: apex }), f('web.no_https_redirect', { asset: www })],
+      outcomes: [],
+    });
+    expect(r.contributions.map((c) => c.r)).toEqual([1, 0.25]);
+    expect(r.totalWeight).toBe(12.5);
+  });
+
+  it('meerdere certificaatfouten op één asset tellen als één', () => {
+    const r = score({
+      findings: [f('cert.invalid', { asset: apex }), f('cert.name_mismatch', { asset: apex })],
+      outcomes: [],
+    });
+    expect(r.totalWeight).toBe(40);
+  });
+
+  it('kapot certificaat op een tweede asset telt als herhaling', () => {
+    const r = score({
+      findings: [f('cert.expired', { asset: apex }), f('cert.name_mismatch', { asset: www })],
+      outcomes: [],
+    });
+    expect(r.totalWeight).toBe(50);
+  });
+
+  it('headers hebben een plafond van 10', () => {
+    const r = score({
+      findings: ['web.hsts_missing', 'web.csp_missing', 'web.xcto_missing', 'web.framing_unprotected', 'web.referrer_missing'].map((k) =>
+        f(k, { asset: apex }),
+      ),
+      outcomes: [],
+    });
+    expect(r.totalWeight).toBe(10);
+    expect(r.topActions[0]!.weight).toBe(10);
+  });
+});
+

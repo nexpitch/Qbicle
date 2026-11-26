@@ -77,7 +77,7 @@ export class NetError extends Error {
   }
 }
 
-export const SCANNER_VERSION = '0.1.0';
+export const SCANNER_VERSION = '0.2.0';
 export const MAX_BODY_BYTES = 256 * 1024;
 
 export interface NodeNetOptions {
@@ -86,6 +86,20 @@ export interface NodeNetOptions {
   dohUrl?: string;
   /** Link naar de uitlegpagina, komt in de User-Agent. */
   infoUrl?: string;
+}
+
+/** Tijdelijke netwerkfouten: één keer opnieuw proberen voordat een check "onbekend" wordt. */
+const TRANSIENT = new Set(['ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'EAI_AGAIN']);
+const RETRY_DELAY_MS = 1000;
+
+export async function withRetry<T>(fn: () => Promise<T>, delayMs = RETRY_DELAY_MS): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!TRANSIENT.has((e as { code?: string }).code ?? '')) throw e;
+    await new Promise((r) => setTimeout(r, delayMs));
+    return fn();
+  }
 }
 
 const NO_DATA = new Set(['ENOTFOUND', 'ENODATA', 'NXDOMAIN', 'ENONAME']);
@@ -152,7 +166,17 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
       } catch (e) {
         const code = (e as NodeJS.ErrnoException).code;
         if (code === 'ENODATA') return true;
-        if (code === 'ENOTFOUND' || code === 'NXDOMAIN') return false;
+        if (code === 'ENOTFOUND' || code === 'NXDOMAIN') {
+          // Sommige resolvers (ook die van Docker) melden een DNSSEC-fout (SERVFAIL)
+          // als "bestaat niet". Vraag het na zonder validatie: bestaat de naam dan
+          // wel, dan is DNSSEC kapot en hoort dat in het rapport.
+          try {
+            const unchecked = await doh(name, 'SOA', { cd: '1' });
+            return unchecked.Status === 0;
+          } catch {
+            return false;
+          }
+        }
         throw e;
       }
     },
@@ -191,7 +215,7 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
       }
     },
     tlsHandshake(host, port = 443) {
-      return new Promise((resolve, reject) => {
+      return withRetry(() => new Promise<TlsInfo>((resolve, reject) => {
         const socket = tls.connect({
           host,
           port,
@@ -234,10 +258,10 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
           socket.end();
           resolve(info);
         });
-      });
+      }));
     },
     httpGet(url) {
-      return new Promise((resolve, reject) => {
+      return withRetry(() => new Promise<HttpResponse>((resolve, reject) => {
         const u = new URL(url);
         const lib = u.protocol === 'https:' ? https : u.protocol === 'http:' ? http : null;
         if (!lib) return reject(new NetError('EPROTO', `Niet-ondersteund protocol ${u.protocol}`));
@@ -281,7 +305,7 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
         req.once('timeout', () => req.destroy(new NetError('ETIMEDOUT', `Geen antwoord van ${u.host}`)));
         req.once('error', reject);
         req.end();
-      });
+      }));
     },
   };
 }

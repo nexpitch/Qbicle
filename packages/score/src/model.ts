@@ -1,5 +1,5 @@
 /**
- * Scoremodel Qbicle Light, versie light-2026.11-v0.1.
+ * Scoremodel Qbicle Light, versie light-2026.11-v0.2.
  *
  * Gewichten (b) komen uit het technisch ontwerp waar ze daar genoemd zijn.
  * Gewichten met `voorlopig: true` staan niet in het ontwerp en zijn een eerste
@@ -9,7 +9,33 @@
  * de versie, zodat oude rapporten niet veranderen.
  */
 
-export const MODEL_VERSION = 'light-2026.11-v0.1';
+export const MODEL_VERSION = 'light-2026.11-v0.2';
+
+/**
+ * v0.2, na de eerste testset (22 domeinen, 26-11-2026):
+ * - dezelfde bevindingssleutel op meerdere assets (apex en www) telt één keer
+ *   volledig en daarna met REPEAT_FACTOR;
+ * - per asset telt alleen de zwaarste "kapot certificaat"-bevinding (CERT_BROKEN_KEYS);
+ * - per actie een plafond (ACTION_CAP), zodat hygiëne niet optelt tot hoge urgentie.
+ */
+export const REPEAT_FACTOR = 0.25;
+
+/** Bevindingen die samen één probleem zijn: een certificaat dat browsers weigeren. */
+export const CERT_BROKEN_KEYS = new Set([
+  'cert.expired',
+  'cert.invalid',
+  'cert.chain_incomplete',
+  'cert.self_signed',
+  'cert.untrusted_ca',
+  'cert.name_mismatch',
+]);
+
+/** Maximaal gewicht per actie (voorlopig). */
+export const ACTION_CAP: Record<string, number> = {
+  'website-headers': 10,
+  'cookies-beveiligen': 5,
+  'versies-verbergen': 5,
+};
 
 /** Deler in de afvlakking 100 × (1 − e^(−som/DIVISOR)). */
 export const DIVISOR = 60;
@@ -148,6 +174,7 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'cert.invalid': { b: 40, action: 'cert-vernieuwen' },
   'cert.chain_incomplete': { b: 40, action: 'cert-vernieuwen' },
   'cert.self_signed': { b: 40, action: 'cert-vernieuwen' },
+  'cert.untrusted_ca': { b: 40, action: 'cert-vernieuwen', voorlopig: true },
   'cert.name_mismatch': { b: 40, action: 'cert-vernieuwen' },
   'cert.expires_14d': { b: 20, action: 'cert-automatisch' },
   'cert.expires_30d': { b: 10, action: 'cert-automatisch', voorlopig: true },
@@ -173,7 +200,7 @@ export const WEIGHTS: Record<string, WeightDef> = {
 
   // Domein
   'dnssec.missing': { b: 3, action: 'dnssec-aanzetten' },
-  'dnssec.invalid': { b: 30, action: 'dnssec-repareren', voorlopig: true },
+  'dnssec.invalid': { b: 45, action: 'dnssec-repareren', voorlopig: true },
   'caa.missing': { b: 2, action: 'caa-instellen', voorlopig: true },
 
   // Website

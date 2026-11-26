@@ -63,6 +63,19 @@ function leftDomain(chain: Chain) {
   };
 }
 
+/**
+ * Een foutcode (403 van botbescherming, 421, 5xx) is niet de echte website.
+ * Headers, cookies en versies daarop beoordelen geeft valse bevindingen.
+ */
+export function notTheRealPage(res: HttpResponse) {
+  if (res.status >= 200 && res.status < 400) return null;
+  return {
+    outcome: 'unknown' as const,
+    evidence: { url: res.url, status: res.status },
+    message: `De website gaf ons foutcode ${res.status} in plaats van de pagina, dus dit is niet beoordeeld.`,
+  };
+}
+
 function unreachable(host: string, e: unknown) {
   const code = (e as { code?: string }).code ?? String(e);
   return {
@@ -93,6 +106,8 @@ export const httpsRedirectCheck: Check = {
     const evidence = { hops: chain.hops.map((h) => ({ url: h.url, status: h.status, location: h.headers.location })) };
     const finalUrl = new URL(chain.leftDomainTo ?? chain.final.url);
     if (finalUrl.protocol === 'https:') return { outcome: 'ok', evidence };
+    const bad = notTheRealPage(chain.final);
+    if (bad) return { ...bad, evidence };
     if (chain.final.status >= 300 && chain.final.status < 400) {
       return { outcome: 'unknown', evidence, message: 'De doorverwijzingen eindigen niet op een pagina; dit konden we niet vaststellen.' };
     }
@@ -131,6 +146,8 @@ export const headersCheck: Check = {
     if (final.status >= 300 && final.status < 400) {
       return { outcome: 'unknown', evidence: { status: final.status }, message: 'De website blijft doorverwijzen; headers niet beoordeeld.' };
     }
+    const bad = notTheRealPage(final);
+    if (bad) return bad;
     const h = final.headers;
     const evidence = {
       url: final.url,
@@ -225,6 +242,8 @@ export const cookiesCheck: Check = {
       return unreachable(host, e);
     }
     if (chain.leftDomainTo && chain.hops.every((h) => h.setCookies.length === 0)) return leftDomain(chain);
+    const badCookies = chain.leftDomainTo ? null : notTheRealPage(chain.final);
+    if (badCookies) return badCookies;
     const cookies = chain.hops
       .filter((hop) => new URL(hop.url).protocol === 'https:')
       .flatMap((hop) => hop.setCookies)
@@ -346,6 +365,10 @@ export const securityTxtCheck: Check = {
     }
     if (chain.leftDomainTo) return leftDomain(chain);
     const res = chain.final;
+    if (res.status >= 400 && res.status !== 404 && res.status !== 410) {
+      const bad = notTheRealPage(res)!;
+      return bad;
+    }
     const isText = (res.headers['content-type'] ?? '').toLowerCase().startsWith('text/plain');
     const contact = /^contact:\s*\S+/im.test(res.body);
     const evidence = { url: res.url, status: res.status, contentType: res.headers['content-type'] ?? null };

@@ -1,10 +1,10 @@
 # Scoremodel
 
-Versie `light-2026.11-v0.1`, uitgewerkt uit het technisch ontwerp. Code: `packages/score`.
+Versie `light-2026.11-v0.2`, uitgewerkt uit het technisch ontwerp. Code: `packages/score`.
 
 ## Formule
 
-Per open bevinding *i*: `w = b × m × z × k`
+Per open bevinding *i*: `w = b × m × z × k × r`
 
 | Factor | Waarden |
 |---|---|
@@ -12,8 +12,13 @@ Per open bevinding *i*: `w = b × m × z × k`
 | m, misbruik | 2,0 als een gekoppelde CVE in CISA KEV staat; 1,5 bij EPSS boven 0,1, een NCSC-advies met kans hoog of een DTC-waarschuwing; anders 1,0 |
 | z, zichtbaarheid | 1,0 hoofddomein, website en mail; 0,7 overige subdomeinen; 0,5 alleen in CT-logs |
 | k, zekerheid | 1,0 Technisch vastgesteld en Door jou opgegeven; 0,5 Mogelijk risico; 0 Onbekend |
+| r, herhaling | 1,0 voor de zwaarste bevinding per sleutel; 0,25 voor dezelfde sleutel op een ander asset (bijvoorbeeld apex en www); 0 voor een tweede "kapot certificaat"-bevinding op hetzelfde certificaat |
 
-Urgentie = `round(100 × (1 − e^(−Σw / 60)))`, dezelfde afvlakking als in het prototype.
+Per actie geldt een plafond (website-headers 10, cookies 5, softwareversies 5). Urgentie = `round(100 × (1 − e^(−Σw / 60)))`, dezelfde afvlakking als in het prototype.
+
+## Wijzigingen in v0.2
+
+Na de eerste testset (22 domeinen, 26 november 2026): herhalingsfactor r, kapotte certificaatbevindingen niet stapelen, plafond per actie, en `cert.untrusted_ca` los van `cert.self_signed`. Google ging in v0.1 naar Hoge urgentie door dubbeltelling van apex en www; dat was niet de bedoeling.
 
 ## Regels
 
@@ -35,6 +40,7 @@ Urgentie = `round(100 × (1 − e^(−Σw / 60)))`, dezelfde afvlakking als in h
 | `cert.invalid` | 40 | `cert-vernieuwen` | nee |
 | `cert.chain_incomplete` | 40 | `cert-vernieuwen` | nee |
 | `cert.self_signed` | 40 | `cert-vernieuwen` | nee |
+| `cert.untrusted_ca` | 40 | `cert-vernieuwen` | ja |
 | `cert.name_mismatch` | 40 | `cert-vernieuwen` | nee |
 | `cert.expires_14d` | 20 | `cert-automatisch` | nee |
 | `cert.expires_30d` | 10 | `cert-automatisch` | ja |
@@ -54,7 +60,7 @@ Urgentie = `round(100 × (1 − e^(−Σw / 60)))`, dezelfde afvlakking als in h
 | `dmarc.sp_none` | 5 | `dmarc-aanscherpen` | ja |
 | `dmarc.no_rua` | 2 | `dmarc-aanscherpen` | ja |
 | `dnssec.missing` | 3 | `dnssec-aanzetten` | nee |
-| `dnssec.invalid` | 30 | `dnssec-repareren` | ja |
+| `dnssec.invalid` | 45 | `dnssec-repareren` | ja |
 | `caa.missing` | 2 | `caa-instellen` | ja |
 | `web.no_https_redirect` | 10 | `https-afdwingen` | ja |
 | `web.hsts_missing` | 5 | `website-headers` | nee |
