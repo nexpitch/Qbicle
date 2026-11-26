@@ -60,6 +60,12 @@ describe('softwarecheck', () => {
     expect(out.findings![0]!.certainty).toBe('mogelijk');
   });
 
+  it('einde ondersteuning op een Ubuntu-server: getoond, telt niet mee', async () => {
+    const { keys, out } = await keysOf(softwareCheck, siteWith({ server: 'nginx/1.24.0 (Ubuntu)' }));
+    expect(keys).toEqual(['web.software_einde_distro']);
+    expect(out.findings![0]!.certainty).toBe('mogelijk');
+  });
+
   it('lek met voorwaarde (PHP-CGI op Windows) is mogelijk', async () => {
     const { keys, out } = await keysOf(softwareCheck, siteWith({ 'x-powered-by': 'PHP/8.3.4' }));
     expect(keys).toEqual(['web.software_kwetsbaar']);
