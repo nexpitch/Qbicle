@@ -13,7 +13,9 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Datamodel PostgreSQL | Eerste migratie |
 | CI (typecheck, tests, migraties, Docker-image) | GitHub Actions |
 | Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
-| Web-app en API (Next.js) | Volgende fase |
+| Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
+| Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
+| Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
 
@@ -44,6 +46,12 @@ npm run scan -- voorbeeld.nl --niveau 0   # alleen DNS, geen verbinding met de s
 # Database lokaal
 docker compose up -d db
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
+
+# API lokaal (mail verschijnt in de console)
+DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIES=uit npm run api
+
+# Ook de databasetests draaien
+DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm test
 ```
 
 Instellingen staan in [.env.example](.env.example).
@@ -72,12 +80,15 @@ packages/
     src/scan.ts     voert checks uit, bewaakt de regel "een fout is nooit in orde"
     test/           tests met een nep-netwerk; draaien zonder internet
   score/            scoremodel: gewichten, factoren, banden, acties in gewone taal
+  platform/         accounts, organisaties, rollen, IT-partners, domeinverificatie, audit-log
+apps/
+  api/              HTTP-API (Hono), los te draaien of later achter Next.js
 db/migrations/      SQL-migraties voor PostgreSQL
 scripts/            hulpscripts (migraties)
 docs/               uitleg over scanner en scoremodel
 ```
 
-Later komen hier `apps/web` (Next.js: website, app en API) en `apps/worker` (scan-worker met pg-boss) bij.
+Later komen hier `apps/web` (Next.js: website en app) en `apps/worker` (scan-worker met pg-boss) bij.
 
 ## Scoremodel in het kort
 

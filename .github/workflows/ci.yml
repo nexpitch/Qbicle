@@ -11,6 +11,24 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Echte PostgreSQL voor de tests van accounts, rechten en de API.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qbicle
+          POSTGRES_PASSWORD: qbicle
+          POSTGRES_DB: qbicle
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qbicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://qbicle:qbicle@localhost:5432/qbicle
+      # Databasetests mogen in CI nooit stilletjes worden overgeslagen.
+      QBICLE_REQUIRE_DB: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,3 +71,8 @@ jobs:
         run: docker build -t qbicle-scanner .
       - name: Image start (help-tekst)
         run: docker run --rm qbicle-scanner --help
+      - name: API start in dezelfde image (zonder database stopt hij met een melding)
+        run: |
+          out="$(docker run --rm --entrypoint npx qbicle-scanner --no-install tsx apps/api/src/server.ts 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q "Zet DATABASE_URL"

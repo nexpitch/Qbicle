@@ -35,7 +35,7 @@ netwerkcode in. Koppelingen en connector komen pas na akkoord op het ontwerp.
 
 ## Database
 
-`db/migrations/0002_inventaris.sql` breidt `asset` en `asset_link` uit en voegt
+`db/migrations/0003_inventaris.sql` breidt `asset` en `asset_link` uit en voegt
 `source`, `observation`, `asset_identifier`, `asset_attribute` en `component` toe.
 Een bron op niveau 2A kan niet bestaan zonder verwijzing naar een getekende scanopdracht.
 Geheimen staan niet in de database, alleen een verwijzing naar de kluis.
