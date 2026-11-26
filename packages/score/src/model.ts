@@ -120,6 +120,11 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'Updates dichten lekken die al bekend zijn bij aanvallers.',
     forWho: 'it-partner',
   },
+  'apparaat-vervangen': {
+    title: 'Vervang apparaten die geen beveiligingsupdates meer krijgen',
+    why: 'De fabrikant dicht nieuwe lekken in deze apparaten niet meer. Vooral bij een router is dat een open deur.',
+    forWho: 'it-partner',
+  },
   'mfa-aanzetten': {
     title: 'Zet tweestapsverificatie aan voor beheerders',
     why: 'Met alleen een gestolen wachtwoord kan iemand anders alles overnemen.',
@@ -180,6 +185,10 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'netwerkapparaat.kwetsbaarheid': { b: 30, action: 'firmware-bijwerken', voorlopig: true },
   'netwerkapparaat.update_beschikbaar': { b: 8, action: 'firmware-bijwerken', voorlopig: true },
   'apparaat.kwetsbaarheid': { b: 20, action: 'apparaat-vervangen-of-bijwerken', voorlopig: true },
+  'netwerkapparaat.einde_ondersteuning': { b: 25, action: 'apparaat-vervangen', voorlopig: true },
+  'netwerkapparaat.einde_ondersteuning_binnenkort': { b: 5, action: 'apparaat-vervangen', voorlopig: true },
+  'apparaat.einde_ondersteuning': { b: 10, action: 'apparaat-vervangen', voorlopig: true },
+  'apparaat.einde_ondersteuning_binnenkort': { b: 2, action: 'apparaat-vervangen', voorlopig: true },
   'apparaat.onbeheerd': { b: 5, action: 'apparaat-in-beheer', voorlopig: true },
   'apparaat.updates_achter': { b: 10, action: 'updates-installeren', voorlopig: true },
   'account.admin_zonder_mfa': { b: 30, action: 'mfa-aanzetten', voorlopig: true },

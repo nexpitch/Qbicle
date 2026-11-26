@@ -15,7 +15,8 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import type { Source } from '@qbicle/inventory';
 import { createConnector } from './connectors/index.ts';
-import { DEMO_PSEUDONYM_KEY, DEMO_SOURCES, demoConnector, demoOui, demoVulnDb } from './demo.ts';
+import { DEMO_PSEUDONYM_KEY, DEMO_SOURCES, demoConnector, demoEolDb, demoOui, demoVulnDb } from './demo.ts';
+import type { EolDb } from './eol.ts';
 import { discover, type DiscoveryResult } from './discover.ts';
 import { OuiDb } from './oui.ts';
 import { DEFAULT_PRIVACY } from './privacy.ts';
@@ -23,7 +24,7 @@ import { Secret, orgPseudonymKey } from './secrets.ts';
 import type { RouterConnector, RouterProduct } from './types.ts';
 import { VulnDb } from './vulns/db.ts';
 
-const PRODUCTS: RouterProduct[] = ['unifi', 'fritzbox', 'mikrotik'];
+const PRODUCTS: RouterProduct[] = ['unifi', 'fritzbox', 'mikrotik', 'meraki'];
 
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -49,6 +50,7 @@ async function main(): Promise<number> {
   let oui: OuiDb;
   let vulnDb: VulnDb;
   let pseudonymKey: Buffer;
+  let eolDb: EolDb | undefined;
 
   if (values.demo) {
     const wanted = (positionals[0] ? [positionals[0]] : PRODUCTS) as RouterProduct[];
@@ -56,13 +58,14 @@ async function main(): Promise<number> {
     connectors = wanted.map((p) => ({ connector: demoConnector(p, now).connector, source: DEMO_SOURCES[p] }));
     oui = demoOui();
     vulnDb = demoVulnDb();
+    eolDb = demoEolDb();
     pseudonymKey = DEMO_PSEUDONYM_KEY;
   } else {
     const product = values.product as RouterProduct;
-    if (!PRODUCTS.includes(product) || !values.url) throw new Error('Geef --product (unifi, fritzbox, mikrotik) en --url, of gebruik --demo');
+    if (!PRODUCTS.includes(product) || !values.url) throw new Error('Geef --product (unifi, fritzbox, mikrotik, meraki) en --url, of gebruik --demo');
     const certPem = values.cert ? readFileSync(values.cert, 'utf8') : undefined;
     const credentials =
-      product === 'unifi'
+      product === 'unifi' || product === 'meraki'
         ? { kind: 'api-key' as const, apiKey: new Secret(env('QBICLE_ROUTER_SLEUTEL')) }
         : { kind: 'wachtwoord' as const, username: values.gebruiker ?? 'qbicle', password: new Secret(env('QBICLE_ROUTER_WACHTWOORD')) };
     const connector = createConnector({
@@ -87,7 +90,7 @@ async function main(): Promise<number> {
     if (oui.size === 0) console.error('Let op: geen MAC-prefixregister (QBICLE_OUI_FILE); fabrikant uit MAC valt weg.');
   }
 
-  const result = await discover({ connectors, oui, vulnDb, now, privacy: { ...DEFAULT_PRIVACY, pseudonymKey } });
+  const result = await discover({ connectors, oui, vulnDb, eolDb, now, privacy: { ...DEFAULT_PRIVACY, pseudonymKey } });
   if (values.json) {
     console.log(JSON.stringify({ sources: result.sources, readouts: result.readouts.map((r) => ({ ...r, clients: r.clients.length })), clients: result.clients, assets: result.assets, components: result.components, vulns: result.vulns.map((v) => ({ asset: v.component.assetKey, cve: v.cve.id, certainty: v.certainty, kev: Boolean(v.kev), ncsc: v.ncsc?.id })), findings: result.findings, score: result.score }, null, 2));
   } else print(result);

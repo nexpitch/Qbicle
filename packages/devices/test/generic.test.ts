@@ -90,3 +90,17 @@ describe('SNMP (generiek, alle merken)', () => {
     expect(firmwareFrom('DrayTek Vigor2862 Series 3.9.6.3')).toMatchObject({ product: 'DrayOS', model: 'Vigor2862', version: '3.9.6.3' });
   });
 });
+
+describe('mDNS-aankondigingen (avahi-browse)', () => {
+  it('koppelt diensten op IP aan ARP-regels en deelt zo in', async () => {
+    const connector = new TableConnector(
+      [
+        { format: 'arp-unix', content: '? (192.168.1.40) at 12:34:56:78:9a:bc on eth0 [ether]\n' },
+        { format: 'avahi-browse', content: '+;eth0;IPv4;Kantoorprinter;_ipp._tcp;local\n=;eth0;IPv4;Kantoorprinter;_ipp._tcp;local;kantoorprinter.local;192.168.1.40;631;"rp=ipp/print"\n=;eth0;IPv6;Kantoorprinter;_ipp._tcp;local;kantoorprinter.local;fe80::1;631;""\n' },
+      ],
+      { now: () => NOW },
+    );
+    const r = await connector.read();
+    expect(r.clients).toEqual([expect.objectContaining({ mac: '12:34:56:78:9a:bc', hostname: 'kantoorprinter', services: ['_ipp._tcp'] })]);
+  });
+});

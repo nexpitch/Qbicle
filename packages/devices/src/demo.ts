@@ -8,6 +8,7 @@ import { Secret } from './secrets.ts';
 import { FixtureTransport } from './transport.ts';
 import type { RouterConnector, RouterProduct } from './types.ts';
 import { VulnDb, type NcscAdvisory } from './vulns/db.ts';
+import { EolDb, type EolCycle, type HardwareEol } from './eol.ts';
 
 /** Fixtures: zie packages/devices/fixtures/README.md. Alleen voor tests en de demo. */
 export const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), '../fixtures');
@@ -22,12 +23,13 @@ export const DEMO_SOURCES: Record<RouterProduct, Source> = {
   unifi: { id: 'unifi-utrecht', kind: 'netwerk', product: 'unifi', level: '1C', network: 'utrecht' },
   fritzbox: { id: 'fritzbox-amersfoort', kind: 'netwerk', product: 'fritzbox', level: '1C', network: 'amersfoort' },
   mikrotik: { id: 'mikrotik-werkplaats', kind: 'netwerk', product: 'mikrotik', level: '1C', network: 'werkplaats' },
+  meraki: { id: 'meraki-zwolle', kind: 'netwerk', product: 'meraki', level: '1C', network: 'zwolle' },
 };
 
 export function demoConnector(product: RouterProduct, now = new Date('2026-11-26T12:00:00Z')): { connector: RouterConnector; transport: FixtureTransport } {
   const transport = fixtureTransport(product);
   const credentials =
-    product === 'unifi'
+    product === 'unifi' || product === 'meraki'
       ? ({ kind: 'api-key', apiKey: new Secret('demo-sleutel') } as const)
       : ({ kind: 'wachtwoord', username: 'qbicle', password: new Secret('demo-wachtwoord') } as const);
   // Vaste tijd, zodat tests en demo voorspelbaar zijn.
@@ -44,6 +46,15 @@ export function demoVulnDb(): VulnDb {
   db.addNvd(JSON.parse(read('nvd-voorbeeld.json')));
   db.addKev(JSON.parse(read('kev-voorbeeld.json')));
   db.addNcsc(JSON.parse(read('ncsc-voorbeeld.json')) as NcscAdvisory[]);
+  return db;
+}
+
+/** Voorbeelddata, zie fixtures/eol-voorbeeld.json: niet als feit gebruiken. */
+export function demoEolDb(): EolDb {
+  const raw = JSON.parse(read('eol-voorbeeld.json')) as { hardware: HardwareEol[]; cycles: Record<string, EolCycle[]> };
+  const db = new EolDb();
+  db.addHardware(raw.hardware);
+  for (const [product, cycles] of Object.entries(raw.cycles)) db.addCycles(product, cycles);
   return db;
 }
 

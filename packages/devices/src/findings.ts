@@ -3,6 +3,7 @@ import { exposureFactor, inventoryFindings, type InventoryAsset, type InventoryF
 import type { Asset as ScoreAsset, Finding, LinkedVuln } from '@qbicle/score';
 import { componentsFor, type Component } from './vulns/cpe.ts';
 import type { ComponentVuln, VulnDb } from './vulns/db.ts';
+import type { EolDb } from './eol.ts';
 
 /** Zelfde vorm als de vingerafdruk van de scanner: zelfde fout op hetzelfde asset = zelfde waarde. */
 export function fingerprint(assetType: string, assetValue: string, key: string, discriminator = ''): string {
@@ -62,9 +63,10 @@ export interface DeviceFindingResult {
  * Bevindingen voor het scoremodel uit de apparateninventaris:
  * - bekende kwetsbaarheden in firmware (CVE, met KEV/EPSS/NCSC als factor m),
  * - een firmware-update die volgens het apparaat zelf klaarstaat,
+ * - apparaten of firmware zonder updates meer (end-of-life),
  * - de bevindingen uit de inventaris zelf (onbeheerd, updates achter, MFA).
  */
-export function deviceFindings(assets: InventoryAsset[], vulnDb: VulnDb, now: Date): DeviceFindingResult {
+export function deviceFindings(assets: InventoryAsset[], vulnDb: VulnDb, now: Date, eolDb?: EolDb): DeviceFindingResult {
   const active = assets.filter((a) => a.status === 'actief');
   const components = active.flatMap(componentsFor);
   const vulns = vulnDb.match(components);
@@ -97,6 +99,25 @@ export function deviceFindings(assets: InventoryAsset[], vulnDb: VulnDb, now: Da
           (certain ? '' : ' De exacte versie of het precieze product is niet zeker; laat het controleren.'),
         fingerprint: fingerprint(sa.type, sa.value, key),
         vulns: linked,
+        z,
+      });
+    }
+    for (const eol of eolDb?.check(asset, now) ?? []) {
+      if (eol.status !== 'buiten-ondersteuning' && eol.status !== 'binnenkort') continue;
+      const key = `${asset.kind === 'netwerkapparaat' ? 'netwerkapparaat' : 'apparaat'}.${eol.status === 'binnenkort' ? 'einde_ondersteuning_binnenkort' : 'einde_ondersteuning'}`;
+      const what = label(asset);
+      const sub = eol.what === 'hardware' ? `Je ${what}` : `De firmware van je ${what}`;
+      findings.push({
+        key,
+        checkKey: 'inventaris.eol',
+        asset: sa,
+        certainty: eol.certainty,
+        title: eol.status === 'binnenkort' ? `${sub} krijgt binnenkort geen updates meer` : `${sub} krijgt geen beveiligingsupdates meer`,
+        detail:
+          `${eol.what === 'hardware' ? 'Model' : 'Firmware'} ${eol.what === 'hardware' ? asset.attributes.model?.value : asset.attributes.firmware?.value}: ` +
+          `ondersteuning ${eol.status === 'binnenkort' ? 'stopt' : 'gestopt'} op ${eol.date ?? 'onbekende datum'}${eol.source ? ` (bron: ${eol.source})` : ''}. ` +
+          (eol.what === 'hardware' ? 'Nieuwe lekken worden niet meer gedicht; plan vervanging.' : 'Werk bij naar een ondersteunde versie.'),
+        fingerprint: fingerprint(sa.type, sa.value, key, eol.what),
         z,
       });
     }

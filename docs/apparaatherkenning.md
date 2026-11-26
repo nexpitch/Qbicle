@@ -29,15 +29,27 @@ firmware, het internetadres (WAN) en de lijst met verbonden apparaten. Daaruit:
 | Connector | Hoe | Niveau | Bereikbaar |
 |---|---|---|---|
 | UniFi (Ubiquiti) | Network API op de console (`/proxy/network/integration/v1`), API-sleutel, alleen GET | 1C | Cloud of lokaal |
+| Cisco Meraki | Dashboard API v1 (cloud), API-sleutel van een alleen-lezen beheerder, alleen GET | 1C | Cloud |
 | FRITZ!Box (AVM) | TR-064 (SOAP), https-poort 49443, Digest, 4 vaste leesacties | 1C | Lokaal (connector) |
 | MikroTik | RouterOS 7 REST API, Basic over https, groep met alleen `read,api,rest-api` | 1C | Lokaal (connector) |
-| Tabellen (generiek) | ARP/DHCP: `arp -a` (Windows, macOS/Linux), `ip neigh`, dnsmasq, ISC dhcpd, Windows DHCP-export | 2P | Lokaal (connector) |
+| Tabellen (generiek) | ARP/DHCP: `arp -a` (Windows, macOS/Linux), `ip neigh`, dnsmasq, ISC dhcpd, Windows DHCP-export; mDNS via `avahi-browse` | 2P | Lokaal (connector) |
 | SNMP (generiek) | Alleen SNMPv2-MIB en IP-MIB, alleen lezen, één IP | **2A** | Pas na akkoord |
 
-De generieke routes zijn voor oudere routers en merken zonder eigen connector. Welke
-merken als eerstvolgende een eigen connector krijgen, hangt af van het marktonderzoek
-en wat IT-partners gebruiken; een nieuwe connector is één bestand dat `RouterConnector`
-implementeert.
+Volgorde (marktonderzoek 26-11; er zijn geen openbare marktaandelen per merk voor het
+Nederlandse MKB, dus dit is een schatting): UniFi, FRITZ!Box, MikroTik en Meraki voor 1.0,
+FortiGate als eerste daarna. Bevestigen bij 3 tot 5 IT-partners. De generieke laag
+(ARP, DHCP, mDNS, MAC-prefix, SNMP, end-of-life) dekt oudere routers en providermodems
+van elk merk. Een nieuwe connector is één bestand dat `RouterConnector` implementeert.
+
+## End-of-life
+
+`EolDb` controleert of een apparaat of zijn firmware nog updates krijgt: per fabrikant en
+model (eigen lijst uit de aankondigingen van fabrikanten) en per firmwarecyclus (formaat
+van endoflife.date). Uitkomst: buiten ondersteuning, binnenkort (180 dagen), ondersteund
+of onbekend. Een router zonder updates is een bevinding (gewicht 25, voorlopig), ook als er
+nog geen CVE is. Dat is belangrijk voor bijvoorbeeld oude DrayTek- en Cisco RV-routers.
+De data in `fixtures/eol-voorbeeld.json` is voorbeelddata; de echte lijst moet nog worden
+samengesteld en gecontroleerd.
 
 SNMP staat in het ontwerp op niveau 2A (Qbicle stuurt zelf verkeer). De connector
 weigert zonder verwijzing naar een getekende opdracht, en de echte UDP-sessie is er
@@ -83,4 +95,5 @@ opgegeven router ook niet.
   NCSC-adviezen al als kans/schade per advies ingelezen.
 - UniFi: WAN-adres via Site Manager; CPE-namen per UniFi-product controleren in NVD.
 - Opslaan van waarnemingen/assets in PostgreSQL en de API-endpoints om een router te koppelen.
-- End-of-life-data (endoflife.date) voor "buiten ondersteuning".
+- End-of-life: de echte lijst (modellen en datums per fabrikant, firmwarecycli) samenstellen en controleren.
+- FortiGate-connector (na 1.0).

@@ -14,10 +14,11 @@ import { isPublicIpv4 } from './util.ts';
  * - dnsmasq:     dnsmasq.leases (veel consumentenrouters, OpenWrt, Pi-hole)
  * - isc-dhcpd:   dhcpd.leases (ISC DHCP, pfSense)
  * - windows-dhcp-csv: Get-DhcpServerv4Lease | Export-Csv (Windows DHCP-server)
+ * - avahi-browse: `avahi-browse -aprt` (mDNS-aankondigingen: diensten en namen per IP; geen MAC)
  *
  * Niveau 2P: de connector luistert of leest tabellen en stuurt zelf niets uit.
  */
-export type TableFormat = 'arp-windows' | 'arp-unix' | 'ip-neigh' | 'dnsmasq' | 'isc-dhcpd' | 'windows-dhcp-csv';
+export type TableFormat = 'arp-windows' | 'arp-unix' | 'ip-neigh' | 'dnsmasq' | 'isc-dhcpd' | 'windows-dhcp-csv' | 'avahi-browse';
 
 export interface TableInput {
   format: TableFormat;
@@ -93,17 +94,35 @@ export function parseTable(input: TableInput): ClientDevice[] {
       }
       break;
     }
+    case 'avahi-browse': {
+      // "=;eth0;IPv4;Naam;_ipp._tcp;local;BRN001BA9AABBCC.local;192.168.1.40;631;txt"
+      const byIp = new Map<string, ClientDevice>();
+      for (const l of lines) {
+        const f = l.split(';');
+        if (f[0] !== '=' || f[2] !== 'IPv4' || !f[4] || !f[7]) continue;
+        const c = byIp.get(f[7]) ?? { ip: f[7], hostname: f[6]?.replace(/\.local$/, '') || undefined, services: [], lastSeen: at };
+        if (!c.services!.includes(f[4])) c.services!.push(f[4]);
+        byIp.set(f[7], c);
+      }
+      out.push(...byIp.values());
+      break;
+    }
   }
   // Alleen het eigen netwerk; regels met een publiek adres horen bij de WAN-kant.
-  return out.filter((c) => c.mac && c.ip && !isPublicIpv4(c.ip));
+  return out.filter((c) => c.ip && (c.mac || c.services?.length) && !isPublicIpv4(c.ip));
 }
 
 /** Voegt tabellen samen op MAC: DHCP geeft de hostnaam, ARP ook vaste adressen. */
 export function mergeClients(lists: ClientDevice[][]): ClientDevice[] {
   const byMac = new Map<string, ClientDevice>();
+  const announcements: ClientDevice[] = [];
   for (const c of lists.flat()) {
-    const known = byMac.get(c.mac!);
-    if (!known) byMac.set(c.mac!, { ...c });
+    if (!c.mac) {
+      announcements.push(c);
+      continue;
+    }
+    const known = byMac.get(c.mac);
+    if (!known) byMac.set(c.mac, { ...c });
     else {
       known.ip ??= c.ip;
       known.hostname ??= c.hostname;
@@ -111,7 +130,16 @@ export function mergeClients(lists: ClientDevice[][]): ClientDevice[] {
       if (c.lastSeen && (!known.lastSeen || c.lastSeen > known.lastSeen)) known.lastSeen = c.lastSeen;
     }
   }
-  return [...byMac.values()];
+  // mDNS-aankondigingen hebben geen MAC: koppelen op IP aan wat ARP/DHCP al kent.
+  const out = [...byMac.values()];
+  for (const a of announcements) {
+    const known = out.find((c) => c.ip === a.ip);
+    if (known) {
+      known.services = [...new Set([...(known.services ?? []), ...(a.services ?? [])])];
+      known.hostname ??= a.hostname;
+    } else out.push({ ...a });
+  }
+  return out;
 }
 
 export class TableConnector implements RouterConnector {

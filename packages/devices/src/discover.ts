@@ -7,6 +7,7 @@ import type { PrivacyPolicy } from './privacy.ts';
 import { ConnectorError } from './transport.ts';
 import type { Readout, RouterConnector } from './types.ts';
 import type { VulnDb } from './vulns/db.ts';
+import type { EolDb } from './eol.ts';
 
 export interface DiscoveryInput {
   connectors: Array<{ connector: RouterConnector; source: Source }>;
@@ -15,6 +16,8 @@ export interface DiscoveryInput {
   oui: OuiDb;
   privacy: PrivacyPolicy;
   vulnDb: VulnDb;
+  /** End-of-life-gegevens; zonder dit veld geen EOL-controle. */
+  eolDb?: EolDb;
   now: Date;
 }
 
@@ -54,7 +57,7 @@ export async function discover(input: DiscoveryInput): Promise<DiscoveryResult> 
   }
 
   const assets = buildInventory(observations, { now: input.now });
-  const found = deviceFindings(assets, input.vulnDb, input.now);
+  const found = deviceFindings(assets, input.vulnDb, input.now, input.eolDb);
   const outcomes: Outcome[] = sources.map((s) => (s.outcome === 'ok' && found.findings.length > 0 ? 'finding' : s.outcome));
   return { readouts, sources, observations, clients, assets, ...found, score: score({ findings: found.findings, outcomes }) };
 }

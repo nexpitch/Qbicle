@@ -10,7 +10,7 @@
 import type { Secret } from './secrets.ts';
 
 /** Merken met een eigen API-connector. */
-export type RouterProduct = 'unifi' | 'fritzbox' | 'mikrotik';
+export type RouterProduct = 'unifi' | 'fritzbox' | 'mikrotik' | 'meraki';
 
 /**
  * Alle soorten connectors. Naast de merk-API's een generieke route voor oudere of
@@ -96,7 +96,7 @@ export interface ConnectorConfig {
   baseUrl: string;
   credentials: RouterCredentials;
   tls: TlsSettings;
-  /** UniFi: site-id of -naam. Standaard alle sites. */
+  /** UniFi: site-id of -naam; Meraki: organisatie-id. Standaard alle. */
   site?: string;
   /** Time-out per verzoek in ms. Standaard 10 seconden. */
   timeoutMs?: number;

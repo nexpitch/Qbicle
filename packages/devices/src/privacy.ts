@@ -32,7 +32,8 @@ const DEVICE_WORDS = new Set(
     'nvr dvr inverter omvormer laadpaal charger esp wled assistant homeassistant octoprint pihole nuc mac macmini imac studio ' +
     'laserjet officejet deskjet envy mfc dcp workstation srv server dc vm nas printer lenovo dell asus acer msi intel realtek ' +
     'nest audio display lg sony bravia webos tizen firetv appletv shield sma sunny boy tripower toshiba sharp panasonic ' +
-    'kodi plex docker proxmox esxi unraid truenas mycloud wd'
+    'kodi plex docker proxmox esxi unraid truenas mycloud wd ingang uitgang entree voordeur achterdeur poort parkeerplaats ' +
+    'buiten binnen tuin dak hoofd vergader balie showroom winkel atelier lab serverruimte meterkast'
   ).split(' '),
 );
 

@@ -1,0 +1,14 @@
+{
+  "_let_op": "VOORBEELDDATA voor tests en de demo. Modellen en datums zijn niet gecontroleerd en mogen niet als feit gebruikt worden. De echte lijst komt uit de end-of-life-aankondigingen van de fabrikanten.",
+  "hardware": [
+    { "vendor": "DrayTek", "model": "^Vigor2860", "endOfSupport": "2024-12-31", "source": "voorbeeld" },
+    { "vendor": "Cisco", "model": "^RV3[24]0", "endOfSupport": "2025-06-30", "source": "voorbeeld" },
+    { "vendor": "MikroTik", "model": "^RB750Gr3$", "endOfSupport": "2027-03-31", "source": "voorbeeld" }
+  ],
+  "cycles": {
+    "RouterOS": [
+      { "cycle": "6", "eol": "2025-01-01", "latest": "6.49.18" },
+      { "cycle": "7", "eol": false, "latest": "7.20" }
+    ]
+  }
+}

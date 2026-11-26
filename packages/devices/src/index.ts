@@ -9,5 +9,6 @@ export * from './observations.ts';
 export * from './vulns/version.ts';
 export * from './vulns/cpe.ts';
 export * from './vulns/db.ts';
+export * from './eol.ts';
 export * from './findings.ts';
 export * from './discover.ts';

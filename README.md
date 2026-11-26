@@ -15,7 +15,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
 | Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
-| Apparaatherkenning via routers (UniFi, FRITZ!Box, MikroTik, generieke ARP/DHCP-route), categorieën, koppeling aan CVE/KEV/NCSC en scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
+| Apparaatherkenning via routers (UniFi, Meraki, FRITZ!Box, MikroTik, generieke ARP/DHCP/mDNS-route, SNMP achter akkoord), categorieën, CVE/KEV/NCSC, end-of-life, scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
