@@ -12,6 +12,8 @@ const KIND_BY_SCAN_TYPE: Record<ScanAsset['type'], AssetKind> = {
   website: 'website',
   certificaat: 'certificaat',
   dienst: 'dienst',
+  apparaat: 'apparaat',
+  netwerkapparaat: 'netwerkapparaat',
 };
 
 function scanIdentifier(asset: ScanAsset): Identifier {

@@ -8,3 +8,4 @@ coverage/
 .DS_Store
 testset/testset.txt
 testset/resultaten/
+data/oui.csv

@@ -28,7 +28,8 @@ export type SourceKind =
   | 'netwerk' // router, firewall, wifi-controller via API
   | 'connector' // lokale connector (ARP, DHCP, mDNS)
   | 'internetdata' // Shodan, Censys, Shadowserver
-  | 'opgegeven'; // door klant of IT-partner ingevuld
+  | 'opgegeven' // door klant of IT-partner ingevuld
+  | 'afleiding'; // Qbicle leidt het zelf af (MAC-prefix, hostnaam, diensten); altijd "mogelijk"
 
 export interface Source {
   /** Unieke id van de koppeling binnen de organisatie. */
@@ -71,6 +72,10 @@ export type Category =
   | 'switch'
   | 'iot'
   | 'tv-media'
+  | 'slimme-speaker'
+  | 'alarmsysteem'
+  | 'zonnepanelen'
+  | 'laadpaal'
   | 'onbekend';
 
 /** Waar het asset bereikbaar is. Wordt een factor in het scoremodel. */
@@ -82,6 +87,8 @@ export type IdentifierType =
   | 'serial' // serienummer van de fabrikant
   | 'cloud-id' // Entra device-ID, Intune-ID, AWS instance-ID, ...
   | 'mac'
+  /** Gepseudonimiseerd MAC-adres (HMAC per organisatie), voor gastapparaten (AVG). */
+  | 'mac-hash'
   | 'hostname'
   | 'ip'
   | 'fqdn'
@@ -115,6 +122,10 @@ export interface Attributes {
   admin?: boolean;
   /** mDNS/SSDP-diensttypen die het apparaat aankondigt, bijvoorbeeld "_ipp._tcp". */
   services?: string[];
+  /** Apparaat zit op het gastnetwerk volgens de router. */
+  guest?: boolean;
+  /** De bron meldt dat er een firmware-update klaarstaat. */
+  updateAvailable?: boolean;
 }
 
 export type AttributeKey = keyof Attributes;
@@ -128,6 +139,12 @@ export interface Observation {
   attributes: Attributes;
   /** Hoe zeker de bron is; standaard "vastgesteld" voor API-bronnen. */
   certainty?: Certainty;
+  /**
+   * Wat Qbicle zelf uit deze waarneming afleidde (categorie uit hostnaam, fabrikant
+   * uit MAC-prefix, ...). Telt als bron "afleiding" met zekerheid "mogelijk", zodat
+   * zichtbaar blijft wat de bron meldde en wat wij concludeerden.
+   */
+  inferred?: Attributes;
 }
 
 /** Eén kenmerkwaarde met herkomst. */

@@ -99,6 +99,32 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'Wie een lek vindt, weet dan waar het gemeld kan worden, in plaats van het te laten liggen.',
     forWho: 'webbouwer',
   },
+  // Infra-inventaris (routers en netwerkapparatuur). Alle teksten en gewichten voorlopig.
+  'firmware-bijwerken': {
+    title: 'Laat de software van je router en netwerkapparaten bijwerken',
+    why: 'Er is een update of er zijn bekende lekken. Aanvallers zoeken juist naar routers en camera\'s die niet zijn bijgewerkt.',
+    forWho: 'it-partner',
+  },
+  'apparaat-vervangen-of-bijwerken': {
+    title: 'Werk apparaten met bekende lekken bij, of vervang ze',
+    why: 'Op je netwerk hangt een apparaat met een bekende kwetsbaarheid. Via zo\'n apparaat kan een aanvaller verder je netwerk in.',
+    forWho: 'it-partner',
+  },
+  'apparaat-in-beheer': {
+    title: 'Neem laptops en telefoons op in je beheertool',
+    why: 'Van apparaten die niet in beheer zijn weet niemand of ze updates krijgen.',
+    forWho: 'it-partner',
+  },
+  'updates-installeren': {
+    title: 'Installeer de achterstallige updates',
+    why: 'Updates dichten lekken die al bekend zijn bij aanvallers.',
+    forWho: 'it-partner',
+  },
+  'mfa-aanzetten': {
+    title: 'Zet tweestapsverificatie aan voor beheerders',
+    why: 'Met alleen een gestolen wachtwoord kan iemand anders alles overnemen.',
+    forWho: 'it-partner',
+  },
 };
 
 export const WEIGHTS: Record<string, WeightDef> = {
@@ -148,6 +174,15 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'web.version_disclosed': { b: 3, action: 'versies-verbergen', voorlopig: true },
   'web.securitytxt_missing': { b: 3, action: 'securitytxt-plaatsen' },
   'web.securitytxt_expired': { b: 2, action: 'securitytxt-plaatsen', voorlopig: true },
+
+  // Infra-inventaris. Tellen alleen mee als de inventaris bevindingen aanlevert;
+  // Light-rapporten veranderen er niet door. Kalibratie in de pilot, daarna eigen modelversie (infra-2027.x).
+  'netwerkapparaat.kwetsbaarheid': { b: 30, action: 'firmware-bijwerken', voorlopig: true },
+  'netwerkapparaat.update_beschikbaar': { b: 8, action: 'firmware-bijwerken', voorlopig: true },
+  'apparaat.kwetsbaarheid': { b: 20, action: 'apparaat-vervangen-of-bijwerken', voorlopig: true },
+  'apparaat.onbeheerd': { b: 5, action: 'apparaat-in-beheer', voorlopig: true },
+  'apparaat.updates_achter': { b: 10, action: 'updates-installeren', voorlopig: true },
+  'account.admin_zonder_mfa': { b: 30, action: 'mfa-aanzetten', voorlopig: true },
 };
 
 /** Gewicht voor een onbekende sleutel: liever zichtbaar meetellen dan wegvallen. */

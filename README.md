@@ -15,6 +15,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Docker (scanner-image, PostgreSQL, migraties) | Voor lokaal en later EU-hosting |
 | Klant- en gebruikersbeheer: organisaties, IT-partners met meerdere klanten, rollen, inloggen met e-maillink, uitnodigingen, domeinverificatie, audit-log | Werkt, met tests tegen PostgreSQL |
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
+| Apparaatherkenning via routers (UniFi, FRITZ!Box, MikroTik, generieke ARP/DHCP-route), categorieën, koppeling aan CVE/KEV/NCSC en scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |
@@ -50,6 +51,9 @@ DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm run db:migrate
 # API lokaal (mail verschijnt in de console)
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle QBICLE_SECURE_COOKIES=uit npm run api
 
+# Apparaatherkenning zonder hardware (fixtures)
+npm run apparaten -- --demo
+
 # Ook de databasetests draaien
 DATABASE_URL=postgres://qbicle:qbicle@localhost:5432/qbicle npm test
 ```
@@ -81,10 +85,13 @@ packages/
     test/           tests met een nep-netwerk; draaien zonder internet
   score/            scoremodel: gewichten, factoren, banden, acties in gewone taal
   platform/         accounts, organisaties, rollen, IT-partners, domeinverificatie, audit-log
+  inventory/        assetmodel: waarnemingen samenvoegen tot assets, met herkomst per kenmerk
+  devices/          apparaatherkenning via routers: connectors, categorieën, CVE-koppeling, geheimen
+    fixtures/       antwoorden van routers en voorbeeld-kwetsbaarheidsdata, voor tests en demo
 apps/
   api/              HTTP-API (Hono), los te draaien of later achter Next.js
 db/migrations/      SQL-migraties voor PostgreSQL
-scripts/            hulpscripts (migraties)
+scripts/            hulpscripts (migraties, MAC-prefixregister ophalen)
 docs/               uitleg over scanner en scoremodel
 ```
 
