@@ -15,10 +15,12 @@ import { isPublicIpv4 } from './util.ts';
  * - isc-dhcpd:   dhcpd.leases (ISC DHCP, pfSense)
  * - windows-dhcp-csv: Get-DhcpServerv4Lease | Export-Csv (Windows DHCP-server)
  * - avahi-browse: `avahi-browse -aprt` (mDNS-aankondigingen: diensten en namen per IP; geen MAC)
+ * - dns-sd-macos: Bonjour via `dns-sd -L` en `dns-sd -G` op een Mac (zie scripts/mijn-netwerk.sh):
+ *   diensten, model en fabrikant uit de TXT-gegevens die apparaten zelf aankondigen
  *
  * Niveau 2P: de connector luistert of leest tabellen en stuurt zelf niets uit.
  */
-export type TableFormat = 'arp-windows' | 'arp-unix' | 'ip-neigh' | 'dnsmasq' | 'isc-dhcpd' | 'windows-dhcp-csv' | 'avahi-browse';
+export type TableFormat = 'arp-windows' | 'arp-unix' | 'ip-neigh' | 'dnsmasq' | 'isc-dhcpd' | 'windows-dhcp-csv' | 'avahi-browse' | 'dns-sd-macos';
 
 export interface TableInput {
   format: TableFormat;
@@ -51,7 +53,7 @@ export function parseTable(input: TableInput): ClientDevice[] {
     case 'arp-unix':
       for (const l of lines) {
         const m = l.match(new RegExp(`^(\\S+)\\s+\\(${IPV4}\\)\\s+at\\s+([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5})`, 'i'));
-        if (m) out.push({ ip: m[2], mac: mac(m[3]), hostname: m[1] === '?' ? undefined : m[1], active: true, lastSeen: at });
+        if (m) out.push({ ip: m[2], mac: mac(m[3]), hostname: m[1] === '?' ? undefined : m[1]!.split('.')[0], active: true, lastSeen: at });
       }
       break;
     case 'ip-neigh':
@@ -107,9 +109,69 @@ export function parseTable(input: TableInput): ClientDevice[] {
       out.push(...byIp.values());
       break;
     }
+    case 'dns-sd-macos':
+      out.push(...parseDnsSd(input.content, at));
+      break;
   }
   // Alleen het eigen netwerk; regels met een publiek adres horen bij de WAN-kant.
-  return out.filter((c) => c.ip && (c.mac || c.services?.length) && !isPublicIpv4(c.ip));
+  return out.filter((c) => c.ip && (c.mac || c.services?.length) && !isPublicIpv4(c.ip) && !isGroupAddress(c));
+}
+
+/**
+ * Multicast- en broadcastregels (224.0.0.251, x.x.x.255, ff:ff:ff:ff:ff:ff, 01:00:5e:...)
+ * staan in elke ARP-tabel van macOS, maar zijn geen apparaten.
+ */
+function isGroupAddress(c: ClientDevice): boolean {
+  const first = Number(c.ip!.split('.')[0]);
+  if (first >= 224 || c.ip!.endsWith('.255')) return true;
+  if (!c.mac) return false;
+  return (parseInt(c.mac.slice(0, 2), 16) & 1) === 1;
+}
+
+// TXT-sleutels waarin apparaten hun model en fabrikant aankondigen (AirPlay, Chromecast, printers, HomeKit, device-info).
+const MODEL_KEYS = ['model', 'md', 'am', 'rpmd', 'ty', 'usb_mdl', 'mdl', 'product', 'modelname', 'modelid'];
+const VENDOR_KEYS = ['manufacturer', 'usb_mfg', 'mfg', 'mf', 'vendor', 'brand'];
+
+/** Uitvoer van `dns-sd -L` en `dns-sd -G` (macOS), in blokken "### L <dienst>" en "### G <host>". */
+export function parseDnsSd(content: string, at?: string): ClientDevice[] {
+  const hostIp = new Map<string, string>();
+  const byHost = new Map<string, { services: Set<string>; txt: Record<string, string> }>();
+  for (const block of content.split(/^### /m).slice(1)) {
+    const [head = '', ...lines] = block.split(/\r?\n/);
+    const [kind, ...rest] = head.trim().split(/\s+/);
+    if (kind === 'G') {
+      for (const l of lines) {
+        const m = l.match(new RegExp(`\\sAdd\\s+\\S+\\s+\\d+\\s+(\\S+?)\\.?\\s+${IPV4}\\s`));
+        if (m) hostIp.set(m[1]!.toLowerCase(), m[2]!);
+      }
+    } else if (kind === 'L') {
+      const service = (rest[0] ?? '').replace(/\.$/, '');
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i]!.match(/can be reached at (\S+?)\.?:(\d+)/);
+        if (!m) continue;
+        const host = m[1]!.toLowerCase();
+        const entry = byHost.get(host) ?? { services: new Set<string>(), txt: {} };
+        if (/^_[\w-]+\._(tcp|udp)$/.test(service)) entry.services.add(service);
+        const txtLine = lines[i + 1] ?? '';
+        if (/^\s/.test(txtLine)) {
+          for (const t of txtLine.matchAll(/([A-Za-z][\w.-]*)=((?:\\.|[^ ])*)/g)) {
+            const key = t[1]!.toLowerCase();
+            entry.txt[key] ??= t[2]!.replace(/\\(.)/g, '$1').slice(0, 80);
+          }
+        }
+        byHost.set(host, entry);
+      }
+    }
+  }
+  const out: ClientDevice[] = [];
+  for (const [host, e] of byHost) {
+    const ip = hostIp.get(host);
+    if (!ip) continue;
+    const model = MODEL_KEYS.map((k) => e.txt[k]).find((v) => v && v.length > 1 && !/^[0-9a-f]{12,}$/i.test(v));
+    const vendor = VENDOR_KEYS.map((k) => e.txt[k]).find((v) => v && v.length > 1);
+    out.push({ ip, hostname: host.replace(/\.local$/, ''), services: [...e.services], model: model?.replace(/^\((.*)\)$/, '$1'), vendor, lastSeen: at });
+  }
+  return out;
 }
 
 /** Voegt tabellen samen op MAC: DHCP geeft de hostnaam, ARP ook vaste adressen. */
@@ -137,6 +199,8 @@ export function mergeClients(lists: ClientDevice[][]): ClientDevice[] {
     if (known) {
       known.services = [...new Set([...(known.services ?? []), ...(a.services ?? [])])];
       known.hostname ??= a.hostname;
+      known.model ??= a.model;
+      known.vendor ??= a.vendor;
     } else out.push({ ...a });
   }
   return out;

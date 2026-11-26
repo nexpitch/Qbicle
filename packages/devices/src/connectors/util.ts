@@ -47,3 +47,11 @@ export function isPublicIpv4(ip: string): boolean {
   if (a === 192 && b === 168) return false;
   return true;
 }
+
+/** 10/8, 172.16/12 en 192.168/16: adressen binnen een eigen netwerk. */
+export function isPrivateIpv4(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m || m.slice(1).some((p) => Number(p) > 255)) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}

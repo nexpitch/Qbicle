@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { isRandomizedMac, normalizeMac } from '@qbicle/inventory';
 
 /**
@@ -26,6 +27,26 @@ export class OuiDb {
 
   static fromFile(path: string): OuiDb {
     return OuiDb.fromCsv(readFileSync(path, 'utf8'));
+  }
+
+  /**
+   * Het IEEE-register zoals meegeleverd in het npm-pakket oui-data (offline, BSD-2).
+   * Werkt altijd, ook als de site van de IEEE het downloaden weigert.
+   */
+  static bundled(): OuiDb {
+    const data = createRequire(import.meta.url)('oui-data') as Record<string, string>;
+    const db = new OuiDb();
+    for (const [prefix, entry] of Object.entries(data)) {
+      const org = entry.split('\n')[0]?.trim();
+      if (org && /^[0-9A-F]+$/i.test(prefix)) db.map.set(prefix.toLowerCase(), org);
+    }
+    return db;
+  }
+
+  /** Voegt een ander register toe (bijvoorbeeld een nieuwere download); bestaande prefixen worden overschreven. */
+  merge(other: OuiDb): this {
+    for (const [k, v] of other.map) this.map.set(k, v);
+    return this;
   }
 
   /** Leeg, als er geen register is: dan valt de MAC-prefix als signaal weg. */

@@ -52,9 +52,15 @@ const VENDOR_RULES: Rule[] = [
   { category: 'telefoon', on: ['fabrikant'], re: /apple|samsung|xiaomi|oneplus|oppo|vivo mobile|motorola|huawei device|honor device|fairphone|nothing technology|google/, points: 1, reason: 'fabrikant {v} maakt onder meer telefoons' },
   { category: 'laptop', on: ['fabrikant'], re: /intel corporate|lcfc|lenovo|dell|hewlett packard|hp inc|microsoft|asustek|acer|liteon|azurewave|realtek|framework/, points: 1, reason: 'fabrikant {v} maakt onder meer laptops of netwerkkaarten daarvoor' },
   { category: 'server', on: ['fabrikant'], re: /vmware|supermicro|super micro|proxmox|xen/, points: 3, reason: 'fabrikant {v} wijst op een server of virtuele machine' },
+  { category: 'iot', on: ['fabrikant'], re: /bsh hausger|miele|electrolux|whirlpool|liebherr|smeg|haier|beko|arcelik/, points: 4, reason: 'fabrikant {v} maakt huishoudapparaten (vaatwasser, oven, wasmachine)' },
+  { category: 'iot', on: ['fabrikant'], re: /roborock|irobot|ecovacs|dreame|dyson/, points: 4, reason: 'fabrikant {v} maakt robotstofzuigers of slimme huishoudapparaten' },
+  { category: 'iot', on: ['fabrikant'], re: /smart innovation|tuya|wiz connected|lifx|nanoleaf|govee/, points: 3, reason: 'fabrikant {v} maakt slimme lampen en stekkers' },
+  { category: 'router', on: ['fabrikant'], re: /arcadyan|sagemcom|compal broadband|technicolor|zte corporation|askey|sercomm|genexis/, points: 1, reason: 'fabrikant {v} maakt vooral modems en tv-ontvangers voor providers' },
   { category: 'server', on: ['fabrikant'], re: /raspberry pi/, points: 3, reason: 'een Raspberry Pi: kleine computer, meestal als server of besturing' },
   { category: 'router', on: ['fabrikant'], re: /routerboard|mikrotik|avm audiovisuelles|draytek|zyxel|fortinet|sophos|watchguard|netgate|sonicwall|juniper|cisco meraki/, points: 2, reason: 'fabrikant {v} maakt netwerkapparatuur' },
-  { category: 'accesspoint', on: ['fabrikant'], re: /ubiquiti|tp-link|tp link|aruba|ruckus|cambium|engenius|netgear|cisco/, points: 1, reason: 'fabrikant {v} maakt netwerkapparatuur' },
+  { category: 'accesspoint', on: ['fabrikant'], re: /ubiquiti|aruba|ruckus|cambium|engenius|netgear|cisco/, points: 1, reason: 'fabrikant {v} maakt netwerkapparatuur' },
+  // TP-Link: in Nederland vooral Deco-wifi en versterkers; Tapo-camera's en -stekkers herkennen we aan de naam.
+  { category: 'accesspoint', on: ['fabrikant'], re: /tp-link|tp link/, points: 3, reason: 'fabrikant {v} maakt vooral wifi-apparatuur (zoals Deco)' },
 ];
 
 // Hostnamen en modelnamen zoals apparaten ze zelf kiezen.
@@ -71,11 +77,21 @@ const NAME_RULES: Rule[] = [
   { category: 'zonnepanelen', on: ['hostnaam', 'model'], re: /^sma\d|sunny-?(boy|tripower)|solaredge|fronius|envoy|enphase|growatt|goodwe|sungrow|sun2000|omvormer|inverter|solarman|hoymiles|^dtu-/, points: 6, reason: '{s} "{x}" klinkt als een omvormer van zonnepanelen' },
   { category: 'laadpaal', on: ['hostnaam', 'model'], re: /easee|alfen|zaptec|wallbox|evbox|laadpaal|charger|chargepoint|peblar|^eve-/, points: 6, reason: '{s} "{x}" klinkt als een laadpaal' },
   { category: 'alarmsysteem', on: ['hostnaam', 'model'], re: /ajax|alarm|verisure|risco|paradox|jablotron|texecom|hub-?2/, points: 6, reason: '{s} "{x}" klinkt als een alarmsysteem' },
-  { category: 'iot', on: ['hostnaam', 'model'], re: /shelly|tasmota|^esp[-_]|espressif|sonoff|tuya|^hue|philips-hue|tado|nest-?therm|netatmo|^toon|homewizard|^p1|smartplug|^wled|meross|zigbee|thermostat|thermostaat/, points: 5, reason: '{s} "{x}" klinkt als een slim apparaat (IoT)' },
+  { category: 'iot', on: ['hostnaam', 'model'], re: /shelly|tasmota|^esp[-_]|espressif|sonoff|tuya|^hue|philips-hue|tado|nest-?therm|netatmo|^toon|homewizard|^p1|smartplug|^wled|meross|zigbee|thermostat|thermostaat|tapo-?p\d|^kp\d{3}|^hs\d{3}/, points: 5, reason: '{s} "{x}" klinkt als een slim apparaat (IoT)' },
+  { category: 'iot', on: ['hostnaam', 'model'], re: /dishwasher|vaatwasser|oven|washer|wasmachine|dryer|droger|koelkast|fridge|fornuis|kookplaat|hood|afzuigkap|coffee|koffie/, points: 6, reason: '{s} "{x}" klinkt als een slim huishoudapparaat' },
+  { category: 'iot', on: ['hostnaam', 'model'], re: /roborock|vacuum|roomba|deebot|dreame|stofzuiger/, points: 6, reason: '{s} "{x}" klinkt als een robotstofzuiger' },
+  { category: 'iot', on: ['hostnaam', 'model'], re: /^lwip\d*$|^wlan0(-\d+)?$|^esp32|^esp8266|^tuya|^smartlife/, points: 3, reason: '{s} "{x}" is een standaardnaam van een klein ingebouwd wifi-apparaat (stekker, lamp, sensor)' },
+  { category: 'tv-media', on: ['hostnaam', 'model'], re: /^diw\d{3,4}|^dcr\d|mediabox|tv-?box|^stb/, points: 6, reason: '{s} "{x}" klinkt als een tv-ontvanger van de provider' },
+  { category: 'laptop', on: ['hostnaam', 'model'], re: /^mac(-\d+)?$|^macbookpro|^macbookair/, points: 4, reason: '{s} "{x}" klinkt als een Mac' },
   { category: 'server', on: ['hostnaam', 'model'], re: /^srv|server|^dc\d|^esx|proxmox|hyper-?v|^vm-/, points: 4, reason: '{s} "{x}" klinkt als een server' },
+  { category: 'accesspoint', on: ['hostnaam', 'model'], re: /\bdeco\b|^deco|eap\d{3}|re\d{3}x?\b|repeater|versterker|extender|mesh|^unifi-?ap|^u6-|^uap/, points: 6, reason: '{s} "{x}" klinkt als een wifi-punt of versterker' },
 ];
 
 const SERVICE_RULES: Rule[] = [
+  { category: 'tv-media', on: ['dienst'], re: /^upnp:(mediarenderer|mediaserver)$/i, points: 3, reason: 'meldt zich via UPnP als mediaspeler' },
+  { category: 'slimme-speaker', on: ['dienst'], re: /^upnp:zoneplayer$/i, points: 5, reason: 'meldt zich via UPnP als speaker (Sonos)' },
+  { category: 'printer', on: ['dienst'], re: /^upnp:printer$/i, points: 5, reason: 'meldt zich via UPnP als printer' },
+  { category: 'router', on: ['dienst'], re: /^upnp:(internetgatewaydevice|wfadevice)$/i, points: 4, reason: 'meldt zich via UPnP als router of wifi-apparaat' },
   { category: 'printer', on: ['dienst'], re: /^_(ipp|ipps|printer|pdl-datastream|uscan|scanner)\._tcp$/, points: 6, reason: 'kondigt printdienst {x} aan' },
   { category: 'camera', on: ['dienst'], re: /^_(rtsp|onvif)\._(tcp|udp)$/, points: 5, reason: 'kondigt videostream {x} aan' },
   { category: 'slimme-speaker', on: ['dienst'], re: /^_(sonos|amzn-alexa|alexa|spotify-connect)\._tcp$/, points: 5, reason: 'kondigt audiodienst {x} aan' },
@@ -158,6 +174,16 @@ export function shortVendor(org: string): string {
     [/google/i, 'Google'],
     [/ubiquiti/i, 'Ubiquiti'],
     [/intel corp/i, 'Intel'],
+    [/tp-?link/i, 'TP-Link'],
+    [/bsh hausger/i, 'BSH (Bosch/Siemens)'],
+    [/roborock/i, 'Roborock'],
+    [/tuya/i, 'Tuya'],
+    [/sonos/i, 'Sonos'],
+    [/hon hai|foxconn/i, 'Hon Hai (Foxconn)'],
+    [/zte corp/i, 'ZTE'],
+    [/ajax systems/i, 'Ajax'],
+    [/arcadyan/i, 'Arcadyan'],
+    [/sagemcom/i, 'Sagemcom'],
   ];
   for (const [re, name] of known) if (re.test(org)) return name;
   return org.replace(/[,.]?\s*(co\.?,?\s*ltd\.?|inc\.?|gmbh|ag|b\.?v\.?|corporation|corp\.?|limited|llc|as|ab|s\.?a\.?)\.?$/i, '').trim();
