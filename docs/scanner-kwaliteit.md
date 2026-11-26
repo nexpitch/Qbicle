@@ -4,7 +4,7 @@ De scanner moet twee dingen goed doen: echte problemen vinden (geen gemiste bevi
 
 ## 1. Vaste meetset (zonder internet)
 
-`npm run meetset` draait 24 nagebootste domeinen (`packages/scanner/meetset/scenarios.ts`) en vergelijkt de uitkomst met wat er verwacht wordt: de band, welke bevindingen er moeten zijn (soms met zekerheid), welke er niet mogen zijn, of het rapport een dekkingswaarschuwing geeft, en welke assets niet gescand mogen worden. Elk scenario is een les uit de echte testset van 26 november 2026 of een veelvoorkomend MKB-geval.
+`npm run meetset` draait 26 nagebootste domeinen (`packages/scanner/meetset/scenarios.ts`) en vergelijkt de uitkomst met wat er verwacht wordt: de band, welke bevindingen er moeten zijn (soms met zekerheid), welke er niet mogen zijn, of het rapport een dekkingswaarschuwing geeft, en welke assets niet gescand mogen worden. Elk scenario is een les uit de echte testset van 26 november 2026 of een veelvoorkomend MKB-geval.
 
 De meetset draait ook in CI (`packages/scanner/test/meetset.test.ts`). Een wijziging die de kwaliteit verlaagt, faalt dus meteen.
 
@@ -19,6 +19,8 @@ Gevonden een fout-positief of een gemiste bevinding? Voeg eerst een scenario toe
 | Verwachte bevindingen gevonden | 15 van 22 | 16 van 22 | 22 van 22 |
 | Valse bevindingen | 8 | 3 | 0 |
 | Overige afwijkingen | 6 | 4 | 0 |
+
+Na de live testset kwamen er twee scenario's bij (Ubuntu-nginx die door de distributie nog ondersteund wordt, en een domein zonder mail met alleen hygiënepunten). v0.3 haalt daarop 23 van 26, v0.4 26 van 26.
 
 Kanttekening: de meetset is samengesteld samen met v0.3, dus 24 van 24 is geen bewijs dat de scanner perfect is. Het bewijst dat de bekende lessen erin zitten en er niet meer uit kunnen verdwijnen. De echte toets blijft de live testset en straks de pilot.
 
@@ -39,13 +41,24 @@ De check `web.software` leest wat de website zelf meestuurt (Server, X-Powered-B
 
 Regels tegen valse meldingen:
 
-- Meldt de server een Linux-distributie (Ubuntu, Debian, Red Hat en dergelijke), dan is een lek of einde ondersteuning hooguit "mogelijk": distributies zetten fixes terug zonder het versienummer te verhogen.
+- Meldt de server een Linux-distributie (Ubuntu, Debian, Red Hat en dergelijke), dan is een lek hooguit "mogelijk": distributies zetten fixes terug zonder het versienummer te verhogen. Einde ondersteuning wordt dan alleen getoond en telt niet mee in de score.
 - Een lek dat alleen onder een onzichtbare voorwaarde geldt (bijvoorbeeld PHP-CGI op Windows) is ook "mogelijk".
 - Alleen een vastgesteld KEV-lek tilt de band naar Hoge urgentie.
 - Foutpagina's (403 van botbescherming e.d.) worden niet beoordeeld.
 - Er wordt niets uitgeprobeerd: alleen het ene bezoek dat de andere webchecks ook doen.
 
 **Kennisbank.** In `packages/scanner/src/kennis/software.ts` staat een kleine, handmatig samengestelde startset (stand 26-11-2026, elke regel met bron). In productie zet de periodieke taak van fase 4 de volledige snapshots in een map en wijst `QBICLE_VULN_DIR` daarnaar: `nvd*.json` (NVD API 2.0), `kev*.json` (CISA) en `epss*.csv` (FIRST). Die worden bij de startset opgeteld.
+
+### Live testset 26-11-2026 (v0.3, Eriks Mac via Docker)
+
+22 van 22 in de verwachte band. Dekking bij badssl van 45-55% naar 92% door de pauze; nu.nl en tweakers.net eerlijk op 68% en 58% (cookiemuur). Eén echte softwarevondst (nginx 1.10.3 op de badssl-servers) en twee bijstellingen die in v0.4 zitten (zie scoremodel.md).
+
+Draaien zonder npm, met Docker Desktop:
+
+```
+docker compose build scanner
+docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten --verwacht /data/verwacht.csv
+```
 
 ## Overige verbeteringen in v0.3
 

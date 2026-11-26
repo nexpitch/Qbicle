@@ -89,7 +89,14 @@ export function makeSoftwareCheck(db: () => VulnDb = sharedVulnDb): Check {
         if (eol && eol.status !== 'ondersteund') {
           const when = eol.date ? fmtDate(eol.date) : undefined;
           findings.push({
-            key: eol.status === 'einde' ? 'web.software_einde_ondersteuning' : 'web.software_einde_binnenkort',
+            // Distributies (Ubuntu, Debian, Red Hat) ondersteunen hun eigen versies vaak jaren langer
+            // dan de maker (nginx 1.24 in Ubuntu 24.04 tot 2029). Welke distributieversie draait,
+            // zien we niet: dan tonen we het wel, maar het telt niet mee in de score.
+            key: sw.backportDistro
+              ? 'web.software_einde_distro'
+              : eol.status === 'einde'
+                ? 'web.software_einde_ondersteuning'
+                : 'web.software_einde_binnenkort',
             certainty: sw.backportDistro ? 'mogelijk' : 'vastgesteld',
             discriminator: sw.product!.key,
             title:

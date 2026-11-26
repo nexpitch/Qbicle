@@ -27,6 +27,8 @@ export interface Expect {
   uitkomst?: Record<string, 'ok' | 'finding' | 'unknown' | 'not_applicable'>;
   /** Assets die niet gescand mogen worden. */
   assetsNiet?: string[];
+  /** Hoogste toegestane urgentie. */
+  maxUrgentie?: number;
 }
 
 export interface Scenario {
@@ -220,6 +222,21 @@ export const SCENARIOS: Scenario[] = [
     verwacht: { band: ['aandacht'], moet: ['spf.missing_no_mail', 'dmarc.missing_no_mail'], magNiet: ['spf.missing', 'dmarc.missing'] },
   },
   {
+    id: 'geen-mail-plus-hygiene',
+    waarom: 'Zoals neverssl.com: geen mail, geen headers, versie zichtbaar. Aandacht nodig, geen Hoge urgentie.',
+    domein: D,
+    net: make(D, (c) => {
+      c.mx = {};
+      c.txt![D] = [];
+      c.txt![`_dmarc.${D}`] = [];
+      c.caa = {};
+      c.dnssec = { [D]: { hasDs: false, validated: false, bogus: false } };
+      site(c, { headers: { server: 'Apache/2.4.68' } });
+      c.http![`https://${D}/.well-known/security.txt`] = { status: 404 };
+    }),
+    verwacht: { band: ['aandacht'], moet: ['spf.missing_no_mail', 'dmarc.missing_no_mail', 'web.hsts_missing', 'web.version_disclosed'] },
+  },
+  {
     id: 'spf-plus-all',
     waarom: 'Iedereen mag namens het domein mailen: een echt probleem.',
     domein: D,
@@ -245,8 +262,20 @@ export const SCENARIOS: Scenario[] = [
     ),
     verwacht: {
       band: ['weinig', 'aandacht'],
-      moet: [{ key: 'web.software_einde_ondersteuning', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
-      magNiet: ['web.software_kwetsbaar'],
+      moet: [{ key: 'web.software_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
+      magNiet: ['web.software_kwetsbaar', 'web.software_einde_ondersteuning'],
+    },
+  },
+  {
+    id: 'ubuntu-nginx-door-distributie-ondersteund',
+    waarom: 'Zoals bitsoffreedom.nl: nginx 1.24 op Ubuntu 24.04 krijgt tot 2029 updates. Tonen, maar niet meetellen.',
+    domein: D,
+    net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'nginx/1.24.0 (Ubuntu)' } })),
+    verwacht: {
+      band: ['weinig'],
+      moet: [{ key: 'web.software_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
+      verderSchoon: true,
+      maxUrgentie: 5,
     },
   },
   {

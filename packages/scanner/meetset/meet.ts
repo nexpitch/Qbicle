@@ -62,6 +62,7 @@ export async function runScenario(s: Scenario): Promise<ScenarioResult> {
     const got = r.checks.find((c) => c.checkKey === check)?.outcome;
     if (got !== want) overig.push(`${check}: ${got ?? 'ontbreekt'} in plaats van ${want}`);
   }
+  if (v.maxUrgentie !== undefined && r.score.urgency > v.maxUrgentie) overig.push(`urgentie ${r.score.urgency} boven ${v.maxUrgentie}`);
   for (const a of v.assetsNiet ?? []) if (r.assets.some((x) => x.value === a)) overig.push(`onterecht gescand: ${a}`);
   const bandGoed = v.band.includes(r.score.band.key as never);
   return {

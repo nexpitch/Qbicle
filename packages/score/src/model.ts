@@ -1,5 +1,5 @@
 /**
- * Scoremodel Qbicle Light, versie light-2026.11-v0.3.
+ * Scoremodel Qbicle Light, versie light-2026.11-v0.4.
  *
  * Gewichten (b) komen uit het technisch ontwerp waar ze daar genoemd zijn.
  * Gewichten met `voorlopig: true` staan niet in het ontwerp en zijn een eerste
@@ -9,7 +9,7 @@
  * de versie, zodat oude rapporten niet veranderen.
  */
 
-export const MODEL_VERSION = 'light-2026.11-v0.3';
+export const MODEL_VERSION = 'light-2026.11-v0.4';
 
 /**
  * v0.2, na de eerste testset (22 domeinen, 26-11-2026):
@@ -33,6 +33,14 @@ export const REPEAT_FACTOR = 0.25;
  */
 export const COVERAGE_WARN_PCT = 80;
 
+/**
+ * v0.4, na de live testset met v0.3 (26-11-2026, 22 van 22 in de verwachte band):
+ * - einde ondersteuning op een Ubuntu/Debian/Red Hat-server telt niet mee
+ *   (web.software_einde_distro, b = 0): de distributie werkt die versie vaak nog bij;
+ * - plafond mail-dichtzetten van 25 naar 18: een domein dat niet mailt en verder alleen
+ *   hygiënepunten heeft, hoort niet in Hoge urgentie (neverssl.com kwam op 54). Met 18 blijft "alleen SPF en DMARC ontbreken" net in Aandacht nodig (26).
+ */
+
 /** Bevindingen die samen één probleem zijn: een certificaat dat browsers weigeren. */
 export const CERT_BROKEN_KEYS = new Set([
   'cert.expired',
@@ -48,7 +56,7 @@ export const ACTION_CAP: Record<string, number> = {
   'website-headers': 10,
   'cookies-beveiligen': 5,
   'versies-verbergen': 5,
-  'mail-dichtzetten': 25,
+  'mail-dichtzetten': 18,
 };
 
 /** Deler in de afvlakking 100 × (1 − e^(−som/DIVISOR)). */
@@ -246,6 +254,8 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'web.software_kwetsbaar': { b: 25, action: 'software-bijwerken', voorlopig: true },
   'web.software_einde_ondersteuning': { b: 15, action: 'software-bijwerken', voorlopig: true },
   'web.software_einde_binnenkort': { b: 3, action: 'software-bijwerken', voorlopig: true },
+  // Alleen ter informatie: telt niet mee en levert geen actie op.
+  'web.software_einde_distro': { b: 0, action: 'software-bijwerken', voorlopig: true },
   'web.securitytxt_missing': { b: 3, action: 'securitytxt-plaatsen' },
   'web.securitytxt_expired': { b: 2, action: 'securitytxt-plaatsen', voorlopig: true },
 
