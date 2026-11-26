@@ -30,7 +30,7 @@ import { Secret, orgPseudonymKey } from './secrets.ts';
 import type { RouterConnector, RouterProduct } from './types.ts';
 import { VulnDb } from './vulns/db.ts';
 import { runLocal } from './lokaal.ts';
-import { renderReport } from './rapport.ts';
+import { deviceRows, parseNames, renderReport } from './rapport.ts';
 
 const PRODUCTS: RouterProduct[] = ['unifi', 'fritzbox', 'mikrotik', 'meraki'];
 
@@ -50,6 +50,8 @@ async function main(): Promise<number> {
       arp: { type: 'string' },
       uit: { type: 'string' },
       ping: { type: 'boolean' },
+      bonjour: { type: 'string' },
+      namen: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -114,12 +116,18 @@ async function main(): Promise<number> {
   return result.sources.some((s) => s.outcome === 'error') ? 2 : 0;
 }
 
-async function local(values: { gateway?: string; arp?: string; uit?: string; ping?: boolean; json?: boolean }): Promise<number> {
+async function local(values: { gateway?: string; arp?: string; uit?: string; ping?: boolean; json?: boolean; bonjour?: string; namen?: string }): Promise<number> {
   if (!values.gateway || !values.arp) throw new Error('Geef --gateway (adres van je modem) en --arp (bestand met de uitvoer van arp -a)');
+  // Meegeleverd register (npm-pakket oui-data), aangevuld met een eigen download als die er is.
+  const oui = OuiDb.bundled();
   const ouiFile = process.env.QBICLE_OUI_FILE;
-  const oui = ouiFile && existsSync(ouiFile) ? OuiDb.fromFile(ouiFile) : OuiDb.empty();
+  if (ouiFile && existsSync(ouiFile)) oui.merge(OuiDb.fromFile(ouiFile));
   const now = new Date();
-  const result = await runLocal({ gateway: values.gateway, tables: [{ format: 'arp-unix', content: readFileSync(values.arp, 'utf8') }], oui, now });
+  const tables: Parameters<typeof runLocal>[0]['tables'] = [{ format: 'arp-unix', content: readFileSync(values.arp, 'utf8') }];
+  const bonjour = Boolean(values.bonjour && existsSync(values.bonjour));
+  if (bonjour) tables.push({ format: 'dns-sd-macos', content: readFileSync(values.bonjour!, 'utf8') });
+  const names = values.namen && existsSync(values.namen) ? parseNames(readFileSync(values.namen, 'utf8')) : new Map();
+  const result = await runLocal({ gateway: values.gateway, tables, oui, now, askDevices: Boolean(values.ping) });
   const out = values.uit ?? '.';
   mkdirSync(out, { recursive: true });
   const stamp = now.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
@@ -130,12 +138,13 @@ async function local(values: { gateway?: string; arp?: string; uit?: string; pin
     upnp: result.upnpLocation ?? null,
     bronnen: result.sources,
     meldingen: [...result.notes, ...result.readouts.flatMap((r) => r.warnings)],
+    apparaten: deviceRows(result, names),
     assets: result.assets,
     bevindingen: result.findings,
     urgentie: { score: result.score.urgency, band: result.score.band.label },
   };
   writeFileSync(join(out, `inventaris-${stamp}.json`), JSON.stringify(inventory, null, 2));
-  writeFileSync(join(out, 'rapport.html'), renderReport(result, { generatedAt: now, pingSweep: Boolean(values.ping) }));
+  writeFileSync(join(out, 'rapport.html'), renderReport(result, { generatedAt: now, pingSweep: Boolean(values.ping), names, bonjour }));
   if (values.json) console.log(JSON.stringify(inventory, null, 2));
   else {
     print(result);

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Source } from '@qbicle/inventory';
 import { UpnpIgdConnector } from './connectors/upnp.ts';
 import { mergeClients, parseTable, type TableFormat } from './connectors/tables.ts';
-import { locateIgd } from './connectors/ssdp.ts';
+import { describeUpnpDevices, locateIgd, type UpnpDeviceInfo } from './connectors/ssdp.ts';
 import { isPrivateIpv4 } from './connectors/util.ts';
 import { discover, type DiscoveryResult } from './discover.ts';
 import type { EolDb } from './eol.ts';
@@ -31,7 +31,16 @@ export interface LocalRunInput {
   /** Voor tests: eigen SSDP en transport. */
   locate?: (gateway: string) => Promise<URL | undefined>;
   transportFor?: (origin: string) => Transport;
+  /**
+   * Met scanopdracht: vraag elk apparaat één keer (unicast) om zijn UPnP-beschrijving
+   * (fabrikant, model, type). Geen poortscan.
+   */
+  askDevices?: boolean;
+  describe?: (ips: string[]) => Promise<Map<string, UpnpDeviceInfo>>;
 }
+
+/** Waar de gegevens over een apparaat vandaan komen, per IP-adres. */
+export type Evidence = 'ARP-tabel' | 'MAC-fabrikant' | 'naam in het netwerk' | 'Bonjour' | 'UPnP';
 
 export interface LocalRunResult extends DiscoveryResult {
   gateway: string;
@@ -39,13 +48,45 @@ export interface LocalRunResult extends DiscoveryResult {
   upnpLocation?: string;
   /** Wat er niet lukte, in gewone taal. */
   notes: string[];
+  /** Per IP-adres: welke bronnen iets over het apparaat zeiden. */
+  evidence: Record<string, Evidence[]>;
+  /** Per IP-adres: het MAC-adres (voor zelf benoemen) en of het een privacy-adres is. */
+  macs: Record<string, string>;
 }
 
 export async function runLocal(input: LocalRunInput): Promise<LocalRunResult> {
   if (!isPrivateIpv4(input.gateway)) throw new Error('De gateway moet een adres in je eigen netwerk zijn (bijvoorbeeld 192.168.2.254)');
   const now = input.now ?? new Date();
   const notes: string[] = [];
-  const allClients = mergeClients(input.tables.map((t) => parseTable({ ...t, capturedAt: t.capturedAt ?? now.toISOString() })));
+  const parsed = input.tables.map((t) => ({ format: t.format, clients: parseTable({ ...t, capturedAt: t.capturedAt ?? now.toISOString() }) }));
+  const evidence: Record<string, Set<Evidence>> = {};
+  const mark = (ip: string | undefined, e: Evidence) => ip && (evidence[ip] ??= new Set()).add(e);
+  for (const t of parsed) {
+    for (const c of t.clients) {
+      if (t.format === 'dns-sd-macos' || t.format === 'avahi-browse') mark(c.ip, 'Bonjour');
+      else mark(c.ip, 'ARP-tabel');
+      if (c.hostname && t.format !== 'dns-sd-macos') mark(c.ip, 'naam in het netwerk');
+    }
+  }
+  const allClients = mergeClients(parsed.map((t) => t.clients));
+  if (input.askDevices) {
+    const ips = allClients.map((c) => c.ip!).filter((ip) => ip && ip !== input.gateway);
+    const info = await (input.describe ?? ((x: string[]) => describeUpnpDevices(x)))(ips).catch(() => new Map<string, UpnpDeviceInfo>());
+    for (const c of allClients) {
+      const d = c.ip ? info.get(c.ip) : undefined;
+      if (!d) continue;
+      mark(c.ip, 'UPnP');
+      c.vendor ??= d.vendor;
+      c.model ??= d.model;
+      if (d.deviceType) c.services = [...new Set([...(c.services ?? []), `upnp:${d.deviceType.toLowerCase()}`])];
+    }
+  }
+  const macs: Record<string, string> = {};
+  for (const c of allClients) {
+    if (!c.ip || !c.mac) continue;
+    macs[c.ip] = c.mac;
+    if (input.oui.lookup(c.mac)) mark(c.ip, 'MAC-fabrikant');
+  }
   const gatewayEntry = allClients.find((c) => c.ip === input.gateway);
   const clients = allClients.filter((c) => c.ip !== input.gateway);
   const gatewayVendor = gatewayEntry?.mac ? input.oui.lookup(gatewayEntry.mac) : undefined;
@@ -118,5 +159,12 @@ export async function runLocal(input: LocalRunInput): Promise<LocalRunResult> {
     privacy: { ...DEFAULT_PRIVACY, pseudonymKey: randomBytes(32) },
   });
   if (input.oui.size === 0) notes.push('Het register met MAC-fabrikanten ontbreekt, daardoor herkennen we minder apparaten.');
-  return { ...result, gateway: input.gateway, upnpLocation: upnpLocation?.href, notes };
+  return {
+    ...result,
+    gateway: input.gateway,
+    upnpLocation: upnpLocation?.href,
+    notes,
+    evidence: Object.fromEntries(Object.entries(evidence).map(([ip, e]) => [ip, [...e]])),
+    macs,
+  };
 }

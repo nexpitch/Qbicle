@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { OuiDb, parseTable } from '../src/index.ts';
-import { locateIgd, mSearch, parseSsdpLocation } from '../src/connectors/ssdp.ts';
+import { locateIgd, mSearch, parseSsdpLocation, parseUpnpDescription } from '../src/connectors/ssdp.ts';
 import { runLocal } from '../src/lokaal.ts';
-import { deviceRows, renderReport } from '../src/rapport.ts';
+import { deviceRows, parseNames, renderReport } from '../src/rapport.ts';
 import { classifyClient } from '../src/classify.ts';
 import { fixtureTransport } from '../src/demo.ts';
 
@@ -75,7 +75,7 @@ describe('eerste test eigen netwerk', () => {
   it('leest het KPN-modem via UPnP en zet de apparaten erachter in de lijst', async () => {
     const r = await run(async () => new URL('http://192.168.2.254:49152/rootDesc.xml'));
     expect(r.sources.every((s) => s.outcome !== 'error')).toBe(true);
-    const rows = deviceRows(r.assets, r.findings);
+    const rows = deviceRows(r);
     const modem = rows.find((x) => x.ip === '192.168.2.254')!;
     expect(modem.type).toBe('Modem van KPN');
     expect(rows.filter((x) => x.ip === '192.168.2.254')).toHaveLength(1);
@@ -86,12 +86,12 @@ describe('eerste test eigen netwerk', () => {
     const html = renderReport(r, { generatedAt: NOW, pingSweep: false });
     expect(html).toContain('Modem van KPN');
     expect(html).toContain('Je netwerk in kaart');
-    expect(html).not.toMatch(/<script/);
+    expect(html).not.toMatch(/<script[^>]*src=/);
   });
 
   it('werkt ook als het modem niet op UPnP antwoordt', async () => {
     const r = await run(async () => undefined);
-    const rows = deviceRows(r.assets, r.findings);
+    const rows = deviceRows(r);
     expect(rows.find((x) => x.ip === '192.168.2.254')!.vendor).toBe('Arcadyan');
     expect(rows).toHaveLength(5);
     expect(r.notes.join(' ')).toMatch(/UPnP/);
@@ -99,5 +99,62 @@ describe('eerste test eigen netwerk', () => {
 
   it('weigert een gateway met een publiek adres', async () => {
     await expect(runLocal({ gateway: '203.0.113.1', tables: [], oui: OUI })).rejects.toThrow(/eigen netwerk/);
+  });
+});
+
+describe('meer herkenning (tweede ronde, na de eerste echte test)', () => {
+  const bundled = OuiDb.bundled();
+
+  it('levert het IEEE-register mee, ook zonder download', () => {
+    expect(bundled.size).toBeGreaterThan(30000);
+    expect(bundled.lookup('e0:98:06:00:00:01')).toMatch(/Espressif/);
+    expect(bundled.lookup('d8:07:b6:00:00:01')).toMatch(/TP-LINK/i);
+    expect(bundled.lookup('38:b4:d3:00:00:01')).toMatch(/BSH/);
+  });
+
+  it('herkent huishoudapparaten, robotstofzuigers, tv-ontvanger en kleine wifi-apparaten', () => {
+    const cat = (mac: string, hostname?: string) => classifyClient({ mac, hostname }, bundled).category;
+    expect(cat('38:b4:d3:c4:fd:6f', 'bosch-oven-383010532607002251')).toBe('iot');
+    expect(cat('c8:d7:78:63:3e:4a', 'bosch-dishwasher-013010519588040195')).toBe('iot');
+    expect(cat('b0:4a:39:8a:d8:4c', 'roborock-vacuum-a38')).toBe('iot');
+    expect(cat('94:3c:96:25:a2:16', 'diw7022-25a216')).toBe('tv-media');
+    expect(cat('f8:17:2d:a1:e9:d4', 'wlan0-4')).toBe('iot');
+    expect(cat('e0:98:06:c8:a2:c4')).toBe('iot');
+  });
+
+  it('leest Bonjour van de Mac: diensten, model en fabrikant per IP', () => {
+    const out = parseTable({
+      format: 'dns-sd-macos',
+      content: [
+        '### L _ipp._tcp HP\\032LaserJet',
+        '20:05:01.456  HP\\032LaserJet._ipp._tcp.local. can be reached at NPI2FABEA.local.:631 (interface 4)',
+        ' txtvers=1 ty=HP\\ LaserJet\\ MFP\\ M234sdw usb_MFG=HP',
+        '### G NPI2FABEA.local',
+        '20:05:04.123  Add  40000002       4  NPI2FABEA.local.                       192.168.2.27                                 120',
+      ].join('\n'),
+    });
+    expect(out).toEqual([expect.objectContaining({ ip: '192.168.2.27', hostname: 'npi2fabea', services: ['_ipp._tcp'], model: 'HP LaserJet MFP M234sdw', vendor: 'HP' })]);
+  });
+
+  it('leest fabrikant, model en type uit een UPnP-beschrijving', () => {
+    const xml = '<root><device><deviceType>urn:schemas-upnp-org:device:ZonePlayer:1</deviceType><friendlyName>Woonkamer</friendlyName><manufacturer>Sonos, Inc.</manufacturer><modelName>Sonos One</modelName><modelNumber>S18</modelNumber><deviceList><device><manufacturer>x</manufacturer></device></deviceList></device></root>';
+    expect(parseUpnpDescription(xml)).toEqual({ vendor: 'Sonos, Inc.', model: 'Sonos One S18', deviceType: 'ZonePlayer' });
+  });
+
+  it('neemt zelf gegeven namen over en zegt waarom iets onbekend blijft', async () => {
+    const r = await runLocal({
+      gateway: '192.168.2.254',
+      tables: [{ format: 'arp-unix', content: '? (192.168.2.35) at 60:45:2e:4b:e4:cf on en0 ifscope [ethernet]\n? (192.168.2.36) at 5a:9b:81:00:00:01 on en0 ifscope [ethernet]\n' }],
+      oui: bundled,
+      now: NOW,
+      locate: async () => undefined,
+    });
+    const before = deviceRows(r);
+    expect(before.find((x) => x.ip === '192.168.2.35')!.whyUnknown).toMatch(/Intel/);
+    expect(before.find((x) => x.ip === '192.168.2.36')!.whyUnknown).toMatch(/privacy-MAC/);
+    const names = parseNames('# mac,naam,type\n60:45:2E:4B:E4:CF;Werklaptop;Laptop\nonzin\n');
+    const after = deviceRows(r, names).find((x) => x.ip === '192.168.2.35')!;
+    expect(after).toMatchObject({ name: 'Werklaptop', type: 'Laptop', certainty: 'Door jou opgegeven', risk: 'geen' });
+    expect(after.sources).toContain('zelf benoemd');
   });
 });

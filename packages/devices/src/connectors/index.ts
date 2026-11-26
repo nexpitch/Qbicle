@@ -58,5 +58,5 @@ export function createConnector(
 export { TableConnector, parseTable, mergeClients, type TableFormat, type TableInput } from './tables.ts';
 export { SnmpConnector, FixtureSnmpSession, OID, SNMP_ALLOWED, vendorFrom, firmwareFrom, type SnmpSession, type SnmpVarbind, type SnmpCredentials } from './snmp.ts';
 export { UpnpIgdConnector, UPNP_RULES } from './upnp.ts';
-export { locateIgd, parseSsdpLocation, mSearch, IGD_TARGETS } from './ssdp.ts';
+export { locateIgd, parseSsdpLocation, mSearch, IGD_TARGETS, describeUpnpDevices, parseUpnpDescription, type UpnpDeviceInfo } from './ssdp.ts';
 export { isPrivateIpv4 } from './util.ts';

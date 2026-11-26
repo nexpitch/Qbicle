@@ -9,10 +9,11 @@
   },
   "dependencies": {
     "@qbicle/inventory": "*",
-    "@qbicle/score": "*"
+    "@qbicle/score": "*",
+    "oui-data": "2.1.68"
   },
   "devDependencies": {
-    "pg": "^8.23.1",
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1"
   }
 }
