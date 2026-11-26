@@ -74,7 +74,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
-      QBICLE_APP_ORIGIN: ${QBICLE_APP_ORIGIN:-http://localhost:3000}
+      # Moet het adres zijn dat je in de browser gebruikt (inloglinks en controle op herkomst).
+      QBICLE_APP_ORIGIN: ${QBICLE_WEB_ORIGIN:-http://localhost:3000}
       QBICLE_SECURE_COOKIES: "uit"
       PORT: "3000"
       # Testbetalingen tot Mollie gekoppeld is (wacht op de BV).
@@ -85,7 +86,8 @@ services:
       QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
     ports:
-      - "3000:3000"
+      # Andere poort op je computer: QBICLE_WEB_PORT=3300 (scripts/klantomgeving.sh kiest zelf een vrije).
+      - "${QBICLE_WEB_PORT:-3000}:3000"
     entrypoint: ["npx", "--no-install", "tsx", "apps/web/src/server.ts"]
 
 volumes:
