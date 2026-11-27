@@ -308,7 +308,18 @@ function Betaalwijze(props: Ctx & { b: BillingOverview }) {
           ) : (
             <p class="melding">Er is nog geen machtiging. Die ontstaat bij je eerste betaling.</p>
           )}
-          {b.magBeheren ? (
+          {bw.teruggezetNaarIncassoOp ? (
+            <p class="melding">
+              Je betaalde op factuur. Sinds je pakket- of termijnwissel ({datum(bw.teruggezetNaarIncassoOp)}) betaal je met automatische incasso, omdat factuur alleen kan bij{' '}
+              {bw.factuurPakket} met een jaarcontract.
+            </p>
+          ) : null}
+          {!bw.factuurMogelijk ? (
+            <p class="small">
+              Betalen op factuur kan bij een jaarcontract van {bw.factuurPakket}. Werkt je organisatie met inkoopordernummers of heb je andere afspraken nodig? Neem contact met
+              ons op, dan kijken we samen naar maatwerk.
+            </p>
+          ) : b.magBeheren ? (
             bw.factuurAangevraagdOp ? (
               <p class="melding ok">Je aanvraag om op factuur te betalen is binnen ({datum(bw.factuurAangevraagdOp)}). We nemen binnen twee werkdagen contact op.</p>
             ) : (
@@ -316,7 +327,10 @@ function Betaalwijze(props: Ctx & { b: BillingOverview }) {
                 <summary>Liever op factuur betalen?</summary>
                 <form class="stack" data-api={`/api/v1/organisaties/${org.id}/betaalwijze/factuur-aanvragen`}>
                   <FormError />
-                  <p class="small">Kan op afspraak, bijvoorbeeld als je organisatie met inkoopordernummers werkt of jaarlijks vooraf wil betalen op factuur.</p>
+                  <p class="small">
+                    Met een jaarcontract van {bw.factuurPakket} kun je ook op factuur betalen, bijvoorbeeld als je organisatie met inkoopordernummers werkt. Je betaalt dan jaarlijks
+                    vooraf op factuur. Andere afspraken nodig? Neem contact met ons op voor maatwerk.
+                  </p>
                   <label>
                     Waarom wil je op factuur betalen?
                     <textarea name="toelichting" required minlength={5} maxlength={600} placeholder="Bijvoorbeeld: wij werken met inkoopordernummers"></textarea>

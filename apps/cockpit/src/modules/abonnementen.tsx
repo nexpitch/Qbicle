@@ -1,6 +1,6 @@
 /** @jsxImportSource hono/jsx */
 import { listSubscriptions, PAYMENT_METHODS, SUB_STATUSES, type PaymentMethod, type SubStatusFilter } from '../core/billing-admin.ts';
-import { METHOD_LABEL, PayStatus, planName, SubStatus } from '../labels.tsx';
+import { METHOD_LABEL, MethodCell, PayStatus, planName, SubStatus } from '../labels.tsx';
 import { datum, Empty, euroKort, Kpi } from '../layout.tsx';
 import type { CockpitModule } from '../module.ts';
 
@@ -23,11 +23,13 @@ export const abonnementen: CockpitModule = {
       const st = c.req.query('status');
       const status: SubStatusFilter = (SUB_STATUSES as readonly string[]).includes(st ?? '') ? (st as SubStatusFilter) : 'lopend';
       const m = c.req.query('methode');
-      const methode: PaymentMethod | null = (PAYMENT_METHODS as readonly string[]).includes(m ?? '') ? (m as PaymentMethod) : null;
+      type Methode = PaymentMethod | 'uitzondering';
+      const methode: Methode | null = m === 'uitzondering' || (PAYMENT_METHODS as readonly string[]).includes(m ?? '') ? (m as Methode) : null;
+      const factuurPakketten = catalog.plans.filter((x) => x.product === 'corporate').map((x) => x.id);
       const zoek = c.req.query('zoek') ?? '';
       const pagina = Math.max(1, Number(c.req.query('pagina')) || 1);
-      const { rows, total, mrrCents } = await listSubscriptions(ctx.cockpit.p.pool, { status, methode, zoek, limit: PAGE, offset: (pagina - 1) * PAGE });
-      const link = (o: { status?: SubStatusFilter; methode?: PaymentMethod | null; pagina?: number }) => {
+      const { rows, total, mrrCents } = await listSubscriptions(ctx.cockpit.p.pool, { status, methode, factuurPakketten, zoek, limit: PAGE, offset: (pagina - 1) * PAGE });
+      const link = (o: { status?: SubStatusFilter; methode?: Methode | null; pagina?: number }) => {
         const s = o.status ?? status;
         const me = o.methode === undefined ? methode : o.methode;
         const u = new URLSearchParams({
@@ -68,6 +70,13 @@ export const abonnementen: CockpitModule = {
                       {METHOD_LABEL[pm]}
                     </a>
                   ))}
+                  <a
+                    href={link({ methode: 'uitzondering' })}
+                    aria-current={methode === 'uitzondering' ? 'true' : undefined}
+                    title="Op factuur, maar niet Corporate met jaarcontract (maatwerk)"
+                  >
+                    Factuur, uitzondering
+                  </a>
                 </div>
               </div>
               {rows.length === 0 ? (
@@ -101,7 +110,9 @@ export const abonnementen: CockpitModule = {
                           <td>
                             <SubStatus status={r.status} />
                           </td>
-                          <td>{METHOD_LABEL[r.payment_method]}</td>
+                          <td>
+                            <MethodCell catalog={catalog} method={r.payment_method} plan={r.plan} interval={r.billing_interval} />
+                          </td>
                           <td>{r.last_payment_status ? <PayStatus status={r.last_payment_status} /> : <span class="muted">—</span>}</td>
                           <td class="num">{euroKort(r.monthly_price_cents)}</td>
                           <td class="nowrap">

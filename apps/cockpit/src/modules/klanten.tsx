@@ -1,10 +1,10 @@
 /** @jsxImportSource hono/jsx */
-import { PlatformError } from '@qbicle/platform';
+import { invoicePlanName, PlatformError } from '@qbicle/platform';
 import { z } from 'zod';
 import { can } from '../core/roles.ts';
 import { addNote, getOrganizationDetail, listNotes, listOrganizations, orgTimeline, SUB_FILTERS, type SubFilter } from '../core/customers.ts';
 import { getPaymentSettings, PAYMENT_METHODS, setPaymentSettings } from '../core/billing-admin.ts';
-import { METHOD_LABEL, ORG_KIND, PayStatusFull, planName, SubStatus } from '../labels.tsx';
+import { isInvoiceException, METHOD_LABEL, MethodCell, ORG_KIND, PayStatusFull, planName, SubStatus } from '../labels.tsx';
 import { datum, datumTijd, Empty, euro, euroKort, FormError, Status } from '../layout.tsx';
 import type { CockpitModule } from '../module.ts';
 import { actionLabel } from './audit.tsx';
@@ -106,7 +106,9 @@ export const klanten: CockpitModule = {
                           <SubStatus status={r.sub_status} />
                           {r.sub_status === 'proef' && r.trial_ends_at ? <span class="sub">tot {datum(r.trial_ends_at)}</span> : null}
                         </td>
-                        <td>{METHOD_LABEL[r.payment_method] ?? r.payment_method}</td>
+                        <td>
+                          <MethodCell catalog={catalog} method={r.payment_method} plan={r.plan} interval={r.billing_interval} />
+                        </td>
                         <td class="num">{r.monthly_price_cents != null ? euroKort(r.monthly_price_cents) : '—'}</td>
                         <td class="num">{r.users}</td>
                         <td class="num">{r.domains}</td>
@@ -310,8 +312,14 @@ export const klanten: CockpitModule = {
             <section class="card">
               <div class="card-head">
                 <h2>Betaalwijze</h2>
-                <span class="small">Standaard automatische incasso. Factuur alleen bij een afspraak (corporate of klantspecifiek project).</span>
+                <span class="small">Standaard automatische incasso. Factuur standaard alleen bij {invoicePlanName(catalog)} met jaarcontract; anders alleen als maatwerk.</span>
               </div>
+              {isInvoiceException(catalog, ps.payment_method, lopend?.plan ?? null, lopend?.billing_interval ?? null) ? (
+                <p class="banner b-warn">
+                  <b>Uitzondering.</b> Deze klant betaalt op factuur, maar heeft {lopend ? `${planName(catalog, lopend.plan)} per ${lopend.billing_interval}` : 'geen lopend abonnement'}.
+                  Factuur kan standaard alleen bij {invoicePlanName(catalog)} met jaarcontract. Leg bij Afspraak vast waarom dit maatwerk is, of zet terug naar incasso.
+                </p>
+              ) : null}
               {magBetaal ? (
                 <form class="stack betaalwijze" data-api={`/api/klanten/${id}/betaalwijze`}>
                   <FormError />

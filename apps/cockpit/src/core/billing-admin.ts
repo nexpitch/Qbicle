@@ -29,16 +29,28 @@ export interface SubscriptionRow {
 
 export async function listSubscriptions(
   q: Queryable,
-  opts: { status?: SubStatusFilter; methode?: PaymentMethod | null; zoek?: string; limit?: number; offset?: number } = {},
+  opts: {
+    status?: SubStatusFilter;
+    /** 'uitzondering': op factuur buiten de standaardregel (alleen Corporate met jaarcontract). */
+    methode?: PaymentMethod | 'uitzondering' | null;
+    /** Pakketten waarbij factuur standaard mag (Corporate); nodig voor 'uitzondering'. */
+    factuurPakketten?: string[];
+    zoek?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ rows: SubscriptionRow[]; total: number; mrrCents: number }> {
   const status = opts.status ?? 'lopend';
   const methode = opts.methode ?? null;
+  const pakketten = opts.factuurPakketten ?? [];
   const zoek = opts.zoek?.trim().slice(0, 100) || null;
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
   const where = `
       WHERE (($1::text = 'lopend' AND s.status IN ('proef', 'actief', 'achterstallig', 'opgezegd')) OR s.status = $1)
-        AND ($2::text IS NULL OR o.payment_method = $2)
+        AND ($2::text IS NULL OR o.payment_method = $2
+             OR ($2 = 'uitzondering' AND o.payment_method = 'factuur'
+                 AND NOT (s.plan = ANY($4::text[]) AND s.billing_interval = 'jaar')))
         AND ($3::text IS NULL OR o.name ILIKE '%' || $3 || '%')`;
   const rows = await many<SubscriptionRow>(
     q,
@@ -47,15 +59,15 @@ export async function listSubscriptions(
             (SELECT p.status FROM payment p WHERE p.subscription_id = s.id ORDER BY p.created_at DESC LIMIT 1) AS last_payment_status
        FROM subscription s JOIN organization o ON o.id = s.organization_id ${where}
       ORDER BY CASE s.status WHEN 'achterstallig' THEN 0 WHEN 'proef' THEN 1 ELSE 2 END, o.name
-      LIMIT $4 OFFSET $5`,
-    [status, methode, zoek, limit, offset],
+      LIMIT $5 OFFSET $6`,
+    [status, methode, zoek, pakketten, limit, offset],
   );
   const t = await one<{ n: number; mrr: string }>(
     q,
     `SELECT count(*)::int AS n,
             coalesce(sum(s.monthly_price_cents) FILTER (WHERE s.status IN ('actief', 'opgezegd', 'achterstallig')), 0)::bigint AS mrr
        FROM subscription s JOIN organization o ON o.id = s.organization_id ${where}`,
-    [status, methode, zoek],
+    [status, methode, zoek, pakketten],
   );
   return { rows, total: t?.n ?? 0, mrrCents: Number(t?.mrr ?? 0) };
 }

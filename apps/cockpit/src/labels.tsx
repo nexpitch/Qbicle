@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import type { Catalog } from '@qbicle/platform';
+import { invoiceAllowed, type Catalog } from '@qbicle/platform';
 import { Status, type StatusKind } from './layout.tsx';
 
 /** Leesbare namen en statuskleuren die meerdere onderdelen delen. */
@@ -39,6 +39,23 @@ export function planName(catalog: Catalog, id: string | null): string {
 }
 
 export const METHOD_LABEL: Record<string, string> = { incasso: 'Incasso', factuur: 'Factuur' };
+
+/** Factuur buiten de standaardregel (alleen Corporate met jaarcontract): afgesproken maatwerk. */
+export function isInvoiceException(catalog: Catalog, method: string, plan: string | null, interval: string | null): boolean {
+  if (method !== 'factuur') return false;
+  return !invoiceAllowed(plan ? catalog.plans.find((p) => p.id === plan) : undefined, interval);
+}
+
+/** Betaalwijze in een tabel, met een label als factuur een uitzondering is. */
+export function MethodCell(props: { catalog: Catalog; method: string; plan: string | null; interval: string | null }) {
+  const label = METHOD_LABEL[props.method] ?? props.method;
+  if (!isInvoiceException(props.catalog, props.method, props.plan, props.interval)) return <>{label}</>;
+  return (
+    <>
+      {label} <span class="tag" title="Factuur kan standaard alleen bij Corporate met jaarcontract. Dit is maatwerk.">Uitzondering</span>
+    </>
+  );
+}
 
 /** Status van een betaling, met terugbetaling erbij. */
 export function PayStatusFull(props: { status: string; refundedAt: Date | null; refundedCents?: number; amountCents?: number }) {

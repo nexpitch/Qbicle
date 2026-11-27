@@ -4,6 +4,8 @@ import {
   BILLING_INTERVALS,
   findAuditPackage,
   findPlan,
+  invoiceAllowed,
+  invoicePlanName,
   periodAmountCents,
   vatCents,
   type BillingInterval,
@@ -341,6 +343,7 @@ export async function startSubscription(
       );
       await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [organizationId, plan.id]);
       await audit(q, actor, { organizationId, action: 'abonnement.gewijzigd', subject: cur.id, detail: { van: cur.plan, naar: plan.id, interval } });
+      await enforceInvoiceRule(p, q, organizationId, { plan: cur.plan, interval: cur.interval }, { plan: plan.id, interval }, actor);
       return toSub(r!);
     }
     const hadBefore = await one(q, 'SELECT 1 FROM subscription WHERE organization_id = $1 LIMIT 1', [organizationId]);
@@ -475,7 +478,7 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
     opzegtermijnMaanden: notice,
     gepland: sub?.pendingPlan && sub.pendingInterval ? { pakket: pendingPlan, interval: sub.pendingInterval, per: sub.currentPeriodEnd } : null,
     volgendeBetaling: volgende,
-    betaalwijze: await paymentMethodInfo(p.pool, organizationId),
+    betaalwijze: await paymentMethodInfo(p, p.pool, organizationId),
     gebruik: await usageCounts(p.pool, organizationId),
     abonnement: sub ? { ...sub, pakket: findPlan(p.catalog, sub.plan) ?? null } : null,
     toegang: state,
@@ -645,6 +648,7 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
         const t = r.plan_change;
         const plan = findPlan(p.catalog, t.plan);
         if (plan) {
+          const was = await one<{ plan: string; billing_interval: BillingInterval }>(q, 'SELECT plan, billing_interval FROM subscription WHERE id = $1', [r.subscription_id]);
           await q.query(
             `UPDATE subscription SET plan = $2, billing_interval = $3, monthly_price_cents = $4,
                     pending_plan = $5, pending_interval = $6,
@@ -655,6 +659,7 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
           );
           await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [r.organization_id, plan.id]);
           await audit(q, actor, { organizationId: r.organization_id, action: 'abonnement.gewijzigd', subject: r.subscription_id, detail: { naar: plan.id, upgradeBetaald: true } });
+          if (was) await enforceInvoiceRule(p, q, r.organization_id, { plan: was.plan, interval: was.billing_interval }, { plan: plan.id, interval: t.interval }, actor);
         }
       } else if (r.subscription_id) {
         // Geplande downgrade of termijnwissel gaat pas in nu de nieuwe periode betaald is.
@@ -1028,7 +1033,9 @@ export async function previewPlanChange(
   const plan = planOrFail(p, input.plan);
   const interval = parseInterval(input.interval);
   const sub = await currentSubscription(p.pool, organizationId);
-  return computeChange(p, sub, plan, interval, await usageCounts(p.pool, organizationId));
+  const preview = computeChange(p, sub, plan, interval, await usageCounts(p.pool, organizationId));
+  await addInvoiceWarning(p, p.pool, organizationId, sub, preview);
+  return preview;
 }
 
 /**
@@ -1055,6 +1062,7 @@ export async function changePlan(
     await q.query('SELECT 1 FROM organization WHERE id = $1 FOR UPDATE', [organizationId]);
     const sub = (await currentSubscription(q, organizationId, true))!;
     const preview = computeChange(p, sub, plan, interval, await usageCounts(q, organizationId));
+    await addInvoiceWarning(p, q, organizationId, sub, preview);
     const reactivate = `cancel_at_period_end = false, ends_at = NULL, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL,
                         status = CASE WHEN status = 'opgezegd' THEN 'actief' ELSE status END`;
 
@@ -1079,6 +1087,7 @@ export async function changePlan(
       );
       await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [organizationId, plan.id]);
       await audit(q, actor, { organizationId, action: 'abonnement.gewijzigd', subject: sub.id, detail: { van: sub.plan, naar: plan.id, interval, soort: preview.soort } });
+      await enforceInvoiceRule(p, q, organizationId, { plan: sub.plan, interval: sub.interval }, { plan: plan.id, interval: keepInterval }, actor);
       return { preview, subscription: toSub(r!) };
     }
 
@@ -1114,6 +1123,8 @@ export async function changePlan(
       subject: sub.id,
       detail: { van: sub.plan, naar: plan.id, interval, soort: preview.soort, ingang: preview.ingangsdatum?.toISOString() ?? null },
     });
+    // De volgende betaling hoort al bij het nieuwe pakket: staat dat geen factuur toe, dan nu terug naar incasso.
+    await enforceInvoiceRule(p, q, organizationId, { plan: sub.plan, interval: sub.interval }, { plan: plan.id, interval }, actor);
     return { preview, subscription: toSub(r!) };
   });
 }
@@ -1157,6 +1168,7 @@ export async function applyScheduledChange(p: Platform, q: Queryable, subscripti
   );
   await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [sub.organizationId, plan.id]);
   await audit(q, { userId: null }, { organizationId: sub.organizationId, action: 'abonnement.gewijzigd', subject: sub.id, detail: { van: sub.plan, naar: plan.id, interval: sub.pendingInterval, gepland: true } });
+  await enforceInvoiceRule(p, q, sub.organizationId, { plan: sub.plan, interval: sub.interval }, { plan: plan.id, interval: sub.pendingInterval }, { userId: null });
   return toSub(r!);
 }
 
@@ -1192,12 +1204,35 @@ export interface PaymentMethodInfo {
   mandaat: Mandate | null;
   /** Wanneer de klant voor het laatst om betalen op factuur vroeg (binnen 30 dagen). */
   factuurAangevraagdOp: Date | null;
+  /** Mag de klant om factuur vragen? Alleen bij het Corporate-pakket met jaarcontract. */
+  factuurMogelijk: boolean;
+  /** Naam van het pakket waarbij factuur kan, voor de uitleg. */
+  factuurPakket: string;
+  /** Betaalt op factuur buiten de standaardregel: afgesproken maatwerk. */
+  uitzondering: boolean;
+  /** Wanneer factuur automatisch is teruggezet naar incasso na een pakket- of termijnwissel (binnen 60 dagen). */
+  teruggezetNaarIncassoOp: Date | null;
 }
 
-async function paymentMethodInfo(q: Queryable, organizationId: string): Promise<PaymentMethodInfo> {
+/** Pakket en termijn die bepalen of factuur kan: de geplande wijziging als die er is, anders de huidige. */
+function invoiceBasis(p: Platform, sub: Subscription | undefined): { plan: Plan | undefined; interval: BillingInterval | null } {
+  if (!sub) return { plan: undefined, interval: null };
+  if (sub.pendingPlan && sub.pendingInterval) return { plan: findPlan(p.catalog, sub.pendingPlan), interval: sub.pendingInterval };
+  return { plan: findPlan(p.catalog, sub.plan), interval: sub.interval };
+}
+
+async function paymentMethodInfo(p: Platform, q: Queryable, organizationId: string): Promise<PaymentMethodInfo> {
   const o = await one<{ payment_method: 'incasso' | 'factuur'; payment_terms_days: number }>(
     q,
     'SELECT payment_method, payment_terms_days FROM organization WHERE id = $1',
+    [organizationId],
+  );
+  const sub = await currentSubscription(q, organizationId);
+  const basis = invoiceBasis(p, sub);
+  const mogelijk = invoiceAllowed(basis.plan, basis.interval);
+  const back = await one<{ at: Date }>(
+    q,
+    `SELECT max(at) AS at FROM audit_log WHERE organization_id = $1 AND action = 'betaalwijze.terug_naar_incasso' AND at > now() - interval '60 days'`,
     [organizationId],
   );
   const m = await one<{ id: string; method: 'sepa' | 'creditcard'; account_holder: string | null; account_last4: string | null; created_at: Date }>(
@@ -1215,7 +1250,52 @@ async function paymentMethodInfo(q: Queryable, organizationId: string): Promise<
     betaaltermijnDagen: o?.payment_terms_days ?? 14,
     mandaat: m ? { id: m.id, method: m.method, accountHolder: m.account_holder, accountLast4: m.account_last4, createdAt: m.created_at } : null,
     factuurAangevraagdOp: req?.at ?? null,
+    factuurMogelijk: mogelijk,
+    factuurPakket: invoicePlanName(p.catalog),
+    uitzondering: o?.payment_method === 'factuur' && !invoiceAllowed(sub ? findPlan(p.catalog, sub.plan) : undefined, sub?.interval),
+    teruggezetNaarIncassoOp: o?.payment_method === 'incasso' ? back?.at ?? null : null,
   };
+}
+
+/**
+ * Na een pakket- of termijnwissel: betaalde de klant op factuur omdat het pakket
+ * dat toestond (Corporate, jaar), en staat de nieuwe combinatie dat niet toe, dan
+ * gaat de betaalwijze terug naar automatische incasso. De klant ziet dat bij
+ * Betaalwijze, en vooraf als waarschuwing bij het wijzigen. Een uitzondering die
+ * een medewerker al buiten de regel had ingesteld (maatwerk) blijft staan.
+ */
+async function enforceInvoiceRule(
+  p: Platform,
+  q: Queryable,
+  organizationId: string,
+  before: { plan: string; interval: BillingInterval },
+  after: { plan: string; interval: BillingInterval },
+  actor: Actor,
+): Promise<boolean> {
+  if (!invoiceAllowed(findPlan(p.catalog, before.plan), before.interval)) return false;
+  const nextPlan = findPlan(p.catalog, after.plan);
+  if (invoiceAllowed(nextPlan, after.interval)) return false;
+  const r = await q.query(`UPDATE organization SET payment_method = 'incasso' WHERE id = $1 AND payment_method = 'factuur'`, [organizationId]);
+  if (!r.rowCount) return false;
+  const wat = `${nextPlan?.naam ?? after.plan}, per ${after.interval}`;
+  await q.query(
+    `INSERT INTO org_note (organization_id, body, source) VALUES ($1, $2, 'systeem')`,
+    [organizationId, `Betaalwijze automatisch teruggezet van factuur naar incasso: het abonnement is nu ${wat}. Factuur kan standaard alleen bij ${invoicePlanName(p.catalog)} met jaarcontract. Is dit maatwerk, zet dan factuur handmatig terug.`],
+  );
+  await audit(q, actor, { organizationId, action: 'betaalwijze.terug_naar_incasso', subject: organizationId, detail: { pakket: after.plan, interval: after.interval } });
+  return true;
+}
+
+/** Waarschuwing vooraf als een wissel betalen op factuur beëindigt. */
+async function addInvoiceWarning(p: Platform, q: Queryable, organizationId: string, sub: Subscription | undefined, preview: PlanChangePreview): Promise<void> {
+  if (!sub) return;
+  const o = await one<{ payment_method: string }>(q, 'SELECT payment_method FROM organization WHERE id = $1', [organizationId]);
+  if (o?.payment_method !== 'factuur') return;
+  if (!invoiceAllowed(findPlan(p.catalog, sub.plan), sub.interval)) return;
+  if (invoiceAllowed(preview.naar.plan, preview.naar.interval)) return;
+  preview.waarschuwingen.push(
+    `Je betaalt nu op factuur. Dat kan alleen bij ${invoicePlanName(p.catalog)} met een jaarcontract. Na deze wijziging betaal je met automatische incasso: je eerstvolgende betaling doe je één keer zelf (iDEAL, kaart of SEPA) en daarmee geef je toestemming voor de volgende. Gaat het om maatwerk? Neem dan eerst contact met ons op.`,
+  );
 }
 
 async function recordMandate(p: Platform, q: Queryable, pay: PayRow, actor: Actor): Promise<void> {
@@ -1248,16 +1328,22 @@ export async function revokeMandate(p: Platform, actor: UserActor, organizationI
 }
 
 /**
- * Betalen op factuur kan alleen op afspraak (Qbicle stelt het in via de cockpit).
- * De klant vraagt het hier aan; het verzoek komt als notitie bij de klant in de cockpit.
+ * Betalen op factuur kan alleen op afspraak (Qbicle stelt het in via de cockpit),
+ * en standaard alleen bij het Corporate-pakket met jaarcontract. De klant vraagt het hier aan; het verzoek komt als notitie bij de klant in de cockpit.
  */
 export async function requestInvoicePayment(p: Platform, actor: UserActor, organizationId: string, reason: string): Promise<void> {
   await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
   const text = reason.replace(/\s+/g, ' ').trim();
   if (text.length < 5) throw new PlatformError('ongeldige_invoer', 'Vertel kort waarom je op factuur wilt betalen, bijvoorbeeld: inkoopordernummer verplicht.');
   if (text.length > 600) throw new PlatformError('ongeldige_invoer', 'Houd de toelichting korter dan 600 tekens.');
-  const info = await paymentMethodInfo(p.pool, organizationId);
+  const info = await paymentMethodInfo(p, p.pool, organizationId);
   if (info.methode === 'factuur') throw new PlatformError('conflict', 'Je betaalt al op factuur.');
+  if (!info.factuurMogelijk) {
+    throw new PlatformError(
+      'conflict',
+      `Betalen op factuur kan alleen bij ${info.factuurPakket} met een jaarcontract. Bij andere pakketten en bij maandelijks betalen gaat het via automatische incasso. Heb je maatwerk nodig? Neem contact met ons op.`,
+    );
+  }
   if (info.factuurAangevraagdOp) throw new PlatformError('conflict', 'Je aanvraag is binnen. We nemen binnen twee werkdagen contact op.');
   await p.pool.query(
     `INSERT INTO org_note (organization_id, author_id, body, source) VALUES ($1, $2, $3, 'systeem')`,

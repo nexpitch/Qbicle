@@ -64,6 +64,12 @@ describe.skipIf(!hasDb)('web-app', () => {
     expect(done).toContain('je betaling is gelukt');
     const abo = await (await web.request(`/o/${org}/abonnement`, { headers: { cookie } })).text();
     expect(abo).toMatch(/TEST-\d{4}-\d{6}/);
+    // MKB per maand: geen knop voor factuur, wel uitleg dat het bij Corporate jaar kan.
+    expect(abo).not.toContain('Liever op factuur betalen?');
+    expect(abo).toContain('Betalen op factuur kan bij een jaarcontract van Qbicle Business');
+    const factAanvraag = await json(`/api/v1/organisaties/${org}/betaalwijze/factuur-aanvragen`, { toelichting: 'Wij werken met inkoopordernummers' }, cookie);
+    expect(factAanvraag.status).toBe(409);
+    expect(await factAanvraag.text()).toContain("jaarcontract");
 
     // Account: gegevens, contactpersonen en gebruikers op één plek.
     const acc = await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text();
