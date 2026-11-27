@@ -55,7 +55,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
-import { demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
+import { addDomains, demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
 import { KoppelingFout, KOPPELINGEN, teststandVoor } from '@qbicle/koppelingen';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -335,6 +335,17 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
   v1.post('/organisaties/:org/domeinen', requireUser, async (c) => {
     const input = await body(c, schemas.addDomain);
     return c.json(await addDomain(p, user(c), param(c, 'org'), input), 201);
+  });
+  v1.post('/organisaties/:org/domeinen/lijst', requireUser, async (c) => {
+    const input = await body(c, z.object({ domeinen: z.union([z.string().max(5000), z.array(z.string().max(300)).max(100)]) }));
+    const resultaten = await addDomains(p, user(c), param(c, 'org'), input.domeinen);
+    const ongeldig = resultaten.filter((r) => r.status === 'ongeldig').map((r) => r.invoer);
+    return c.json({
+      aantal: resultaten.filter((r) => r.status === 'toegevoegd').length,
+      bestaatAl: resultaten.filter((r) => r.status === 'bestaat_al').length,
+      ongeldigTekst: ongeldig.join(', '),
+      resultaten,
+    }, 201);
   });
   v1.get('/organisaties/:org/domeinen/:dom', requireUser, async (c) =>
     c.json(await getDomain(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),

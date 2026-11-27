@@ -183,7 +183,7 @@ export async function describeDnsHost(domain: string, lookup: HostLookup, instru
       reden: `De DNS staat bij een partij die we niet herkennen (${nameservers[0]}). Vaak is dat je webbouwer of IT-partner.`,
     };
   } else {
-    dnsBeheer = { provider: null, naam: null, zekerheid: 'onbekend', reden: 'We konden de naamservers niet opvragen. Bestaat het domein, en is de naam goed gespeld?' };
+    dnsBeheer = { provider: null, naam: null, zekerheid: 'onbekend', reden: 'We konden de naamservers niet opvragen. Controleer of de naam goed gespeld is, of probeer het later opnieuw.' };
   }
   return {
     domain,

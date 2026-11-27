@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import {
   can,
   demoDataAllowed,
+  domainOverview,
   findDnsHost,
   getAssetDetail,
   getDashboard,
@@ -205,7 +206,12 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     if (!ctx) return c.redirect('/inloggen');
     const [domains, access] = await Promise.all([listDomains(p, ctx.s.user.id, ctx.org.id), resolveAccess(p.pool, ctx.s.user.id, ctx.org.id)]);
     const magBeheren = Boolean(access && can(access, 'domeinen:beheren'));
-    return c.html(<DomeinenPage user={ctx.user} org={ctx.org} domains={domains} magBeheren={magBeheren} sent={c.req.query('mail') === 'verstuurd'} />);
+    const overview = await domainOverview(p, ctx.s.user.id, ctx.org.id, domains);
+    const q = c.req.query();
+    const added = q.toegevoegd !== undefined ? { aantal: Number(q.toegevoegd) || 0, bestaatAl: Number(q.bestaat) || 0, ongeldig: (q.ongeldig ?? '').slice(0, 300) } : undefined;
+    return c.html(
+      <DomeinenPage user={ctx.user} org={ctx.org} domains={domains} magBeheren={magBeheren} sent={q.mail === 'verstuurd'} overview={overview} added={added} />,
+    );
   });
 
   app.get('/o/:org/domeinen/:dom/waar', async (c) => {

@@ -8,6 +8,7 @@ import type {
   DashboardAsset,
   DnsHostResult,
   Domain,
+  DomainOverview,
   Level,
   TrendPoint,
 } from '@qbicle/platform';
@@ -677,7 +678,9 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
 
 // Domeinen -------------------------------------------------------------------------------------
 
-export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean }) {
+export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; overview: DomainOverview; added?: { aantal: number; bestaatAl: number; ongeldig: string } }) {
+  const ov = props.overview;
+  const over = ov.gebruikt > ov.limiet;
   const { org } = props;
   const api = `/api/v1/organisaties/${org.id}/domeinen`;
   return (
@@ -692,6 +695,23 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
         </p>
       </div>
       {props.sent ? <p class="melding ok">De bevestigingslink is verstuurd. Open de mail en klik op de link.</p> : null}
+      {props.added ? (
+        <p class={`melding ${props.added.ongeldig ? 'warn' : 'ok'}`}>
+          {props.added.aantal === 1 ? '1 domein toegevoegd' : `${props.added.aantal} domeinen toegevoegd`}
+          {props.added.bestaatAl ? `, ${props.added.bestaatAl} stond${props.added.bestaatAl === 1 ? '' : 'en'} er al` : ''}
+          {props.added.ongeldig ? `. Niet herkend als domein: ${props.added.ongeldig}` : ''}.
+        </p>
+      ) : null}
+      <div class="row between">
+        <p class="small">
+          {ov.gebruikt} van {ov.limiet} domeinen in je pakket{ov.plan ? '' : ' (zonder abonnement)'}
+        </p>
+      </div>
+      {over ? (
+        <p class="melding warn">
+          Je hebt meer domeinen dan in je pakket zitten. Ze worden voorlopig gewoon bewaakt; extra domeinen kun je straks als uitbreiding afnemen.
+        </p>
+      ) : null}
       {props.domains.map((d) => (
         <section class="card">
           <div class="row between">
@@ -699,7 +719,23 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
             {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
           </div>
           {d.verified ? (
-            <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+            <>
+              <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+              {(() => {
+                const sm = ov.summaries.get(d.id);
+                return sm ? (
+                  <div class="row domain-stats">
+                    <span>
+                      <b>{sm.assets}</b> assets
+                    </span>
+                    <span>
+                      <b>{sm.openFindings}</b> open bevindingen
+                    </span>
+                    <span class="small">{sm.lastScanAt ? `Laatste scan ${datum(sm.lastScanAt)}` : 'Nog niet gescand'}</span>
+                  </div>
+                ) : null;
+              })()}
+            </>
           ) : props.magBeheren ? (
             <div class="grid">
               <div class="stack-sm">
@@ -755,15 +791,31 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
           )}
         </section>
       ))}
+      {props.magBeheren && ov.suggesties.length ? (
+        <section class="card">
+          <h2>Hoort dit ook bij jullie?</h2>
+          <p class="small">Deze domeinen zagen we bij je websites, servers of certificaten. Voeg ze toe als ze van jullie zijn.</p>
+          <div class="row">
+            {ov.suggesties.map((sug) => (
+              <form data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}`}>
+                <input type="hidden" name="domeinen" value={sug} />
+                <button class="btn secondary" type="submit">
+                  + {sug}
+                </button>
+              </form>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {props.magBeheren ? (
         <section class="card narrow">
-          <h2>Domein toevoegen</h2>
-          <form class="stack" data-api={api}>
+          <h2>{props.domains.length ? 'Meer domeinen toevoegen' : 'Domein toevoegen'}</h2>
+          <form class="stack" data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}&ongeldig={ongeldigTekst}`}>
             <FormError />
             <label>
-              Domeinnaam
-              <span class="hint">Bijvoorbeeld jouwbedrijf.nl, zonder www of https.</span>
-              <input type="text" name="name" required autocomplete="off" inputmode="url" placeholder="jouwbedrijf.nl" />
+              Domeinnamen
+              <span class="hint">Eén of meer, bijvoorbeeld jouwbedrijf.nl en jouwwebshop.nl. Je kunt een hele lijst plakken; scheid met een komma of nieuwe regel.</span>
+              <textarea name="domeinen" rows={4} required autocomplete="off" placeholder={'jouwbedrijf.nl\njouwwebshop.nl'}></textarea>
             </label>
             <button class="btn" type="submit">
               Toevoegen
