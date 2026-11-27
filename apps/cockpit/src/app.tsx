@@ -162,6 +162,20 @@ export function createCockpit(cockpit: Cockpit, opts: CockpitOptions): Hono<AppE
         : c.json({ fout: 'serverfout', bericht: 'Er ging iets mis. Probeer het later opnieuw.' }, 500);
     }
     const status = pe?.code === 'niet_gevonden' || pe?.code === 'geen_toegang' ? 404 : pe ? pe.status : 500;
+    const staff = c.get('staff');
+    if (staff) {
+      return c.html(
+        <Shell title={status === 404 ? 'Niet gevonden' : 'Er ging iets mis'} staff={staff} nav={nav} active="">
+          <section class="card">
+            <p>{pe ? pe.message : 'Probeer het over een paar minuten opnieuw.'}</p>
+            <p>
+              <a href="/">Terug naar het overzicht</a>
+            </p>
+          </section>
+        </Shell>,
+        status as 404,
+      );
+    }
     return c.html(
       <Bare title="Er ging iets mis">
         <section class="card">

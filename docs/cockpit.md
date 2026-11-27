@@ -53,8 +53,8 @@ De shell regelt inloggen, MFA, CSRF en headers; modules zien alleen ingelogde me
 ## Bouwvolgorde
 
 1. Shell: inloggen met MFA, rollen, navigatie, overzicht, audit-log, medewerkers (deze stap).
-2. Bedrijven en gebruikers.
-3. Abonnementen en facturen, per klant incasso (standaard) of factuur.
+2. Bedrijven en gebruikers: zoeken (naam, domein, e-mail, KvK), filteren op abonnementsstatus, detail met tabbladen, notities (alleen voor Qbicle, niet te wijzigen), gebruikers blokkeren met reden en overal uitloggen.
+3. Abonnementen (filter op status en betaalwijze, MRR), facturen en betalingen (openstaand, betaald, mislukt, terugbetaald), en per klant de betaalwijze: automatische incasso (standaard) of factuur met termijn. Bij factuur is een reden verplicht; elke wijziging staat in het audit-log.
 4. Incassobatch: automatisch klaargezet, controleren, met één knop indienen (testmodus tot Mollie er is).
 5. Mislukte incasso's met voorgestelde vervolgactie.
 

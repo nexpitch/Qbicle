@@ -1,9 +1,13 @@
 import type { CockpitModule } from '../module.ts';
+import { abonnementen } from './abonnementen.tsx';
 import { agents } from './agents.tsx';
 import { audit } from './audit.tsx';
+import { facturen } from './facturen.tsx';
 import { gebruik } from './gebruik.tsx';
+import { gebruikers } from './gebruikers.tsx';
 import { gezondheid } from './gezondheid.tsx';
 import { home } from './home.tsx';
+import { klanten } from './klanten.tsx';
 import { medewerkers } from './medewerkers.tsx';
 import { placeholder } from './placeholder.tsx';
 import { support } from './support.tsx';
@@ -16,30 +20,17 @@ export const MODULES: CockpitModule[] = [
   home,
 
   // Klanten
-  placeholder({ key: 'klanten', label: 'Bedrijven', href: '/klanten', icon: 'bedrijf', group: 'klanten', order: 10 }, [
-    'Alle bedrijven zoeken en filteren op pakket, status en betaalwijze',
-    'Detail per bedrijf: gebruikers, domeinen, abonnement, facturen, notities en tijdlijn',
-    'Status wijzigen (blokkeren, heropenen) met reden in het audit-log',
-  ]),
-  placeholder({ key: 'gebruikers', label: 'Gebruikers', href: '/gebruikers', icon: 'gebruikers', group: 'klanten', order: 20 }, [
-    'Alle gebruikers met organisaties, rol en laatste keer ingelogd',
-    'Account blokkeren of overal uitloggen',
-  ]),
+  klanten,
+  gebruikers,
 
   // Financiën
-  placeholder({ key: 'abonnementen', label: 'Abonnementen', href: '/abonnementen', icon: 'abonnement', group: 'financien', order: 10 }, [
-    'Alle abonnementen met pakket, interval, prijs, periode en status',
-    'Per klant: automatische incasso (standaard) of factuur op rekening',
-  ]),
+  abonnementen,
   placeholder({ key: 'incasso', label: "Incasso's", href: '/incasso', icon: 'incasso', group: 'financien', order: 20 }, [
     'Incassobatch automatisch klaargezet per periode',
     'Controleren, regels uitsluiten of aanpassen, daarna met één knop indienen',
     'Mislukte incasso’s (storno, geen dekking, mandaat ingetrokken) met voorgestelde vervolgactie',
   ]),
-  placeholder({ key: 'facturen', label: 'Facturen', href: '/facturen', icon: 'factuur', group: 'financien', order: 30 }, [
-    'Alle facturen met status: betaald, openstaand, mislukt, terugbetaald',
-    'Factuur sturen voor klanten zonder incasso',
-  ]),
+  facturen,
 
   // Techniek en support (packages/ops)
   gebruik,
