@@ -74,6 +74,12 @@
         showError(form, r.json.bericht || 'Er ging iets mis. Probeer het opnieuw.');
         return;
       }
+      if (form.dataset.toonVeld) {
+        // Toon een waarde uit het antwoord (bijv. een deellink) in plaats van te herladen.
+        var out = document.getElementById(form.dataset.toonIn || '');
+        if (out) { out.value = String(pick(r.json, form.dataset.toonVeld) ?? ''); out.hidden = false; out.focus(); out.select(); }
+        return;
+      }
       if (form.dataset.nextVeld) {
         var dest = pick(r.json, form.dataset.nextVeld);
         if (dest) { location.href = dest; return; }

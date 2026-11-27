@@ -1,8 +1,11 @@
 /** @jsxImportSource hono/jsx */
 import { createApi, SESSION_COOKIE, type ApiOptions } from '@qbicle/api/src/app.ts';
+import { KoppelingFout, teststandVoor, vindKoppeling } from '@qbicle/koppelingen';
 import {
   authenticate,
   can,
+  authorize,
+  one,
   getBilling,
   getBillingDetails,
   getInvoice,
@@ -41,6 +44,7 @@ import {
   TestBetaalPage,
   WelkomPage,
 } from './pages/abonnement.tsx';
+import { ItStappenplanPage, KoppelingDetailPage, KoppelingenPage } from './pages/koppelingen.tsx';
 
 /**
  * De web-app voor klanten (Licht-stijl). Server-side gerenderde pagina's;
@@ -107,7 +111,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     await next();
     c.header('Content-Security-Policy', CSP);
     c.header('X-Content-Type-Options', 'nosniff');
-    c.header('Referrer-Policy', 'same-origin');
+    if (!c.res.headers.has('referrer-policy')) c.header('Referrer-Policy', 'same-origin');
     c.header('X-Frame-Options', 'DENY');
     if (!c.res.headers.has('cache-control')) c.header('Cache-Control', 'no-store');
   });
@@ -289,6 +293,56 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     return c.html(
       <AuditBestellenPage user={ctx.user} org={ctx.org} packages={p.catalog.auditPackages} catalog={p.catalog} magBestellen={Boolean(b?.magBeheren)} />,
     );
+  });
+
+  // Koppelingen (testmodus) ------------------------------------------------------------
+  const koppelingen = teststandVoor(p);
+  const huidigPakket = async (org: string) =>
+    (await one<{ plan: string }>(
+      p.pool,
+      `SELECT plan FROM subscription WHERE organization_id = $1 AND status IN ('proef', 'actief', 'achterstallig', 'opgezegd') LIMIT 1`,
+      [org],
+    ))?.plan ?? null;
+
+  app.get('/o/:org/koppelingen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    return c.html(<KoppelingenPage user={ctx.user} org={ctx.org} standen={koppelingen.lijst(ctx.org.id)} plan={await huidigPakket(ctx.org.id)} />);
+  });
+
+  app.get('/o/:org/koppelingen/:koppeling', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const k = vindKoppeling(c.req.param('koppeling'));
+    if (!k) return c.html(<NietGevonden user={ctx.user} />, 404);
+    const magWijzigen = await authorize(p.pool, ctx.s.user.id, ctx.org.id, 'domeinen:beheren').then(
+      () => true,
+      () => false,
+    );
+    return c.html(
+      <KoppelingDetailPage user={ctx.user} org={ctx.org} k={k} s={koppelingen.get(ctx.org.id, k.id)} plan={await huidigPakket(ctx.org.id)} magWijzigen={magWijzigen} />,
+    );
+  });
+
+  // Openbaar stappenplan voor de IT-beheerder. Geen inlog, geen klantgegevens; niet indexeren.
+  app.get('/it/:token', (c) => {
+    c.header('X-Robots-Tag', 'noindex');
+    c.header('Referrer-Policy', 'no-referrer');
+    try {
+      const { koppeling, verlooptOp } = koppelingen.openDeelLink(c.req.param('token'));
+      return c.html(<ItStappenplanPage k={koppeling} verlooptOp={verlooptOp} />);
+    } catch (err) {
+      if (!(err instanceof KoppelingFout)) throw err;
+      return c.html(
+        <Layout title="Link niet geldig" minimal>
+          <section class="card narrow">
+            <h1>{err.code === 'verlopen' ? 'Deze link is verlopen' : 'Deze link werkt niet'}</h1>
+            <p>Vraag degene die je de link stuurde om een nieuwe te maken in Qbicle.</p>
+          </section>
+        </Layout>,
+        err.code === 'verlopen' ? 410 : 404,
+      );
+    }
   });
 
   // Betalen ----------------------------------------------------------------------------
