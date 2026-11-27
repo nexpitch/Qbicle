@@ -14,10 +14,12 @@ import { hashToken, looksLikeToken, newToken, newVerificationCode } from './toke
  * Methode 1, DNS-TXT (aanbevolen):  _qbicle-verificatie.<domein>  TXT  "qbicle-verificatie=<code>"
  *   (op het domein zelf mag ook). De code is per organisatie en domein uniek.
  *   Qbicle controleert het record later opnieuw; is het weg, dan vervalt de verificatie.
- * Methode 2, e-mail: een eenmalige link naar een vast beheeradres op het domein
- *   (admin@, administrator@, webmaster@, hostmaster@, postmaster@), zoals
- *   certificaatautoriteiten dat ook doen. Een willekeurig adres op het domein is
- *   bewust niet genoeg: elke medewerker heeft er een.
+ * Methode 2, e-mail: een eenmalige link naar een adres op het domein zelf. We
+ *   stellen de vaste beheeradressen voor (admin@, administrator@, webmaster@,
+ *   hostmaster@, postmaster@), zoals certificaatautoriteiten dat doen. Een eigen
+ *   adres mag ook (Erik, 27-11), maar alleen precies op het domein (niet op een
+ *   ander domein of subdomein) en nooit op een openbare maildienst als gmail.com,
+ *   waar iedereen een adres kan aanmaken.
  *
  * Verificatie van voorbeeld.nl geldt ook voor subdomeinen (www.voorbeeld.nl).
  */
@@ -27,6 +29,39 @@ type UserActor = Actor & { userId: string };
 export const TXT_LABEL = '_qbicle-verificatie';
 export const TXT_PREFIX = 'qbicle-verificatie=';
 export const ADMIN_MAILBOXES = ['admin', 'administrator', 'webmaster', 'hostmaster', 'postmaster'] as const;
+
+/** Maildiensten waar iedereen een adres kan aanmaken: een eigen adres daar bewijst niets. */
+export const PUBLIC_MAIL_DOMAINS: ReadonlySet<string> = new Set([
+  'gmail.com', 'googlemail.com', 'outlook.com', 'outlook.nl', 'hotmail.com', 'hotmail.nl', 'live.com', 'live.nl', 'msn.com',
+  'yahoo.com', 'yahoo.nl', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'gmx.com', 'gmx.net', 'gmx.de', 'proton.me',
+  'protonmail.com', 'pm.me', 'zoho.com', 'mail.com', 'ziggo.nl', 'kpnmail.nl', 'kpnplanet.nl', 'planet.nl', 'hetnet.nl',
+  'xs4all.nl', 'home.nl', 'casema.nl', 'chello.nl', 'telfort.nl', 'tele2.nl', 'online.nl', 'quicknet.nl', 'zeelandnet.nl',
+  'upcmail.nl', 'freedom.nl', 'caiway.nl', 'solcon.nl', 'versatel.nl', 'tiscali.nl', 'onsbrabantnet.nl', 'live.be',
+  'telenet.be', 'skynet.be', 'proximus.be', 'web.de', 't-online.de', 'yandex.com', 'mail.ru', 'tutanota.com', 'tuta.io',
+]);
+
+/**
+ * Mag dit adres een bevestigingslink voor dit domein krijgen? Een voorgesteld
+ * beheeradres altijd; een eigen adres alleen precies op het domein en niet op
+ * een openbare maildienst. Geeft het opgeschoonde adres terug of een melding.
+ */
+export function checkVerificationAddress(domain: string, address: string): { ok: true; address: string; own: boolean } | { ok: false; message: string } {
+  const chosen = address.trim().toLowerCase();
+  const at = chosen.lastIndexOf('@');
+  const local = at > 0 ? chosen.slice(0, at) : '';
+  const host = at > 0 ? chosen.slice(at + 1) : '';
+  if (!local || !/^[a-z0-9._%+-]{1,64}$/.test(local) || local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
+    return { ok: false, message: `Vul een geldig e-mailadres in dat eindigt op @${domain}.` };
+  }
+  if (host !== domain) {
+    return { ok: false, message: `Het adres moet eindigen op @${domain}. Zo weten we dat de ontvanger bij dit domein hoort.` };
+  }
+  const own = !(ADMIN_MAILBOXES as readonly string[]).includes(local);
+  if (own && PUBLIC_MAIL_DOMAINS.has(domain)) {
+    return { ok: false, message: `${domain} is een openbare maildienst. Daar kan iedereen een adres aanmaken, dus bevestig dit domein via DNS.` };
+  }
+  return { ok: true, address: chosen, own };
+}
 
 export interface Domain {
   id: string;
@@ -85,6 +120,15 @@ function parseDomain(input: string): string {
   }
 }
 
+/**
+ * "www.voorbeeld.nl" wordt "voorbeeld.nl": klanten bedoelen bijna altijd het
+ * hoofddomein, en daar horen de DNS-regel en de beheeradressen bij. De website
+ * op www vinden we daarna vanzelf als subdomein.
+ */
+export function withoutWww(name: string): string {
+  return name.startsWith('www.') && name.split('.').length > 2 ? name.slice(4) : name;
+}
+
 async function loadDomain(p: Platform, organizationId: string, domainId: string): Promise<DomainRow> {
   if (!isUuid(domainId)) throw notFound('Dit domein');
   const row = await one<DomainRow>(p.pool, `SELECT ${COLS} FROM domain WHERE id = $1 AND organization_id = $2`, [domainId, organizationId]);
@@ -94,7 +138,7 @@ async function loadDomain(p: Platform, organizationId: string, domainId: string)
 
 export async function addDomain(p: Platform, actor: UserActor, organizationId: string, input: { name: string }): Promise<Domain> {
   await authorize(p.pool, actor.userId, organizationId, 'domeinen:beheren');
-  const name = parseDomain(input.name);
+  const name = withoutWww(parseDomain(input.name));
   await hit(p.pool, LIMITS.domeinPerOrg, organizationId);
   try {
     const row = await one<DomainRow>(
@@ -185,11 +229,9 @@ export async function startEmailVerification(
 ): Promise<void> {
   await authorize(p.pool, actor.userId, organizationId, 'domeinen:beheren');
   const row = await loadDomain(p, organizationId, domainId);
-  const allowed = instructionsFor(row.name, row.verification_token).emailAddresses;
-  const chosen = address.trim().toLowerCase();
-  if (!allowed.includes(chosen)) {
-    throw new PlatformError('ongeldige_invoer', `Kies een van deze adressen: ${allowed.join(', ')}.`);
-  }
+  const check = checkVerificationAddress(row.name, address);
+  if (!check.ok) throw new PlatformError('ongeldige_invoer', check.message);
+  const chosen = check.address;
   await hit(p.pool, LIMITS.verificatiemailPerDomein, row.id);
   const { token, hash } = newToken('domeinmail');
   await p.pool.query(
@@ -197,7 +239,7 @@ export async function startEmailVerification(
      VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))`,
     [row.id, chosen, hash, actor.userId, p.config.domainMailHours],
   );
-  await audit(p.pool, actor, { organizationId, action: 'domein.verificatiemail_verstuurd', subject: row.id, detail: { adres: chosen } });
+  await audit(p.pool, actor, { organizationId, action: 'domein.verificatiemail_verstuurd', subject: row.id, detail: { adres: chosen, eigen_adres: check.own } });
   await p.mailer.send({
     to: chosen,
     subject: `Bevestig dat ${row.name} bij jullie hoort`,

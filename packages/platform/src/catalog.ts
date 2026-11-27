@@ -48,6 +48,8 @@ export interface AuditPackage {
 export interface Catalog {
   btwPercentage: number;
   proefDagen: number;
+  /** Prijs per extra domein boven de pakketlimiet, in centen per maand excl. btw (Erik, 27-11: add-on). */
+  extraDomeinCenten: number;
   plans: Plan[];
   auditPackages: AuditPackage[];
 }
@@ -119,7 +121,9 @@ export function parseCatalog(raw: unknown): Catalog {
     };
   });
   if (plans.length === 0) fail('geen abonnementen');
-  return { btwPercentage: btw, proefDagen: int(r.proefDagen ?? 14, 'proefDagen'), plans, auditPackages };
+  const extra = r.extraDomeinPerMaand ?? 5;
+  if (typeof extra !== 'number' || extra < 0 || extra > 1000) fail('extraDomeinPerMaand is ongeldig');
+  return { btwPercentage: btw, proefDagen: int(r.proefDagen ?? 14, 'proefDagen'), extraDomeinCenten: Math.round(extra * 100), plans, auditPackages };
 }
 
 export function loadCatalog(file = process.env.QBICLE_ABONNEMENTEN_BESTAND || DEFAULT_FILE): Catalog {
@@ -148,6 +152,7 @@ export function publicCatalog(c: Catalog) {
   return {
     btwPercentage: c.btwPercentage,
     proefDagen: c.proefDagen,
+    extraDomeinPerMaand: c.extraDomeinCenten / 100,
     abonnementen: c.plans,
     auditPakketten: c.auditPackages,
   };
