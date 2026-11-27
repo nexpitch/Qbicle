@@ -100,6 +100,21 @@ describe.skipIf(!hasDb)('scans zichtbaar in de web-app', () => {
     expect(html).not.toMatch(/data-scan-vast hidden/);
   });
 
+  it('mislukte scan door DNS bij Qbicle: duidelijke melding, knop Opnieuw proberen, geen wachttijd', async () => {
+    const d = (await p.pool.query(`INSERT INTO domain (organization_id, name, verified_at, verification_method, verification_token) VALUES ($1, 'dnsfout.nl', now(), 'dns-txt', 't') RETURNING id`, [org])).rows[0].id;
+    const fout = 'Qbicle kon dnsfout.nl nu niet opzoeken in DNS (ETIMEOUT). Dit ligt aan onze kant, niet aan je domein. We proberen het automatisch opnieuw; je kunt ook zelf opnieuw proberen.';
+    const s = (await p.pool.query(`INSERT INTO scan (domain_id, trigger, status, finished_at, error) VALUES ($1, 'handmatig', 'mislukt', now(), $2) RETURNING id`, [d, fout])).rows[0].id;
+    const api = (await (await get(`/api/v1/organisaties/${org}/scans/${s}`)).json()) as any;
+    expect(api.error).toContain('ligt aan onze kant');
+    expect(api.retryable).toBe(true);
+    const html = await (await get(`/o/${org}/scans/${s}`)).text();
+    expect(html).toContain('Opnieuw proberen');
+    expect(html).not.toMatch(/data-scan-opnieuw hidden/);
+    // Meteen opnieuw kan: de wachttijd van 5 minuten geldt niet na een mislukte scan.
+    const again = await post(`/api/v1/organisaties/${org}/domeinen/${d}/scans`);
+    expect(again.status).toBe(202);
+  });
+
   it('een scan van een andere organisatie is niet te zien', async () => {
     const other = (await p.pool.query(`INSERT INTO organization (name, kind) VALUES ('Ander', 'klant') RETURNING id`)).rows[0].id;
     const d = (await p.pool.query(`INSERT INTO domain (organization_id, name, verified_at, verification_method, verification_token) VALUES ($1, 'ander.nl', now(), 'dns-txt', 't') RETURNING id`, [other])).rows[0].id;

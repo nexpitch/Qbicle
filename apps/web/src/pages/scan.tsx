@@ -89,7 +89,7 @@ export function DomeinScanBlok(props: { orgId: string; domainId: string; info: D
 const STEP_LABEL = { wachten: 'Wacht', bezig: 'Bezig', klaar: 'Klaar' } as const;
 const STEP_KIND = { wachten: 'unk', bezig: 'warn', klaar: 'ok' } as const;
 
-export function ScanPage(props: Ctx & { s: ScanView }) {
+export function ScanPage(props: Ctx & { s: ScanView; magScannen?: boolean }) {
   const { s, org } = props;
   const lopend = s.status === 'wachtrij' || s.status === 'bezig';
   const titel =
@@ -174,6 +174,19 @@ export function ScanPage(props: Ctx & { s: ScanView }) {
             </>
           ) : null}
         </div>
+        {props.magScannen ? (
+          <form
+            data-api={`/api/v1/organisaties/${org.id}/domeinen/${s.domainId}/scans`}
+            data-next={`/o/${org.id}/scans/{id}`}
+            data-scan-opnieuw
+            hidden={!s.retryable}
+          >
+            <FormError />
+            <button class="btn" type="submit">
+              Opnieuw proberen
+            </button>
+          </form>
+        ) : null}
         <div class="row">
           <a class="btn" href={`/o/${org.id}/overzicht`} data-scan-naar hidden={s.status !== 'klaar'}>
             Bekijk de resultaten

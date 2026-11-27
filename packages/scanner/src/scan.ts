@@ -69,6 +69,8 @@ export interface ScanReport {
 export class OptOutError extends Error {}
 /** Het domein bestaat niet, of DNS werkt niet: dan zeggen we niets, in plaats van alles "ontbreekt". */
 export class DomainNotFoundError extends Error {}
+/** De DNS-opzoeking van Qbicle zelf werkte niet: geen oordeel over het domein, later opnieuw proberen. */
+export class DnsUnavailableError extends Error {}
 
 /**
  * Bestaat www alleen via een wildcard-record (*.domein)? Dan is het geen eigen
@@ -163,8 +165,9 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
   try {
     exists = await opts.net.domainExists(domain);
   } catch (e) {
-    throw new DomainNotFoundError(
-      `We konden ${domain} nu niet opzoeken in DNS (${(e as { code?: string }).code ?? 'storing'}). Probeer het later opnieuw.`,
+    throw new DnsUnavailableError(
+      `Qbicle kon ${domain} nu niet opzoeken in DNS (${(e as { code?: string }).code ?? 'storing'}). ` +
+        'Dit ligt aan onze kant, niet aan je domein. We proberen het automatisch opnieuw; je kunt ook zelf opnieuw proberen.',
     );
   }
   if (!exists) {

@@ -245,6 +245,8 @@
       if (s.status === 'mislukt') {
         if (titel) titel.textContent = 'Scan van ' + s.domain + ' is niet gelukt';
         tekst.textContent = s.error || 'De scan is niet gelukt.';
+        var opnieuw = q('[data-scan-opnieuw]');
+        if (opnieuw && s.retryable) opnieuw.hidden = false;
         scanBox.querySelectorAll('a[hidden]').forEach(function (el) { if (!el.hasAttribute('data-scan-naar')) el.hidden = false; });
         return;
       }
