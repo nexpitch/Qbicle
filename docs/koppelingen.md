@@ -19,6 +19,8 @@ Ontwerp: Claude Doc "Qbicle: systemen en opslag beoordelen (koppelingen)", 27-11
 - Pagina's: `/o/:org/koppelingen`, `/o/:org/koppelingen/:koppeling` en de openbare
   `/it/:token` (stappenplan voor de IT-beheerder, 7 dagen geldig, zonder klantgegevens).
 - Er wordt niets echt verbonden. De stand is weg na een herstart.
+- Google Workspace en Google Cloud: echte alleen-lezen leesroute met testmodus en opdrachtregel, zie [google.md](google.md).
+  Op de klantpagina gebruikt de testmodus de echte beoordeling op voorbeelddata.
 
 ## Volgende stappen
 

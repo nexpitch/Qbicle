@@ -9,3 +9,6 @@ coverage/
 testset/testset.txt
 testset/resultaten/
 data/oui.csv
+
+# Sleutelbestanden voor lokaal testen (Google-serviceaccount e.d.)
+geheim/

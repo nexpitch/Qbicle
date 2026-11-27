@@ -64,7 +64,7 @@ describe('teststand', () => {
   });
 
   it('weigert binnenkort, buiten pakket, verkeerde volgorde en verlopen links', () => {
-    expect(() => t.starten(org, 'google-workspace', 'business', 'x')).toThrow(/binnenkort/);
+    expect(() => t.starten(org, 'azure', 'business', 'x')).toThrow(/binnenkort/);
     expect(() => t.starten(org, 'unifi', 'mkb', 'x')).toThrow(/Business/);
     expect(() => t.testToestemming(org, 'meraki', 'gelukt')).toThrow(/Start eerst/);
     expect(() => t.starten(org, 'bestaat-niet', 'mkb', 'x')).toThrow(/bestaat niet/);
