@@ -51,7 +51,11 @@ export interface Cockpit {
 }
 
 export const COCKPIT_LIMITS = {
-  linkPerEmail: { bucket: 'cockpit-link-email', max: 5, windowSeconds: 3600 },
+  // Per adres én afzender samen: iemand anders kan jou zo niet buitensluiten door
+  // namens jouw e-mailadres links aan te vragen.
+  linkPerEmailIp: { bucket: 'cockpit-link-email-ip', max: 5, windowSeconds: 3600 },
+  // Bovengrens per e-mailadres tegen mailbommen; daarboven stil geen mail meer.
+  linkPerEmail: { bucket: 'cockpit-link-email', max: 20, windowSeconds: 3600 },
   linkPerIp: { bucket: 'cockpit-link-ip', max: 20, windowSeconds: 3600 },
   inloggenPerIp: { bucket: 'cockpit-inloggen-ip', max: 30, windowSeconds: 900 },
   mfaPerUser: { bucket: 'cockpit-mfa-user', max: 6, windowSeconds: 900 },
@@ -100,7 +104,13 @@ export function staffActor(s: StaffSession, base: Actor): Actor {
 export async function requestStaffLink(c: Cockpit, rawEmail: string, actor: Actor): Promise<void> {
   const email = normalizeEmail(rawEmail);
   if (actor.ip) await hit(c.p.pool, COCKPIT_LIMITS.linkPerIp, actor.ip);
-  await hit(c.p.pool, COCKPIT_LIMITS.linkPerEmail, email);
+  await hit(c.p.pool, COCKPIT_LIMITS.linkPerEmailIp, `${email}|${actor.ip ?? '-'}`);
+  try {
+    await hit(c.p.pool, COCKPIT_LIMITS.linkPerEmail, email);
+  } catch (e) {
+    if (e instanceof PlatformError && e.code === 'te_veel_verzoeken') return; // zelfde antwoord, geen mail
+    throw e;
+  }
 
   const staff = await one<{ user_id: string }>(
     c.p.pool,
