@@ -10,8 +10,9 @@ import { hasStaff } from './core/staff.ts';
  */
 if (existsSync('.env')) process.loadEnvFile('.env');
 
-const { cockpit, secureCookies, trustProxy } = cockpitFromEnv();
-const app = createCockpit(cockpit, { secureCookies, trustProxy });
+const { cockpit, secureCookies, trustProxy, allowIps } = cockpitFromEnv();
+const app = createCockpit(cockpit, { secureCookies, trustProxy, allowIps });
+if (allowIps.length) console.log(`Cockpit alleen bereikbaar vanaf: ${allowIps.join(", ")}`);
 
 const port = Number(process.env.PORT ?? 3100);
 serve({ fetch: app.fetch, port }, async (info) => {

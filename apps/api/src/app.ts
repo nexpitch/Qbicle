@@ -14,6 +14,17 @@ import {
   startSubscription,
   syncPayment,
   updateBillingDetails,
+  listContacts,
+  changePlan,
+  retryPayment,
+  getBillingHistory,
+  previewPlanChange,
+  cancelScheduledChange,
+  resumeSubscription,
+  revokeMandate,
+  requestInvoicePayment,
+  removeContact,
+  setContact,
   BILLING_INTERVALS,
   acceptInvitation,
   addDomain,
@@ -38,6 +49,19 @@ import {
   logoutEverywhere,
   authorize,
   one,
+  addSysteem,
+  listSystemen,
+  removeSysteem,
+  updateSysteem,
+  JA_NEE,
+  SYSTEEM_DATALOCATIE,
+  SYSTEEM_GEGEVENS,
+  SYSTEEM_HOSTING,
+  SYSTEEM_IMPACT,
+  SYSTEEM_INLOGGEN,
+  SYSTEEM_SOORTEN,
+  SYSTEEM_TERUGVAL,
+  SYSTEEM_UPDATES,
   ORG_KINDS,
   PARTNER_ACCESS,
   PlatformError,
@@ -48,6 +72,7 @@ import {
   renameOrganization,
   requestLoginLink,
   requestScan,
+  getScan,
   revokeInvitation,
   revokePartnerAccess,
   ROLES,
@@ -101,6 +126,7 @@ const schemas = {
   renameOrg: z.object({ name: z.string().max(200) }),
   changeRole: z.object({ role }),
   invite: z.object({ email, role: role.default('lezer') }),
+  contact: z.object({ naam: z.string().max(200).nullish(), email: z.string().max(320).nullish(), telefoon: z.string().max(40).nullish() }),
   createClient: z.object({ name: z.string().max(200) }),
   grantPartner: z.object({ partnerOrganizationId: id, access: z.enum(PARTNER_ACCESS).default('lezer') }),
   addDomain: z.object({ name: z.string().max(300) }),
@@ -113,6 +139,8 @@ const schemas = {
     interval: z.enum(BILLING_INTERVALS).default('jaar'),
   }),
   subscription: z.object({ pakket: z.string().max(40), interval: z.enum(BILLING_INTERVALS) }),
+  cancel: z.object({ reden: z.string().max(40).nullish(), toelichting: z.string().max(1000).nullish() }),
+  invoiceRequest: z.object({ toelichting: z.string().max(600) }),
   auditOrder: z.object({
     pakket: z.string().max(40),
     doelbedrijf: z.string().max(200),
@@ -127,16 +155,33 @@ const schemas = {
     land: z.string().max(2).nullish(),
     kvk: z.string().max(20).nullish(),
     btwNummer: z.string().max(30).nullish(),
+    referentie: z.string().max(100).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
+  systeem: z.object({
+    naam: z.string().max(120),
+    leverancier: z.string().max(120).nullish(),
+    soort: z.enum(SYSTEEM_SOORTEN),
+    hosting: z.enum(SYSTEEM_HOSTING).optional(),
+    adres: z.string().max(300).nullish(),
+    eigenaar: z.string().max(120).nullish(),
+    impactUitval: z.enum(SYSTEEM_IMPACT),
+    gegevens: z.array(z.enum(SYSTEEM_GEGEVENS)).max(4).optional(),
+    inloggen: z.enum(SYSTEEM_INLOGGEN).optional(),
+    updates: z.enum(SYSTEEM_UPDATES).optional(),
+    verwerkersovereenkomst: z.enum(JA_NEE).optional(),
+    datalocatie: z.enum(SYSTEEM_DATALOCATIE).optional(),
+    terugval: z.enum(SYSTEEM_TERUGVAL).optional(),
+    notities: z.string().max(1000).nullish(),
+  }),
   testKoppeling: z.object({ uitkomst: z.enum(['gelukt', 'te_veel_rechten', 'mislukt']).default('gelukt') }),
 };
 
 function clientIp(c: Context, trustProxy: boolean): string | null {
   if (trustProxy) {
-    const xff = c.req.header('x-forwarded-for');
-    const first = xff?.split(',')[0]?.trim();
-    if (first) return first;
+    // Alleen het laatste adres komt van onze eigen proxy; de rest stuurt de bezoeker zelf mee.
+    const last = c.req.header('x-forwarded-for')?.split(',').pop()?.trim();
+    if (last) return last;
   }
   // @hono/node-server zet het adres van de verbinding in env.incoming.
   const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming;
@@ -302,6 +347,17 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     await removeMember(p, user(c), param(c, 'org'), param(c, 'user'));
     return c.body(null, 204);
   });
+  // Contactpersonen (geen gebruikers: wie we bereiken bij een lek of een factuurvraag).
+  v1.get('/organisaties/:org/contactpersonen', requireUser, async (c) => c.json(await listContacts(p, user(c).userId, param(c, 'org'))));
+  v1.put('/organisaties/:org/contactpersonen/:soort', requireUser, async (c) => {
+    const input = await body(c, schemas.contact);
+    return c.json(await setContact(p, user(c), param(c, 'org'), c.req.param('soort') ?? '', input));
+  });
+  v1.delete('/organisaties/:org/contactpersonen/:soort', requireUser, async (c) => {
+    await removeContact(p, user(c), param(c, 'org'), c.req.param('soort') ?? '');
+    return c.body(null, 204);
+  });
+
   v1.get('/organisaties/:org/uitnodigingen', requireUser, async (c) => c.json(await listInvitations(p, user(c).userId, param(c, 'org'))));
   v1.post('/organisaties/:org/uitnodigingen', requireUser, async (c) => {
     const input = await body(c, schemas.invite);
@@ -389,6 +445,9 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
   });
 
+  // Live voortgang van één scan (de scanpagina vraagt dit elke paar seconden op).
+  v1.get('/organisaties/:org/scans/:scan', requireUser, async (c) => c.json(await getScan(p, user(c).userId, param(c, 'org'), param(c, 'scan'))));
+
   // Dashboard -------------------------------------------------------------------------
   v1.get('/organisaties/:org/dashboard', requireUser, async (c) => c.json(await getDashboard(p, user(c).userId, param(c, 'org'))));
   v1.get('/organisaties/:org/assets/:asset', requireUser, async (c) =>
@@ -411,13 +470,31 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
   v1.get('/organisaties/:org/abonnement', requireUser, async (c) => c.json(await getBilling(p, user(c).userId, param(c, 'org'))));
   v1.put('/organisaties/:org/abonnement', requireUser, async (c) => {
     const input = await body(c, schemas.subscription);
-    return c.json(await startSubscription(p, user(c), param(c, 'org'), { plan: input.pakket, interval: input.interval }));
+    const r = await changePlan(p, user(c), param(c, 'org'), { plan: input.pakket, interval: input.interval });
+    return c.json({ ...r.subscription, wijziging: r.preview, betaling: r.payment ?? null, betaalpagina: r.checkoutUrl ?? null });
+  });
+  v1.get('/organisaties/:org/abonnement/voorbeeld', requireUser, async (c) =>
+    c.json(await previewPlanChange(p, user(c).userId, param(c, 'org'), { plan: c.req.query('pakket') ?? '', interval: c.req.query('interval') ?? '' })),
+  );
+  v1.delete('/organisaties/:org/abonnement/geplande-wijziging', requireUser, async (c) => c.json(await cancelScheduledChange(p, user(c), param(c, 'org'))));
+  v1.post('/organisaties/:org/abonnement/heractiveren', requireUser, async (c) => c.json(await resumeSubscription(p, user(c), param(c, 'org'))));
+  v1.delete('/organisaties/:org/machtiging', requireUser, async (c) => {
+    await revokeMandate(p, user(c), param(c, 'org'));
+    return c.body(null, 204);
+  });
+  v1.post('/organisaties/:org/betaalwijze/factuur-aanvragen', requireUser, async (c) => {
+    const { toelichting } = await body(c, schemas.invoiceRequest);
+    await requestInvoicePayment(p, user(c), param(c, 'org'), toelichting);
+    return c.body(null, 204);
   });
   v1.post('/organisaties/:org/abonnement/betalen', requireUser, async (c) => {
     const r = await checkoutSubscription(p, user(c), param(c, 'org'));
     return c.json({ betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
   });
-  v1.post('/organisaties/:org/abonnement/opzeggen', requireUser, async (c) => c.json(await cancelSubscription(p, user(c), param(c, 'org'))));
+  v1.post('/organisaties/:org/abonnement/opzeggen', requireUser, async (c) => {
+    const input = await body(c, schemas.cancel);
+    return c.json(await cancelSubscription(p, user(c), param(c, 'org'), input));
+  });
 
   v1.post('/organisaties/:org/audit-opdrachten', requireUser, async (c) => {
     const input = await body(c, schemas.auditOrder);
@@ -443,6 +520,13 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     return c.json(pay.status === 'open' ? { ...(await syncPayment(p, pay.id, user(c))), organizationId: pay.organizationId } : pay);
   });
   // Alleen bij testbetalingen (nep-provider); bij Mollie bestaat dit adres niet.
+  v1.post('/organisaties/:org/betalingen/:pay/opnieuw', requireUser, async (c) => {
+    const r = await retryPayment(p, user(c), param(c, 'org'), param(c, 'pay'));
+    return c.json({ betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
+  });
+  v1.get('/organisaties/:org/betalingen', requireUser, async (c) =>
+    c.json(await getBillingHistory(p, user(c).userId, param(c, 'org'), { zoek: c.req.query('zoek'), status: c.req.query('status'), jaar: c.req.query('jaar') })),
+  );
   v1.post('/betalingen/:pay/test-uitkomst', requireUser, async (c) => {
     const { uitkomst } = await body(c, schemas.testPayment);
     return c.json(await settleTestPayment(p, user(c), param(c, 'pay'), uitkomst));
@@ -457,6 +541,21 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const opts: { before?: string; limit?: number } = { limit: Number.isFinite(limit) ? limit : 50 };
     if (before && /^\d{1,18}$/.test(before)) opts.before = before;
     return c.json(await listAudit(p.pool, org, opts));
+  });
+
+  // Register bedrijfskritische systemen ----------------------------------------------
+  v1.get('/organisaties/:org/systemen', requireUser, async (c) => c.json(await listSystemen(p, user(c).userId, param(c, 'org'))));
+  v1.post('/organisaties/:org/systemen', requireUser, async (c) => {
+    const input = await body(c, schemas.systeem);
+    return c.json(await addSysteem(p, user(c), param(c, 'org'), input), 201);
+  });
+  v1.put('/organisaties/:org/systemen/:sys', requireUser, async (c) => {
+    const input = await body(c, schemas.systeem);
+    return c.json(await updateSysteem(p, user(c), param(c, 'org'), param(c, 'sys'), input));
+  });
+  v1.delete('/organisaties/:org/systemen/:sys', requireUser, async (c) => {
+    await removeSysteem(p, user(c), param(c, 'org'), param(c, 'sys'));
+    return c.body(null, 204);
   });
 
   // Koppelingen (testmodus) ---------------------------------------------------------

@@ -21,7 +21,7 @@ export function platformFromEnv(env = process.env): Platform {
     dns: systemTxtResolver(env.QBICLE_DNS_SERVERS?.split(',').filter(Boolean)),
     config: { ...DEFAULT_CONFIG, appOrigin },
     catalog: loadCatalog(),
-    payments: paymentProviderFromEnv(appOrigin, env),
+    payments: paymentProviderFromEnv(appOrigin, env, pool),
   };
 }
 

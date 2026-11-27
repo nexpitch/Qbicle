@@ -9,12 +9,13 @@ import { drainQueue, heartbeat, newWorkerId, type WorkerContext } from './worker
 /**
  * Scan-worker met planner.
  *
- *   npm run worker                 blijft draaien: elke minuut plannen en de wachtrij afwerken
+ *   npm run worker                 blijft draaien: elke minuut plannen, elke paar seconden de wachtrij afwerken
  *   npm run worker -- --eenmalig   één ronde (plannen + wachtrij leeg) en stoppen
  *   docker compose run --rm worker --eenmalig
  *
  * Instellingen (omgeving): QBICLE_SCAN_INTERVAL_DAGEN (7), QBICLE_SCAN_TIMEOUT_MINUTEN (10),
- * QBICLE_WORKER_PAUZE_SECONDEN (60), QBICLE_DOH_URL, QBICLE_SCANNER_INFO_URL, QBICLE_OPTOUT_FILE.
+ * QBICLE_WORKER_PAUZE_SECONDEN (60, plannen),
+ * QBICLE_WORKER_WACHTRIJ_SECONDEN (3, hoe vaak de wachtrij bekeken wordt), QBICLE_DOH_URL, QBICLE_SCANNER_INFO_URL, QBICLE_OPTOUT_FILE.
  */
 const { values } = parseArgs({ options: { eenmalig: { type: 'boolean', default: false } } });
 
@@ -48,30 +49,51 @@ const ctx: WorkerContext = {
 };
 const planner = { ...DEFAULT_PLANNER, intervalDays: num('QBICLE_SCAN_INTERVAL_DAGEN', DEFAULT_PLANNER.intervalDays) };
 const pause = num('QBICLE_WORKER_PAUZE_SECONDEN', 60);
+/** Een scan die de klant zelf start, moet binnen een paar seconden beginnen; niet pas bij de volgende planronde. */
+const queuePoll = num('QBICLE_WORKER_WACHTRIJ_SECONDEN', 3);
+/** Hartslag los van de rondes, zodat de klant ook tijdens een lange scan ziet dat de scanner draait. */
+const HEARTBEAT_MS = 30_000;
 
 let stopping = false;
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => (stopping = true));
 
-async function round(): Promise<void> {
-  await heartbeat(pool, ctx.workerId);
+async function plan(): Promise<void> {
   const planned = await planScans(pool, planner);
   for (const s of planned) ctx.log!(`Ingepland: ${s.domain} (${s.reason})`);
-  const stats = await drainQueue(ctx);
-  if (stats.klaar || stats.mislukt) ctx.log!(`Ronde klaar: ${stats.klaar} gelukt, ${stats.mislukt} mislukt.`);
 }
 
+async function work(): Promise<void> {
+  const stats = await drainQueue(ctx);
+  if (stats.klaar || stats.mislukt) ctx.log!(`Wachtrij af: ${stats.klaar} gelukt, ${stats.mislukt} mislukt.`);
+}
+
+async function safely(what: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[worker] ${what} mislukt:`, err);
+    if (values.eenmalig) process.exitCode = 1;
+  }
+}
+
+let beat: NodeJS.Timeout | undefined;
 try {
-  ctx.log!(`Gestart als ${ctx.workerId}${values.eenmalig ? ' (eenmalig)' : `, elke ${pause} seconden`}.`);
+  ctx.log!(
+    `Gestart als ${ctx.workerId}${values.eenmalig ? ' (eenmalig)' : `: plant elke ${pause} seconden, kijkt elke ${queuePoll} seconden in de wachtrij`}.`,
+  );
+  await safely('Hartslag', () => heartbeat(pool, ctx.workerId));
+  if (!values.eenmalig) beat = setInterval(() => void safely('Hartslag', () => heartbeat(pool, ctx.workerId)), HEARTBEAT_MS);
+  let lastPlan = 0;
   do {
-    try {
-      await round();
-    } catch (err) {
-      console.error('[worker] Ronde mislukt:', err);
-      if (values.eenmalig) process.exitCode = 1;
+    if (Date.now() - lastPlan >= pause * 1000) {
+      lastPlan = Date.now();
+      await safely('Plannen', plan);
     }
+    await safely('Wachtrij', work);
     if (values.eenmalig) break;
-    for (let i = 0; i < pause && !stopping; i++) await sleep(1000);
+    for (let i = 0; i < queuePoll && !stopping; i++) await sleep(1000);
   } while (!stopping);
 } finally {
+  if (beat) clearInterval(beat);
   await pool.end();
 }

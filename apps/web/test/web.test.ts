@@ -63,7 +63,43 @@ describe.skipIf(!hasDb)('web-app', () => {
     const done = await (await web.request(`/betaling/${pay.betaling.id}`, { headers: { cookie } })).text();
     expect(done).toContain('je betaling is gelukt');
     const abo = await (await web.request(`/o/${org}/abonnement`, { headers: { cookie } })).text();
-    expect(abo).toMatch(/QB-\d{4}-\d{6}/);
+    expect(abo).toMatch(/TEST-\d{4}-\d{6}/);
+
+    // Account: gegevens, contactpersonen en gebruikers op één plek.
+    const acc = await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text();
+    expect(acc).toContain('Bedrijfsgegevens');
+    expect(acc).toContain('Contact bij een urgent lek');
+    expect(acc).toContain('1 van 5 gebruikers');
+    expect(acc).toContain('Vul nog in:');
+    const put = await web.request(`/api/v1/organisaties/${org}/contactpersonen/security`, {
+      method: 'PUT',
+      headers: { origin: ORIGIN, 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ naam: 'Kees', email: 'kees@web.nl', telefoon: '' }),
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+    expect(await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text()).toContain('kees@web.nl');
+    expect((await web.request('/uitnodiging')).status).toBe(200);
+
+    // Pakket wijzigen: eerst een voorbeeld met kosten, opzeggen met uitleg.
+    const wijz = await (await web.request(`/o/${org}/abonnement/wijzigen?pakket=business&interval=maand`, { headers: { cookie } })).text();
+    expect(wijz).toContain('Controleer je wijziging');
+    expect((await web.request(`/o/${org}/abonnement/wijzigen?pakket=bestaatniet&interval=maand`, { headers: { cookie } })).status).toBe(302);
+    expect(await (await web.request(`/o/${org}/abonnement/opzeggen`, { headers: { cookie } })).text()).toContain('Wat er gebeurt');
+    expect(abo).toContain('SEPA-machtiging');
+    expect(abo).toContain('Je contract verlengt op');
+
+    // Facturen: overzicht, csv en pdf.
+    const fact = await (await web.request(`/o/${org}/facturen`, { headers: { cookie } })).text();
+    expect(fact).toMatch(/TEST-\d{4}-\d{6}/);
+    const invId = fact.match(/facturen\/([0-9a-f-]{36})\/pdf/)![1]!;
+    const csv = await web.request(`/o/${org}/facturen/export.csv`, { headers: { cookie } });
+    expect(csv.headers.get('content-type')).toContain('text/csv');
+    expect(await csv.text()).toContain('Factuurnummer;Omschrijving');
+    const pdf = await web.request(`/o/${org}/facturen/${invId}/pdf`, { headers: { cookie } });
+    expect(pdf.headers.get('content-type')).toBe('application/pdf');
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+    expect((await web.request(`/o/${org}/facturen/${invId}/pdf`)).status).toBe(302);
+    expect((await web.request(`/o/${org}/account`)).status).toBe(302);
 
     // Een ander ziet niets van deze organisatie.
     expect((await web.request(`/o/${org}/abonnement`)).status).toBe(302);
@@ -83,7 +119,8 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(html).toContain('Vul met voorbeelddata');
       // Lege staat toont al alle onderdelen, ingeklapt, met wanneer de scan komt.
       expect(html).toContain('Alles in beeld');
-      expect(html.match(/<details class="sect"/g)?.length).toBe(8);
+      expect(html.match(/<details class="sect"/g)?.length).toBe(9);
+      expect(html).toContain('Nog niets vastgelegd');
       expect(html).toContain('Nog niet gescand');
       expect(html).toContain('Voeg een domein toe om te starten');
 

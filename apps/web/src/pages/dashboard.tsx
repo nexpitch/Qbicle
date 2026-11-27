@@ -10,7 +10,9 @@ import type {
   Domain,
   DomainImpact,
   DomainOverview,
+  DomainScanInfo,
   Level,
+  SysteemRegister,
   TrendPoint,
 } from '@qbicle/platform';
 import { ASSET_GROUPS, FOR_WHO_LABELS, TXT_LABEL } from '@qbicle/platform';
@@ -18,6 +20,7 @@ import type { Child } from 'hono/jsx';
 import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { KoppelingStatusBadge } from './koppelingen.tsx';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { DomeinScanBlok } from './scan.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -819,7 +822,18 @@ function DnsRecord(props: { name: string; value: string; withType?: boolean; pro
 
 // Domeinen -------------------------------------------------------------------------------------
 
-export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; verwijderd?: string; overview: DomainOverview; added?: { aantal: number; bestaatAl: number; ongeldig: string } }) {
+export function DomeinenPage(
+  props: Ctx & {
+    domains: Domain[];
+    magBeheren: boolean;
+    sent?: boolean;
+    verwijderd?: string;
+    overview: DomainOverview;
+    added?: { aantal: number; bestaatAl: number; ongeldig: string };
+    scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> };
+    magScannen?: boolean;
+  },
+) {
   const ov = props.overview;
   const over = ov.gebruikt > ov.limiet;
   const { org } = props;
@@ -880,10 +894,18 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
                     <span>
                       <b>{sm.openFindings}</b> open bevindingen
                     </span>
-                    <span class="small">{sm.lastScanAt ? `Laatste scan ${datumTijd(sm.lastScanAt)}` : 'Nog niet gescand'}</span>
                   </div>
                 ) : null;
               })()}
+              {props.scans ? (
+                <DomeinScanBlok
+                  orgId={org.id}
+                  domainId={d.id}
+                  info={props.scans.domains.get(d.id)}
+                  magScannen={Boolean(props.magScannen)}
+                  workerActief={props.scans.workerActief}
+                />
+              ) : null}
             </>
           ) : props.magBeheren ? (
             <div class="grid">
@@ -1192,4 +1214,48 @@ export function DomeinBeherenPage(props: Ctx & { impact: DomainImpact; overview:
       </p>
     </Layout>
   );
+}
+
+/** Sectie "Systemen" in Alles in beeld: register van bedrijfskritische systemen. */
+export function systemenSectie(reg: SysteemRegister, base: string): DashSection {
+  const worst = (s: SysteemRegister['systemen'][number]): Level =>
+    s.beoordeling.acties.some((a) => a.urgentie === 'crit') ? 'crit' : s.beoordeling.acties.length ? 'warn' : 'ok';
+  const levels = reg.systemen.map(worst);
+  const aandacht = levels.filter((l) => l !== 'ok').length;
+  const level: Level | null = !reg.systemen.length ? null : levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
+  return {
+    key: 'systemen',
+    label: 'Systemen',
+    uitleg: 'Software waar je bedrijf op draait: ERP, CRM, boekhouding, webshop',
+    count: reg.systemen.length,
+    level,
+    status: !reg.systemen.length ? 'Nog niets vastgelegd' : aandacht ? `${aandacht} met aandacht` : 'In orde',
+    body: reg.systemen.length ? (
+      <div class="stack-sm">
+        <ul class="list">
+          {reg.systemen.map((s) => {
+            const eerste = s.beoordeling.acties[0];
+            return (
+              <li class="list-item">
+                <span class={`dot lvl-${worst(s)}`} aria-hidden="true"></span>
+                <div class="stack-xs">
+                  <a href={`${base}/systemen/${s.id}`}>{s.naam}</a>
+                  <span class="small">{eerste ? eerste.tekst : 'Geen bijzonderheden'}</span>
+                </div>
+                <span class="small">Impact {s.beoordeling.impact}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <a class="small" href={`${base}/systemen`}>
+          Alle systemen
+        </a>
+      </div>
+    ) : (
+      <p class="small">
+        Leg vast welke software onmisbaar is, wie de eigenaar is en wat er gebeurt bij uitval. Dan zie je hier wat er nog mist.{' '}
+        <a href={`${base}/systemen/nieuw`}>Systeem toevoegen</a>
+      </p>
+    ),
+  };
 }

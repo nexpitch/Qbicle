@@ -1,5 +1,6 @@
 /** @jsxImportSource hono/jsx */
 import type { Child } from 'hono/jsx';
+import { STATIC_VERSION } from './static-version.ts';
 
 const euroFmt = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
 const euroHeel = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -44,6 +45,8 @@ export function Layout(props: {
   active?: string;
   /** Minimale kop (registreren, betalen). */
   minimal?: boolean;
+  /** Zonder JavaScript de pagina elke zoveel seconden verversen (bijvoorbeeld tijdens een scan). */
+  refreshSeconds?: number;
 }) {
   const { user, org } = props;
   const link = (href: string, label: string, key: string, cls?: string) => (
@@ -58,8 +61,13 @@ export function Layout(props: {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{`${props.title} · Qbicle`}</title>
         <link rel="icon" href="/static/icoon.png" />
-        <link rel="stylesheet" href="/static/app.css" />
-        <script src="/static/app.js" defer></script>
+        <link rel="stylesheet" href={`/static/app.css?v=${STATIC_VERSION}`} />
+        <script src={`/static/app.js?v=${STATIC_VERSION}`} defer></script>
+        {props.refreshSeconds ? (
+          <noscript>
+            <meta http-equiv="refresh" content={String(props.refreshSeconds)} />
+          </noscript>
+        ) : null}
       </head>
       <body>
         <header class="top">
@@ -73,8 +81,9 @@ export function Layout(props: {
                 {org ? link(`/o/${org.id}/overzicht`, 'Overzicht', 'overzicht') : null}
                 {org ? link(`/o/${org.id}/assets`, 'Assets', 'assets') : null}
                 {org ? link(`/o/${org.id}/domeinen`, 'Domeinen', 'domeinen') : null}
+                {org ? link(`/o/${org.id}/systemen`, 'Systemen', 'systemen') : null}
                 {org ? link(`/o/${org.id}/koppelingen`, 'Koppelingen', 'koppelingen') : null}
-                {org ? link(`/o/${org.id}/abonnement`, 'Abonnement', 'abonnement') : null}
+                {org ? link(`/o/${org.id}/account`, 'Account', 'account') : null}
                 <form data-api="/api/v1/auth/uitloggen" data-next="/inloggen">
                   <button class="linkbtn" type="submit">Uitloggen</button>
                 </form>

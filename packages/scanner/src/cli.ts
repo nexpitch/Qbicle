@@ -19,7 +19,7 @@ import { DomainInputError } from './domain.ts';
 import { createNodeNet } from './net.ts';
 import { loadOptOut } from './optout.ts';
 import { formatReport } from './report.ts';
-import { DomainNotFoundError, OptOutError, scanDomain } from './scan.ts';
+import { DnsUnavailableError, DomainNotFoundError, OptOutError, scanDomain } from './scan.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -54,7 +54,7 @@ const opts = {
 };
 
 const isExpected = (e: unknown) =>
-  e instanceof DomainInputError || e instanceof OptOutError || e instanceof DomainNotFoundError;
+  e instanceof DomainInputError || e instanceof OptOutError || e instanceof DomainNotFoundError || e instanceof DnsUnavailableError;
 
 if (values.bestand) {
   // Testset: domeinen na elkaar scannen (niet parallel, om netjes te blijven).

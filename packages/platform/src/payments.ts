@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Queryable } from './db.ts';
 
 /**
  * Betaalprovider-laag. De rest van Qbicle praat alleen met deze interface, zodat
@@ -26,31 +27,71 @@ export interface PaymentProvider {
   createPayment(input: CreatePaymentInput): Promise<{ providerPaymentId: string; checkoutUrl: string }>;
   /** Vraagt de actuele status op bij de provider. Wij vertrouwen nooit op wat de browser zegt. */
   getStatus(providerPaymentId: string): Promise<ProviderStatus>;
+  /**
+   * Het incassomandaat dat bij een geslaagde (eerste) betaling is ontstaan, als de
+   * provider dat ondersteunt. Bij Mollie: de mandate van de customer.
+   */
+  mandateFor?(providerPaymentId: string): Promise<ProviderMandate | null>;
+}
+
+export interface ProviderMandate {
+  providerMandateId: string;
+  method: 'sepa' | 'creditcard';
+  accountHolder: string | null;
+  /** Laatste vier tekens van het rekeningnummer. */
+  accountLast4: string | null;
 }
 
 /**
  * Testbetaling: er gaat geen geld over. De "betaalpagina" is een pagina in onze
  * eigen web-app (/betalen/test/<id>) met de knoppen Betaald en Mislukt.
  * Staat in productie uit, tenzij QBICLE_NEPBETALING=aan (voor de gesloten bèta).
+ *
+ * Met een database (`db`) staat de status in de tabel test_betaling. Dan zien
+ * cockpit, web-app en API dezelfde testbetalingen en raakt een herstart niets
+ * kwijt. Zonder database (alleen losse unittests) blijft het in het werkgeheugen.
  */
 export class NepBetaalprovider implements PaymentProvider {
   readonly name = 'nep' as const;
   private readonly status = new Map<string, ProviderStatus>();
 
-  constructor(private readonly appOrigin: string) {}
+  constructor(
+    private readonly appOrigin: string,
+    private readonly db?: Queryable,
+  ) {}
 
   async createPayment(input: CreatePaymentInput): Promise<{ providerPaymentId: string; checkoutUrl: string }> {
     const providerPaymentId = 'nep_' + randomBytes(12).toString('base64url');
-    this.status.set(providerPaymentId, 'open');
+    if (this.db) {
+      await this.db.query('INSERT INTO test_betaling (provider_payment_id, payment_id) VALUES ($1, $2)', [providerPaymentId, input.paymentId]);
+    } else {
+      this.status.set(providerPaymentId, 'open');
+    }
     return { providerPaymentId, checkoutUrl: `${this.appOrigin}/betalen/test/${input.paymentId}` };
   }
 
   async getStatus(providerPaymentId: string): Promise<ProviderStatus> {
+    if (this.db) {
+      const r = await this.db.query<{ status: ProviderStatus }>('SELECT status FROM test_betaling WHERE provider_payment_id = $1', [providerPaymentId]);
+      return r.rows[0]?.status ?? 'verlopen';
+    }
     return this.status.get(providerPaymentId) ?? 'verlopen';
   }
 
-  /** Alleen voor de testbetaalpagina en tests: zet de uitkomst. */
-  settle(providerPaymentId: string, outcome: 'betaald' | 'mislukt' | 'geannuleerd'): void {
+  async mandateFor(providerPaymentId: string): Promise<ProviderMandate | null> {
+    if ((await this.getStatus(providerPaymentId)) !== 'betaald') return null;
+    return { providerMandateId: 'nep_mdt_' + providerPaymentId.slice(4, 16), method: 'sepa', accountHolder: 'Testrekening', accountLast4: '0000' };
+  }
+
+  /** Alleen voor de testbetaalpagina en tests: zet de uitkomst (eenmalig, vanuit open). */
+  async settle(providerPaymentId: string, outcome: 'betaald' | 'mislukt' | 'geannuleerd'): Promise<void> {
+    if (this.db) {
+      await this.db.query(
+        `UPDATE test_betaling SET status = $2, settled_at = now() WHERE provider_payment_id = $1 AND status = 'open'`,
+        [providerPaymentId, outcome],
+      );
+      return;
+    }
     if (this.status.get(providerPaymentId) !== 'open') return;
     this.status.set(providerPaymentId, outcome);
   }
@@ -61,7 +102,7 @@ export function isNepProvider(p: PaymentProvider): p is NepBetaalprovider {
 }
 
 /** Kiest de provider uit de omgeving. Mollie volgt zodra er een BV en API-sleutel is. */
-export function paymentProviderFromEnv(appOrigin: string, env = process.env): PaymentProvider {
+export function paymentProviderFromEnv(appOrigin: string, env = process.env, db?: Queryable): PaymentProvider {
   const choice = env.QBICLE_BETAALPROVIDER ?? 'nep';
   if (choice === 'mollie') {
     throw new Error('Mollie is nog niet gekoppeld (wacht op de BV). Gebruik QBICLE_BETAALPROVIDER=nep.');
@@ -70,5 +111,5 @@ export function paymentProviderFromEnv(appOrigin: string, env = process.env): Pa
   if (env.NODE_ENV === 'production' && env.QBICLE_NEPBETALING !== 'aan') {
     throw new Error('Testbetalingen staan in productie uit. Zet QBICLE_NEPBETALING=aan alleen voor de gesloten bèta.');
   }
-  return new NepBetaalprovider(appOrigin);
+  return new NepBetaalprovider(appOrigin, db);
 }

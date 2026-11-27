@@ -43,6 +43,8 @@ export interface ScanOptions {
   /** Domeinen die niet gescand willen worden. */
   optOut?: Set<string>;
   checks?: Check[];
+  /** Wordt aangeroepen zodra een check klaar is (voor live voortgang). Mag niet gooien. */
+  onCheck?: (result: CheckResult) => void;
 }
 
 export interface WebsiteNote {
@@ -67,6 +69,8 @@ export interface ScanReport {
 export class OptOutError extends Error {}
 /** Het domein bestaat niet, of DNS werkt niet: dan zeggen we niets, in plaats van alles "ontbreekt". */
 export class DomainNotFoundError extends Error {}
+/** De DNS-opzoeking van Qbicle zelf werkte niet: geen oordeel over het domein, later opnieuw proberen. */
+export class DnsUnavailableError extends Error {}
 
 /**
  * Bestaat www alleen via een wildcard-record (*.domein)? Dan is het geen eigen
@@ -161,8 +165,9 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
   try {
     exists = await opts.net.domainExists(domain);
   } catch (e) {
-    throw new DomainNotFoundError(
-      `We konden ${domain} nu niet opzoeken in DNS (${(e as { code?: string }).code ?? 'storing'}). Probeer het later opnieuw.`,
+    throw new DnsUnavailableError(
+      `Qbicle kon ${domain} nu niet opzoeken in DNS (${(e as { code?: string }).code ?? 'storing'}). ` +
+        'Dit ligt aan onze kant, niet aan je domein. We proberen het automatisch opnieuw; je kunt ook zelf opnieuw proberen.',
     );
   }
   if (!exists) {
@@ -205,7 +210,18 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
       jobs.push(Promise.resolve(noWebsiteResult(check, domainAsset, websites)));
     }
   }
-  const results = await Promise.all(jobs);
+  const results = await Promise.all(
+    jobs.map((j) =>
+      j.then((r) => {
+        try {
+          opts.onCheck?.(r);
+        } catch {
+          // voortgang is bijzaak; de scan gaat door
+        }
+        return r;
+      }),
+    ),
+  );
   const findings = results.flatMap((r) => r.findings);
 
   return {

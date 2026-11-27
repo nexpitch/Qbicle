@@ -27,8 +27,8 @@ Alle pakketten en prijzen staan in **`config/abonnementen.json`** (euro's per ma
 
 1. **Registreren** (`/aanmelden`): pakket en betaalinterval kiezen, e-mailadres en bedrijfsnaam. Er komt een inloglink; pas bij het eerste inloggen maakt Qbicle de organisatie aan (gebruiker wordt eigenaar) en start de proef van 14 dagen, zonder betaalgegevens.
 2. **Betalen**: de eigenaar kan tijdens de proef al betalen; de betaalde periode begint pas als de proef afloopt. Jaarbetaling rekent 12 maanden vooruit.
-3. **Factuur**: bij een geslaagde betaling komt er automatisch een factuur (`QB-jaar-nummer`) met een momentopname van de factuurgegevens. Facturen zijn in de database onwijzigbaar.
-4. **Opzeggen**: een proef stopt direct; een betaald abonnement loopt door tot het einde van de periode. Een tweede proef is er niet.
+3. **Factuur**: bij een geslaagde betaling komt er automatisch een factuur (`QB-jaar-nummer`) met een momentopname van de factuurgegevens. Facturen zijn in de database onwijzigbaar. Testbetalingen krijgen een eigen reeks (`TEST-jaar-nummer`, kolom `invoice.test`), zodat de echte reeks bij de start met Mollie schoon begint. Testmachtigingen staan met provider `nep` in `payment_mandate`; bij de overstap naar Mollie mogen alleen Mollie-machtigingen meetellen (reviewpunt I7, vóór Mollie).
+4. **Opzeggen**: een proef stopt direct; een betaald abonnement loopt door tot het einde van de periode, mits uiterlijk 1 maand (opzegtermijn) vóór dat einde opgezegd. Anders verlengt het nog één keer met een maand of een jaar. Een tweede proef is er niet.
 5. **Qbicle Audit**: eenmalige opdracht per doelonderneming (naam en domeinen), direct betalen.
 
 Rechten: alleen de **eigenaar** betaalt, wijzigt het pakket of zegt op. Een beheerder ziet abonnement en facturen. Via een IT-partner kan niemand betalen of opzeggen.

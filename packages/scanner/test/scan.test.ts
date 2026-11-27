@@ -2,7 +2,7 @@ import { WEIGHTS } from '@qbicle/score';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CHECKS, DomainNotFoundError, OptOutError, normalizeOutput, scanDomain } from '../src/scan.ts';
+import { CHECKS, DnsUnavailableError, DomainNotFoundError, OptOutError, normalizeOutput, scanDomain } from '../src/scan.ts';
 import type { Check } from '../src/types.ts';
 import { fakeNet, healthyConfig } from './fake-net.ts';
 import { NOW } from './helpers.ts';
@@ -92,7 +92,8 @@ describe('scanDomain', () => {
 
   it('DNS-storing bij het opzoeken stopt de scan in plaats van "alles ontbreekt"', async () => {
     const net = { ...fakeNet({}), domainExists: () => Promise.reject(Object.assign(new Error('x'), { code: 'ETIMEOUT' })) };
-    await expect(scanDomain(D, { net })).rejects.toThrow(DomainNotFoundError);
+    await expect(scanDomain(D, { net })).rejects.toThrow(DnsUnavailableError);
+    await expect(scanDomain(D, { net })).rejects.toThrow(/ligt aan onze kant/);
   });
 
   it('respecteert de opt-outlijst', async () => {

@@ -13,6 +13,7 @@ import {
 } from '@qbicle/score';
 import type { Platform } from './context.ts';
 import { many, one } from './db.ts';
+import { SCAN_INTERVAL_DAYS } from './scanstatus.ts';
 import { notFound } from './errors.ts';
 import { authorize, isUuid } from './organizations.ts';
 
@@ -146,7 +147,6 @@ export interface ScanPlan {
   volgende: Date | null;
 }
 
-export const SCAN_INTERVAL_DAYS = 7;
 
 export interface Dashboard {
   /** Er is minstens één asset of scan, dus iets om te laten zien. */

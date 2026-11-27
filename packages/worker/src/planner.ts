@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { many, withTransaction } from '@qbicle/platform';
+import { many, SCAN_INTERVAL_DAYS, SCAN_MAX_FAILURES, SCAN_RETRY_HOURS, withTransaction } from '@qbicle/platform';
 
 /**
  * De planner zet scans in de wachtrij:
@@ -19,7 +19,8 @@ export interface PlannerOptions {
   maxFailures: number;
 }
 
-export const DEFAULT_PLANNER: PlannerOptions = { intervalDays: 7, retryHours: 6, maxFailures: 3 };
+/** Zelfde regels als wat de klant ziet (packages/platform/src/scanstatus.ts). */
+export const DEFAULT_PLANNER: PlannerOptions = { intervalDays: SCAN_INTERVAL_DAYS, retryHours: SCAN_RETRY_HOURS, maxFailures: SCAN_MAX_FAILURES };
 
 export interface PlannedScan {
   id: string;

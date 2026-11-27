@@ -36,7 +36,7 @@ export const home: CockpitModule = {
                 value={String(k.mislukt30d)}
                 sub={k.achterstallig ? `${k.achterstallig} achterstallig` : 'laatste 30 dagen'}
                 tone={k.mislukt30d || k.achterstallig ? 'crit' : 'ok'}
-                href="/incasso"
+                href="/incasso/mislukt"
               />
             </section>
 
