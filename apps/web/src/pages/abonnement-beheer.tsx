@@ -46,9 +46,9 @@ function PayButton(props: { orgId: string; label: string; secondary?: boolean })
   );
 }
 
-function Meter(props: { label: string; used: number; max: number }) {
+function Meter(props: { label: string; used: number; max: number; extraUitleg?: string }) {
   const pct = Math.min(100, Math.round((props.used / Math.max(1, props.max)) * 100));
-  const over = props.used > props.max;
+  const over = props.used > props.max && !props.extraUitleg;
   return (
     <div class="meter">
       <div class="row between">
@@ -60,11 +60,12 @@ function Meter(props: { label: string; used: number; max: number }) {
       <div class="meter-bar" role="img" aria-label={`${props.used} van ${props.max} ${props.label.toLowerCase()}`}>
         <i class={`w${Math.round(pct / 5) * 5}${over ? ' over' : ''}`}></i>
       </div>
+      {props.extraUitleg ? <span class="small">{props.extraUitleg}</span> : null}
     </div>
   );
 }
 
-function MijnPakket(props: Ctx & { b: BillingOverview }) {
+function MijnPakket(props: Ctx & { b: BillingOverview; extraDomeinCenten: number }) {
   const { b, org } = props;
   const sub = b.abonnement;
   const pk = sub?.pakket;
@@ -139,7 +140,11 @@ function MijnPakket(props: Ctx & { b: BillingOverview }) {
             <b>{euro(b.volgendeBetaling.inclCents)}</b> incl. btw op {datum(b.volgendeBetaling.datum)}
             <span class="small">
               {' '}
-              ({euro(b.volgendeBetaling.exclCents)} excl. btw, {b.volgendeBetaling.pakket?.naam ?? ''} {per(b.volgendeBetaling.interval)})
+              ({euro(b.volgendeBetaling.exclCents)} excl. btw, {b.volgendeBetaling.pakket?.naam ?? ''} {per(b.volgendeBetaling.interval)}
+              {b.volgendeBetaling.extraDomeinen > 0
+                ? `, inclusief ${b.volgendeBetaling.extraDomeinen} extra ${b.volgendeBetaling.extraDomeinen === 1 ? 'domein' : 'domeinen'}: ${euro(b.volgendeBetaling.extraDomeinenExclCents)}`
+                : ''}
+              )
             </span>
           </dd>
           <dt>Hoe</dt>
@@ -158,7 +163,16 @@ function MijnPakket(props: Ctx & { b: BillingOverview }) {
       {pk ? (
         <div class="grid">
           <Meter label="Gebruikers" used={b.gebruik.gebruikers} max={pk.limieten.gebruikers} />
-          <Meter label="Domeinen" used={b.gebruik.domeinen} max={pk.limieten.domeinen} />
+          <Meter
+            label="Domeinen"
+            used={b.gebruik.domeinen}
+            max={pk.limieten.domeinen}
+            extraUitleg={
+              b.gebruik.domeinen > pk.limieten.domeinen
+                ? `${b.gebruik.domeinen - pk.limieten.domeinen} extra ${b.gebruik.domeinen - pk.limieten.domeinen === 1 ? 'domein' : 'domeinen'} à ${euroKort(props.extraDomeinCenten)} per maand. Meer nodig? Voeg ze gewoon toe bij Domeinen.`
+                : `Meer domeinen kan: ${euroKort(props.extraDomeinCenten)} per extra domein per maand.`
+            }
+          />
         </div>
       ) : null}
 
@@ -353,7 +367,7 @@ export function AbonnementPage(props: Ctx & { b: BillingOverview; catalog: Catal
           Een betaling van {euro(props.actieNodig[0]!.payment.amountInclCents)} is niet gelukt. <a href={`/o/${org.id}/facturen`}>Bekijk en betaal opnieuw</a>
         </p>
       ) : null}
-      <MijnPakket {...props} />
+      <MijnPakket {...props} extraDomeinCenten={props.catalog.extraDomeinCenten} />
       <PakketKiezen {...props} />
       {b.magBeheren || b.betaalwijze.mandaat ? <Betaalwijze {...props} /> : null}
       <LaatsteFacturen org={org} user={props.user} invoices={props.invoices} />

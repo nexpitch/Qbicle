@@ -138,9 +138,10 @@ interface PayRow {
   created_at: Date;
   paid_at: Date | null;
   plan_change: PlanChangeTarget | null;
+  lines: InvoiceLine[] | null;
 }
 const PAY_COLS = `id, organization_id, subscription_id, audit_order_id, description, period_start, period_end,
-  amount_excl_cents, vat_cents, amount_incl_cents, status, provider, provider_payment_id, checkout_url, created_at, paid_at, plan_change`;
+  amount_excl_cents, vat_cents, amount_incl_cents, status, provider, provider_payment_id, checkout_url, created_at, paid_at, plan_change, lines`;
 const toPay = (r: PayRow): Payment => ({
   id: r.id,
   description: r.description,
@@ -341,7 +342,16 @@ export interface BillingOverview {
   /** Geplande wijziging bij de volgende periode. */
   gepland: { pakket: Plan | null; interval: BillingInterval; per: Date | null } | null;
   /** Eerstvolgende gewone betaling (verlenging), als die er komt. */
-  volgendeBetaling: { datum: Date; exclCents: number; inclCents: number; pakket: Plan | null; interval: BillingInterval } | null;
+  volgendeBetaling: {
+    datum: Date;
+    exclCents: number;
+    inclCents: number;
+    pakket: Plan | null;
+    interval: BillingInterval;
+    /** Add-on: domeinen boven de limiet van het pakket, en wat die deze periode kosten. */
+    extraDomeinen: number;
+    extraDomeinenExclCents: number;
+  } | null;
   betaalwijze: PaymentMethodInfo;
   gebruik: { gebruikers: number; domeinen: number };
 }
@@ -364,8 +374,10 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
     const pk = sub.pendingPlan ? pendingPlan : findPlan(p.catalog, sub.plan) ?? null;
     const iv = sub.pendingInterval ?? sub.interval;
     const monthly = pk ? pk.maandprijsCenten[iv] : sub.monthlyPriceCents;
-    const excl = periodAmountCents(monthly, iv);
-    volgende = { datum, exclCents: excl, inclCents: excl + vatCents(p.catalog, excl), pakket: pk, interval: iv };
+    const extra = pk ? extraDomainsFor(pk, (await usageCounts(p.pool, organizationId)).domeinen) : 0;
+    const extraExcl = extra * p.catalog.extraDomeinCenten * (iv === 'jaar' ? 12 : 1);
+    const excl = periodAmountCents(monthly, iv) + extraExcl;
+    volgende = { datum, exclCents: excl, inclCents: excl + vatCents(p.catalog, excl), pakket: pk, interval: iv, extraDomeinen: extra, extraDomeinenExclCents: extraExcl };
   }
   return {
     gepland: sub?.pendingPlan && sub.pendingInterval ? { pakket: pendingPlan, interval: sub.pendingInterval, per: sub.currentPeriodEnd } : null,
@@ -432,17 +444,18 @@ export async function checkoutSubscription(
     if (sub.interval === 'jaar') end.setFullYear(end.getFullYear() + 1);
     else end.setMonth(end.getMonth() + 1);
 
-    const excl = periodAmountCents(monthly, sub.interval);
-    const vat = vatCents(p.catalog, excl);
     const description = `${plan.naam}, ${sub.interval === 'jaar' ? 'jaar' : 'maand'} ${nlDate(start)} t/m ${nlDate(new Date(end.getTime() - 86_400_000))}`;
+    const lines = await periodLines(p, q, organizationId, plan, sub.interval, monthly, description);
+    const excl = lines.reduce((t, l) => t + l.totaalExclCenten, 0);
+    const vat = vatCents(p.catalog, excl);
 
     await q.query(`UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND plan_change IS NULL`, [sub.id]);
     const row = await one<{ id: string }>(
       q,
       `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10) RETURNING id`,
-      [organizationId, sub.id, description.slice(0, 200), start, end, excl, vat, excl + vat, p.payments.name, actor.userId],
+                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11) RETURNING id`,
+      [organizationId, sub.id, description.slice(0, 200), start, end, excl, vat, excl + vat, p.payments.name, actor.userId, lines.length > 1 ? JSON.stringify(lines) : null],
     );
     const checkoutUrl = await createProviderPayment(p, q, row!.id, excl + vat, description);
     await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row!.id, detail: { bedrag: excl + vat, abonnement: sub.id } });
@@ -612,9 +625,9 @@ async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor
   const year = new Date().getFullYear();
   const seq = await one<{ n: string }>(q, `SELECT nextval('invoice_number_seq')::text AS n`);
   const number = `QB-${year}-${seq!.n.padStart(6, '0')}`;
-  const lines: InvoiceLine[] = [
-    { omschrijving: pay.description, aantal: 1, prijsExclCenten: pay.amount_excl_cents, totaalExclCenten: pay.amount_excl_cents },
-  ];
+  const lines: InvoiceLine[] = pay.lines?.length
+    ? pay.lines
+    : [{ omschrijving: pay.description, aantal: 1, prijsExclCenten: pay.amount_excl_cents, totaalExclCenten: pay.amount_excl_cents }];
   await q.query(
     `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -817,11 +830,14 @@ function computeChange(
   if (usage.gebruikers > plan.limieten.gebruikers) {
     waarschuwingen.push(`Je hebt nu ${usage.gebruikers} gebruikers. ${plan.naam} heeft ruimte voor ${plan.limieten.gebruikers}. Bestaande gebruikers blijven, maar je kunt niemand meer uitnodigen.`);
   }
-  if (usage.domeinen > plan.limieten.domeinen) {
-    waarschuwingen.push(`Je hebt nu ${usage.domeinen} domeinen. ${plan.naam} controleert er ${plan.limieten.domeinen}. Haal er eerst een paar weg.`);
+  const extra = extraDomainsFor(plan, usage.domeinen);
+  if (extra > 0) {
+    waarschuwingen.push(
+      `Je hebt nu ${usage.domeinen} domeinen; in ${plan.naam} zitten er ${plan.limieten.domeinen}. De ${extra} extra ${extra === 1 ? 'domein kost' : 'domeinen kosten'} elk ${euroText(p.catalog.extraDomeinCenten)} per maand, en dat staat in de bedragen hieronder.`,
+    );
   }
   const amount = (monthly: number, iv: BillingInterval) => {
-    const excl = periodAmountCents(monthly, iv);
+    const excl = periodAmountCents(monthly, iv) + extra * p.catalog.extraDomeinCenten * (iv === 'jaar' ? 12 : 1);
     return { exclCents: excl, inclCents: excl + vatCents(p.catalog, excl) };
   };
   const state = accessState(sub, now);
@@ -1237,8 +1253,8 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
     const row2 = await one<{ id: string }>(
       q,
       `INSERT INTO payment (organization_id, subscription_id, audit_order_id, description, period_start, period_end,
-                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12) RETURNING id`,
+                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change, lines)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12, $13) RETURNING id`,
       [
         organizationId,
         old.subscription_id,
@@ -1252,6 +1268,7 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
         p.payments.name,
         actor.userId,
         old.plan_change ? JSON.stringify(old.plan_change) : null,
+        old.lines ? JSON.stringify(old.lines) : null,
       ],
     );
     const checkoutUrl = await createProviderPayment(p, q, row2!.id, old.amount_incl_cents, old.description);
@@ -1259,4 +1276,59 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
     const pay = await one<PayRow>(q, `SELECT ${PAY_COLS} FROM payment WHERE id = $1`, [row2!.id]);
     return { payment: toPay(pay!), checkoutUrl };
   });
+}
+
+// Add-on extra domeinen ------------------------------------------------------------------
+
+/** Domeinen boven de limiet van het pakket (add-on, keuze Erik 27-11-2026). */
+export function extraDomainsFor(plan: Plan, domains: number): number {
+  return Math.max(0, domains - plan.limieten.domeinen);
+}
+
+function euroText(cents: number): string {
+  return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100).replace(/\u00a0/g, ' ');
+}
+
+/**
+ * Factuurregels voor een periode: het pakket, plus extra domeinen boven de limiet.
+ * Het aantal extra domeinen telt op het moment dat de betaling klaargezet wordt;
+ * halverwege een periode bijtellen doen we niet.
+ */
+async function periodLines(
+  p: Platform,
+  q: Queryable,
+  organizationId: string,
+  plan: Plan,
+  interval: BillingInterval,
+  monthlyCents: number,
+  description: string,
+): Promise<InvoiceLine[]> {
+  const base = periodAmountCents(monthlyCents, interval);
+  const lines: InvoiceLine[] = [{ omschrijving: description.slice(0, 200), aantal: 1, prijsExclCenten: base, totaalExclCenten: base }];
+  const extra = extraDomainsFor(plan, (await usageCounts(q, organizationId)).domeinen);
+  if (extra > 0 && p.catalog.extraDomeinCenten > 0) {
+    const months = interval === 'jaar' ? 12 : 1;
+    const each = p.catalog.extraDomeinCenten * months;
+    lines.push({
+      omschrijving: `Extra domeinen boven ${plan.limieten.domeinen} (${euroText(p.catalog.extraDomeinCenten)} p/m, ${months} mnd)`,
+      aantal: extra,
+      prijsExclCenten: each,
+      totaalExclCenten: extra * each,
+    });
+  }
+  return lines;
+}
+
+/** Wat de add-on nu kost, voor de abonnements- en domeinenpagina. */
+export async function extraDomainCharge(
+  p: Platform,
+  userId: string,
+  organizationId: string,
+): Promise<{ extra: number; perMaandCenten: number; limiet: number | null }> {
+  await authorize(p.pool, userId, organizationId, 'org:lezen');
+  const sub = await currentSubscription(p.pool, organizationId);
+  const plan = sub && accessState(sub) !== 'geen_abonnement' ? findPlan(p.catalog, sub.plan) : undefined;
+  if (!plan) return { extra: 0, perMaandCenten: 0, limiet: null };
+  const extra = extraDomainsFor(plan, (await usageCounts(p.pool, organizationId)).domeinen);
+  return { extra, perMaandCenten: extra * p.catalog.extraDomeinCenten, limiet: plan.limieten.domeinen };
 }

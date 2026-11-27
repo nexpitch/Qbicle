@@ -34,3 +34,10 @@ API: `GET /api/v1/organisaties/:org/contactpersonen`, `PUT|DELETE /api/v1/organi
 - **Pdf** per factuur (`/facturen/<id>/pdf`, zonder externe bibliotheek) en een **csv** voor de boekhouding (`/facturen/export.csv`).
 - **Mislukte betaling**: melding bovenaan Facturen en Abonnement met een knop **Nu betalen**; dat maakt een nieuwe betaling voor precies hetzelfde (`retryPayment`). Een herinneringsmail stuurt nog niemand automatisch: bij mislukte incasso's bereidt de cockpit een conceptmail voor die een medewerker verstuurt.
 - Facturen versturen per e-mail naar het factuuradres zit er nog niet in (volgt met de Mollie-koppeling).
+
+## Add-on extra domeinen
+
+- Elk domein boven de limiet van het pakket kost `extraDomeinPerMaand` (config/abonnementen.json, nu €5) per maand excl. btw (keuze Erik 27-11-2026).
+- Het aantal telt op het moment dat een verlenging klaargezet wordt; halverwege een periode bijtellen doen we niet. Bij jaarbetaling: 12 maanden per extra domein.
+- Het komt als aparte regel op betaling en factuur (`payment.lines`, migratie 0020). De abonnementspagina en de voorbeeldpagina bij een pakketwissel rekenen het mee.
+- **Voor de incassobatch (cockpit):** gebruik dezelfde regels, anders wordt de add-on niet geïncasseerd.
