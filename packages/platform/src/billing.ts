@@ -719,7 +719,7 @@ export async function settleTestPayment(
   const pay = await getPayment(p, actor.userId, paymentId);
   await authorize(p.pool, actor.userId, pay.organizationId, 'abonnement:beheren');
   const r = await one<{ provider_payment_id: string | null }>(p.pool, 'SELECT provider_payment_id FROM payment WHERE id = $1', [paymentId]);
-  if (r?.provider_payment_id) provider.settle(r.provider_payment_id, outcome);
+  if (r?.provider_payment_id) await provider.settle(r.provider_payment_id, outcome);
   return syncPayment(p, paymentId, actor);
 }
 
@@ -750,15 +750,17 @@ async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor
   if (exists) return;
   const details = await billingDetailsRow(q, pay.organization_id);
   const year = new Date().getFullYear();
-  const seq = await one<{ n: string }>(q, `SELECT nextval('invoice_number_seq')::text AS n`);
-  const number = `QB-${year}-${seq!.n.padStart(6, '0')}`;
+  // Testbetalingen krijgen een eigen reeks (TEST-), zodat de echte reeks QB- schoon blijft.
+  const test = pay.provider === 'nep';
+  const seq = await one<{ n: string }>(q, `SELECT nextval('${test ? 'test_invoice_number_seq' : 'invoice_number_seq'}')::text AS n`);
+  const number = `${test ? 'TEST' : 'QB'}-${year}-${seq!.n.padStart(6, '0')}`;
   const lines: InvoiceLine[] = pay.lines?.length
     ? pay.lines
     : [{ omschrijving: pay.description, aantal: 1, prijsExclCenten: pay.amount_excl_cents, totaalExclCenten: pay.amount_excl_cents }];
   await q.query(
-    `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [pay.organization_id, pay.id, number, JSON.stringify(details), JSON.stringify(lines), pay.amount_excl_cents, p.catalog.btwPercentage, pay.vat_cents, pay.amount_incl_cents],
+    `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, test)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [pay.organization_id, pay.id, number, JSON.stringify(details), JSON.stringify(lines), pay.amount_excl_cents, p.catalog.btwPercentage, pay.vat_cents, pay.amount_incl_cents, test],
   );
   await audit(q, actor, { organizationId: pay.organization_id, action: 'factuur.uitgegeven', subject: number });
 }

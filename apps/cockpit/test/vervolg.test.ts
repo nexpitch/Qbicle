@@ -123,6 +123,6 @@ describe.skipIf(!hasDb)('cockpit: mislukte incasso opvolgen', () => {
     expect(done).toContain('voorstel was: Opnieuw incasseren');
 
     const log = (await h.p.pool.query(`SELECT action FROM audit_log WHERE action LIKE 'cockpit.incasso_vervolg%' ORDER BY id`)).rows.map((r) => r.action);
-    expect(log).toEqual(['cockpit.incasso_vervolg_uitgevoerd', 'cockpit.incasso_vervolg_uitgevoerd', 'cockpit.incasso_vervolg_afgewezen']);
+    expect(log).toEqual(['cockpit.incasso_vervolg_uitgevoerd', 'cockpit.incasso_vervolg_mail_verstuurd', 'cockpit.incasso_vervolg_uitgevoerd', 'cockpit.incasso_vervolg_afgewezen']);
   });
 });

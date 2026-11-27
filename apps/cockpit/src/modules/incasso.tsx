@@ -27,6 +27,8 @@ import {
   executeFollowup,
   FOLLOWUP_ACTIONS,
   listFollowups,
+  refreshFollowups,
+  resendFollowupMail,
   mailDraft,
   rejectFollowup,
   settleTestFollowupPayment,
@@ -185,6 +187,8 @@ export const incasso: CockpitModule = {
 
     pages.get('/incasso/mislukt', async (c) => {
       const toon = c.req.query('toon') === 'afgehandeld' ? 'afgehandeld' : 'open';
+      // Vervallen voorstellen opruimen en nieuwe maken na een mislukte vervolgbetaling (I10).
+      await refreshFollowups(p);
       const rows = await listFollowups(p.pool, toon);
       const mag = can(c.get('staff').role, 'incasso.indienen');
       const test = isNepProvider(p.payments);
@@ -217,7 +221,7 @@ export const incasso: CockpitModule = {
                   Per mislukte incasso staat een voorstel klaar. Er gaat niets naar de klant zonder jouw klik. Kies een andere actie als het voorstel niet past.
                 </p>
               ) : null}
-              {rows.map((f) => (toon === 'open' ? <FollowupCard f={f} mag={mag} appOrigin={p.config.appOrigin} /> : <DoneCard f={f} mag={mag} test={test} />))}
+              {rows.map((f) => (f.status === 'voorgesteld' ? <FollowupCard f={f} mag={mag} appOrigin={p.config.appOrigin} /> : <DoneCard f={f} mag={mag} test={test} />))}
             </>
           ),
       });
@@ -478,7 +482,12 @@ export const incasso: CockpitModule = {
         }),
       );
       const r = await executeFollowup(p, idParam(c.req.param('id'), 'Dit voorstel'), b, c.get('actor'));
-      return c.json({ betaling: r.paymentId ?? null, gemaildAan: r.mailedTo ?? null });
+      return c.json({ betaling: r.paymentId ?? null, gemaildAan: r.mailedTo ?? null, mailMislukt: r.mailFailed ?? false, alBetaald: r.alreadyPaid ?? false });
+    });
+    api.post('/incasso/vervolg/:id/mail-opnieuw', async (c) => {
+      ctx.require(c, 'incasso.indienen');
+      const r = await resendFollowupMail(p, idParam(c.req.param('id'), 'Dit voorstel'), c.get('actor'));
+      return c.json({ verstuurd: r.sent });
     });
     api.post('/incasso/vervolg/:id/afwijzen', async (c) => {
       ctx.require(c, 'incasso.indienen');
@@ -517,7 +526,8 @@ function FailHead({ f }: { f: FollowupRow }) {
           <a href={`/klanten/${f.organization_id}?tab=facturatie`}>{f.organization_name}</a>
         </h2>
         <span class="small">
-          {f.description} · {euro(f.amount_incl_cents)} · mislukt {datumTijd(f.created_at)}
+          {f.description} · {euro(f.amount_incl_cents)} · {f.attempt > 1 ? `vervolgactie ${f.attempt - 1} leverde niets op, ` : 'mislukt '}
+          {datumTijd(f.created_at)}
         </span>
       </div>
       <div class="row">
@@ -631,18 +641,34 @@ function DoneCard({ f, mag, test }: { f: FollowupRow; mag: boolean; test: boolea
       <dl class="facts">
         <dt>Besluit</dt>
         <dd>
-          {f.status === 'afgewezen' ? 'Afgewezen' : ACTION_LABEL[f.chosen_action ?? f.suggested_action]}
+          {f.status === 'afgewezen' ? 'Afgewezen' : f.status === 'vervallen' ? 'Vervallen: al betaald' : ACTION_LABEL[f.chosen_action ?? f.suggested_action]}
           {f.chosen_action && f.chosen_action !== f.suggested_action ? <span class="muted"> (voorstel was: {ACTION_LABEL[f.suggested_action]})</span> : null}
         </dd>
         <dt>Door</dt>
         <dd>
-          {f.decided_by_email ?? 'onbekend'}
+          {f.decided_by_email ?? (f.status === 'vervallen' ? 'automatisch' : 'onbekend')}
           {f.decided_at ? `, ${datumTijd(f.decided_at)}` : ''}
         </dd>
         {f.decision_note ? (
           <>
             <dt>Notitie</dt>
             <dd>{f.decision_note}</dd>
+          </>
+        ) : null}
+        {f.mail_status ? (
+          <>
+            <dt>Mail</dt>
+            <dd>
+              {f.mail_status === 'verstuurd' ? (
+                <Status kind="ok">Verstuurd aan {f.mail_to}</Status>
+              ) : f.mail_status === 'mislukt' ? (
+                <>
+                  <Status kind="crit">Niet verstuurd</Status> <span class="small muted">{f.mail_error}</span>
+                </>
+              ) : (
+                <Status kind="warn">Wordt verstuurd</Status>
+              )}
+            </dd>
           </>
         ) : null}
         {pay ? (
@@ -654,6 +680,14 @@ function DoneCard({ f, mag, test }: { f: FollowupRow; mag: boolean; test: boolea
           </>
         ) : null}
       </dl>
+      {mag && f.mail_status === 'mislukt' ? (
+        <form class="inline" data-api={`/api/incasso/vervolg/${f.id}/mail-opnieuw`}>
+          <button class="btn sm" type="submit">
+            Mail opnieuw versturen
+          </button>
+          <FormError />
+        </form>
+      ) : null}
       {test && mag && f.result_payment_status === 'open' ? (
         <form class="inline" data-api={`/api/incasso/vervolg/${f.id}/testuitkomst`}>
           <button class="btn secondary sm" type="submit" name="uitkomst" value="mislukt">

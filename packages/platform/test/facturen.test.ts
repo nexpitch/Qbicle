@@ -39,7 +39,7 @@ describe.skipIf(!hasDb)('facturen en betalingen (klantkant)', () => {
     h = await getBillingHistory(p, eigenaar.userId, org);
     expect(h.totaal).toMatchObject({ aantal: 1, exclCents: 5900, inclCents: 5900 + 1239 });
     expect(h.rows[0]).toMatchObject({ status: 'betaald' });
-    expect(h.rows[0]!.invoiceNumber).toMatch(/^QB-\d{4}-\d{6}$/);
+    expect(h.rows[0]!.invoiceNumber).toMatch(/^TEST-\d{4}-\d{6}$/);
   });
 
   it('zoeken, filteren en terugbetaald', async () => {
