@@ -177,9 +177,9 @@ const schemas = {
 
 function clientIp(c: Context, trustProxy: boolean): string | null {
   if (trustProxy) {
-    const xff = c.req.header('x-forwarded-for');
-    const first = xff?.split(',')[0]?.trim();
-    if (first) return first;
+    // Alleen het laatste adres komt van onze eigen proxy; de rest stuurt de bezoeker zelf mee.
+    const last = c.req.header('x-forwarded-for')?.split(',').pop()?.trim();
+    if (last) return last;
   }
   // @hono/node-server zet het adres van de verbinding in env.incoming.
   const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming;

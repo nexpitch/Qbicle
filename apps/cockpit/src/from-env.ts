@@ -7,7 +7,7 @@ import { DEFAULT_COCKPIT_CONFIG, type Cockpit } from './core/staff.ts';
  * Bouwt de cockpit uit de omgeving (of .env). Gedeeld door de server en de
  * beheer-CLI.
  */
-export function cockpitFromEnv(env = process.env): { cockpit: Cockpit; secureCookies: boolean; trustProxy: boolean } {
+export function cockpitFromEnv(env = process.env): { cockpit: Cockpit; secureCookies: boolean; trustProxy: boolean; allowIps: string[] } {
   const secureCookies = env.QBICLE_SECURE_COOKIES !== 'uit';
   const origin = env.QBICLE_COCKPIT_ORIGIN ?? DEFAULT_COCKPIT_CONFIG.origin;
   return {
@@ -18,6 +18,7 @@ export function cockpitFromEnv(env = process.env): { cockpit: Cockpit; secureCoo
     },
     secureCookies,
     trustProxy: env.QBICLE_TRUST_PROXY === 'aan',
+    allowIps: (env.QBICLE_COCKPIT_TOEGESTANE_IPS ?? '').split(',').map((x) => x.trim()).filter(Boolean),
   };
 }
 

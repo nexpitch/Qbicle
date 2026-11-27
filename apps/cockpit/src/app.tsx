@@ -42,6 +42,8 @@ import { MODULES } from './modules/index.ts';
 export interface CockpitOptions {
   secureCookies: boolean;
   trustProxy: boolean;
+  /** Alleen deze IP-adressen (of IPv4-reeksen als 10.0.0.0/8) mogen de cockpit in. Leeg = iedereen. */
+  allowIps?: string[];
   /** Andere lijst modules (tests). */
   modules?: CockpitModule[];
 }
@@ -77,13 +79,33 @@ const CSP = [
   "base-uri 'none'",
 ].join('; ');
 
-function clientIp(c: Context, trustProxy: boolean): string | null {
+export function clientIp(c: Context, trustProxy: boolean): string | null {
   if (trustProxy) {
-    const first = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
-    if (first) return first;
+    // Alleen het laatste adres komt van onze eigen proxy; de rest stuurt de bezoeker zelf mee.
+    const last = c.req.header('x-forwarded-for')?.split(',').pop()?.trim();
+    if (last) return last;
   }
   const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming;
   return incoming?.socket?.remoteAddress ?? null;
+}
+
+/** Exact adres of IPv4-reeks (a.b.c.d/n). IPv6 alleen als exact adres. */
+export function ipAllowed(ip: string | null, allow: string[]): boolean {
+  if (!ip) return false;
+  const v4 = (x: string) => {
+    const m = x.replace(/^::ffff:/, '').match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    return m ? m.slice(1).reduce((n, o) => n * 256 + Number(o), 0) : null;
+  };
+  const addr = v4(ip);
+  return allow.some((rule) => {
+    const [base, bits] = rule.split('/');
+    if (!bits) return rule === ip || (addr !== null && v4(rule) === addr);
+    const b = v4(base ?? '');
+    const n = Number(bits);
+    if (addr === null || b === null || !(n >= 0 && n <= 32)) return false;
+    const mask = n === 0 ? 0 : (0xffffffff << (32 - n)) >>> 0;
+    return ((addr & mask) >>> 0) === ((b & mask) >>> 0);
+  });
 }
 
 async function readBody<T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T>> {
@@ -131,6 +153,9 @@ export function createCockpit(cockpit: Cockpit, opts: CockpitOptions): Hono<AppE
 
   // Beveiligingsheaders, CSRF en sessie voor alles behalve statische bestanden.
   app.use('*', async (c, next) => {
+    if (opts.allowIps?.length && !ipAllowed(clientIp(c, opts.trustProxy), opts.allowIps)) {
+      return c.text('Niet gevonden', 404);
+    }
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       if (c.req.header('origin') !== allowedOrigin) {
         return c.json({ fout: 'geen_toegang', bericht: 'Aanvraag van een onbekende herkomst geweigerd.' }, 403);

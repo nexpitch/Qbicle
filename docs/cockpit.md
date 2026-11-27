@@ -59,3 +59,11 @@ De shell regelt inloggen, MFA, CSRF en headers; modules zien alleen ingelogde me
 5. Mislukte incasso's (migratie `0011`, tab *Incasso's → Mislukt*): bij elke mislukte regel zet een agent meteen een voorstel klaar met reden en conceptmail. Eerste keer geen dekking: opnieuw incasseren. Storno: klant mailen. Mandaat ingetrokken of rekening opgeheven: betaalverzoek per mail (met `{betaallink}`). Drie keer mislukt in een half jaar: bellen. Jij voert het voorstel uit, kiest een andere actie (mail is aan te passen), of wijst het af met reden. Er gaat niets naar de klant zonder die klik, en alles staat in het audit-log. In testmodus zet je de uitkomst van de nieuwe betaling onder *Afgehandeld*.
 
 Gebruik, gezondheid, support en agents worden parallel gebouwd (`packages/ops`).
+
+## Beveiliging vóór de bèta (review PR 15)
+
+- **Alleen bereikbaar voor Qbicle.** Zet de cockpit niet open op internet. Gebruik een VPN, of stel `QBICLE_COCKPIT_TOEGESTANE_IPS` in (komma-gescheiden, exact adres of IPv4-reeks zoals `203.0.113.0/24`). Andere adressen krijgen een 404.
+- **Inloglinks.** De limiet telt per e-mailadres én afzender samen (5 per uur), plus 20 per uur per e-mailadres tegen mailbommen. Iemand anders kan je zo niet buitensluiten.
+- **Achter een proxy** (`QBICLE_TRUST_PROXY=aan`) telt alleen het laatste adres in `X-Forwarded-For`, het adres dat de eigen proxy toevoegt. Zorg dat de proxy dat header-veld aanvult en niet doorgeeft wat de bezoeker stuurt.
+- **Audit-log beschermd tegen de applicatie zelf.** Laat web, api, cockpit en worker inloggen als `qbicle_app` (`db/rollen/app-rol.sql`, eenmalig en na elke migratie als eigenaar draaien). Die rol kan het audit-log alleen lezen en aanvullen, niet wijzigen of de beveiliging uitzetten. Migraties en opschonen doet de eigenaar.
+- **Kopie buiten de database.** `bash scripts/audit-export.sh <map>` schrijft dagelijks de nieuwe audit-regels als JSON-regels met een SHA-256, naar opslag die niet te overschrijven is (object lock / WORM).
