@@ -1,5 +1,5 @@
 import { ConnectorError, ReadOnlyGuard, type AllowRule, type HttpResponse, type Transport } from '../transport.ts';
-import type { ClientDevice, Readout, RouterConnector } from '../types.ts';
+import type { ClientDevice, PortForward, Readout, RouterConnector } from '../types.ts';
 import { isPublicIpv4, xmlBlocks, xmlFields } from './util.ts';
 
 /**
@@ -21,11 +21,23 @@ const CALLS = {
   externalIp: { control: '/upnp/control/wanipconnection1', service: 'urn:dslforum-org:service:WANIPConnection:1', action: 'GetExternalIPAddress' },
 } satisfies Record<string, SoapCall>;
 
+/**
+ * Doorgezette poorten ("Portfreigaben") staan bij de WAN-verbinding: WANIPConnection
+ * bij kabel en glasvezel, WANPPPConnection bij DSL. We proberen ze in die volgorde.
+ * Alleen lezen: aantal opvragen en dan regel voor regel.
+ */
+const WAN_SERVICES = [
+  { control: '/upnp/control/wanipconnection1', service: 'urn:dslforum-org:service:WANIPConnection:1' },
+  { control: '/upnp/control/wanpppconn1', service: 'urn:dslforum-org:service:WANPPPConnection:1' },
+] as const;
+const MAX_MAPPINGS = 128;
+
 export const FRITZ_RULES: AllowRule[] = [
   { method: 'POST', path: /^\/upnp\/control\/deviceinfo$/, soapActions: /^"?urn:dslforum-org:service:DeviceInfo:1#GetInfo"?$/ },
   { method: 'POST', path: /^\/upnp\/control\/userif$/, soapActions: /^"?urn:dslforum-org:service:UserInterface:1#GetInfo"?$/ },
   { method: 'POST', path: /^\/upnp\/control\/hosts$/, soapActions: /^"?urn:dslforum-org:service:Hosts:1#X_AVM-DE_GetHostListPath"?$/ },
-  { method: 'POST', path: /^\/upnp\/control\/wanipconnection1$/, soapActions: /^"?urn:dslforum-org:service:WANIPConnection:1#GetExternalIPAddress"?$/ },
+  { method: 'POST', path: /^\/upnp\/control\/wanipconnection1$/, soapActions: /^"?urn:dslforum-org:service:WANIPConnection:1#(GetExternalIPAddress|GetPortMappingNumberOfEntries|GetGenericPortMappingEntry)"?$/ },
+  { method: 'POST', path: /^\/upnp\/control\/wanpppconn1$/, soapActions: /^"?urn:dslforum-org:service:WANPPPConnection:1#(GetPortMappingNumberOfEntries|GetGenericPortMappingEntry)"?$/ },
   { method: 'GET', path: /^\/devicehostlist\.lua\?sid=[0-9a-f]{16}$/ },
 ];
 
@@ -40,11 +52,13 @@ export class FritzboxConnector implements RouterConnector {
     this.t = new ReadOnlyGuard(transport, FRITZ_RULES);
   }
 
-  private async soap(call: SoapCall): Promise<Record<string, string>> {
+  /** @param args alleen vaste, door ons opgebouwde argumenten (getallen), nooit invoer van buiten. */
+  private async soap(call: SoapCall, args = ''): Promise<Record<string, string>> {
+    const inner = args ? `<u:${call.action} xmlns:u="${call.service}">${args}</u:${call.action}>` : `<u:${call.action} xmlns:u="${call.service}"/>`;
     const body =
       '<?xml version="1.0" encoding="utf-8"?>' +
       '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
-      `<s:Body><u:${call.action} xmlns:u="${call.service}"/></s:Body></s:Envelope>`;
+      `<s:Body>${inner}</s:Body></s:Envelope>`;
     const res = await this.t.send({
       method: 'POST',
       path: call.control,
@@ -77,6 +91,8 @@ export class FritzboxConnector implements RouterConnector {
       if (!(err instanceof ConnectorError) || err.code === 'niet_toegestaan') throw err;
       warnings.push('Internetadres niet uitgelezen');
     }
+
+    const { portForwards, portForwardsRead } = await this.readPortForwards(warnings);
 
     const path = (await this.soap(CALLS.hostListPath))['NewX_AVM-DE_HostListPath'];
     if (!path || !/^\/devicehostlist\.lua\?sid=[0-9a-f]{16}$/.test(path)) throw new ConnectorError('antwoord_onbekend', 'Onverwacht pad voor de apparatenlijst');
@@ -111,8 +127,54 @@ export class FritzboxConnector implements RouterConnector {
       ],
       clients,
       wanIps,
+      portForwards,
+      portForwardsRead,
       warnings,
     };
+  }
+
+  private async readPortForwards(warnings: string[]): Promise<{ portForwards: PortForward[]; portForwardsRead: boolean }> {
+    for (const wan of WAN_SERVICES) {
+      let count: number;
+      try {
+        count = Number((await this.soap({ ...wan, action: 'GetPortMappingNumberOfEntries' })).NewPortMappingNumberOfEntries);
+      } catch (err) {
+        if (!(err instanceof ConnectorError) || err.code === 'niet_toegestaan') throw err;
+        continue; // Deze WAN-verbinding bestaat niet op dit model; probeer de volgende.
+      }
+      if (!Number.isInteger(count) || count < 0) break;
+      const portForwards: PortForward[] = [];
+      try {
+        for (let i = 0; i < Math.min(count, MAX_MAPPINGS); i++) {
+          const f = await this.soap({ ...wan, action: 'GetGenericPortMappingEntry' }, `<NewPortMappingIndex>${i}</NewPortMappingIndex>`);
+          const ext = Number(f.NewExternalPort);
+          const int = Number(f.NewInternalPort);
+          if (!f.NewInternalClient || !Number.isInteger(ext) || !Number.isInteger(int)) continue;
+          portForwards.push({
+            protocol: /udp/i.test(f.NewProtocol ?? '') ? 'udp' : 'tcp',
+            externalPort: ext,
+            internalIp: f.NewInternalClient,
+            internalPort: int,
+            description: f.NewPortMappingDescription || undefined,
+            enabled: f.NewEnabled !== '0',
+            // De FRITZ!Box meldt hier zowel eigen Portfreigaben als poorten die apparaten zelf openden.
+            origin: 'regel',
+            allowedFrom: f.NewRemoteHost ? [f.NewRemoteHost] : undefined,
+          });
+        }
+      } catch (err) {
+        if (!(err instanceof ConnectorError) || err.code === 'niet_toegestaan') throw err;
+        warnings.push('Doorgezette poorten maar deels uitgelezen');
+        return { portForwards, portForwardsRead: false };
+      }
+      if (count > MAX_MAPPINGS) {
+        warnings.push(`Meer dan ${MAX_MAPPINGS} doorgezette poorten; de rest is niet gelezen`);
+        return { portForwards, portForwardsRead: false };
+      }
+      return { portForwards, portForwardsRead: true };
+    }
+    warnings.push('Doorgezette poorten niet uitgelezen; controleer of de FRITZ!Box-gebruiker de instellingen mag bekijken');
+    return { portForwards: [], portForwardsRead: false };
   }
 }
 

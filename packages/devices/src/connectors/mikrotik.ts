@@ -118,6 +118,7 @@ export class MikrotikConnector implements RouterConnector {
     // Doorgezette poorten (dst-nat) en of UPnP aanstaat: configuratie lezen, niet scannen.
     const portForwards: PortForward[] = [];
     let upnpEnabled: boolean | undefined;
+    let portForwardsRead = false;
     try {
       for (const r of await this.get<NatRule[]>('/rest/ip/firewall/nat', 'NAT-regels')) {
         if (r.chain !== 'dstnat' || r.action !== 'dst-nat' || !r['to-addresses'] || !r['dst-port']) continue;
@@ -133,6 +134,7 @@ export class MikrotikConnector implements RouterConnector {
           });
         }
       }
+      portForwardsRead = true;
       upnpEnabled = (await this.get<{ enabled?: string }>('/rest/ip/upnp', 'UPnP')).enabled === 'true';
     } catch {
       warnings.push('NAT-regels of UPnP-instelling niet uitgelezen');
@@ -158,6 +160,7 @@ export class MikrotikConnector implements RouterConnector {
       wanIps,
       privateWanIp: wanIps.length === 0 ? privateWan?.address?.split('/')[0] : undefined,
       portForwards,
+      portForwardsRead,
       upnpEnabled,
       warnings,
     };

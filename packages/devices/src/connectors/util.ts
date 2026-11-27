@@ -47,3 +47,18 @@ export function isPublicIpv4(ip: string): boolean {
   if (a === 192 && b === 168) return false;
   return true;
 }
+
+const MAX_RANGE = 64;
+
+/**
+ * Poort of poortbereik ("443", "8100-8101", "8100:8101") als lijst. Een heel groot
+ * bereik kappen we af op de eerste 64 poorten; de bevinding zegt dan toch genoeg.
+ */
+export function portRange(v: string | undefined): number[] {
+  const m = (v ?? '').trim().match(/^(\d+)(?:[-:](\d+))?$/);
+  if (!m) return [];
+  const a = Number(m[1]);
+  const b = m[2] ? Number(m[2]) : a;
+  if (b < a || a < 1 || b > 65535) return [];
+  return Array.from({ length: Math.min(b - a + 1, MAX_RANGE) }, (_, i) => a + i);
+}

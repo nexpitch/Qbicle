@@ -30,7 +30,7 @@ firmware, het internetadres (WAN) en de lijst met verbonden apparaten. Daaruit:
 |---|---|---|---|
 | UniFi (Ubiquiti) | Network API op de console (`/proxy/network/integration/v1`), API-sleutel, alleen GET | 1C | Cloud of lokaal |
 | Cisco Meraki | Dashboard API v1 (cloud), API-sleutel van een alleen-lezen beheerder, alleen GET | 1C | Cloud |
-| FRITZ!Box (AVM) | TR-064 (SOAP), https-poort 49443, Digest, 4 vaste leesacties | 1C | Lokaal (connector) |
+| FRITZ!Box (AVM) | TR-064 (SOAP), https-poort 49443, Digest, vaste leesacties (ook Portfreigaben) | 1C | Lokaal (connector) |
 | MikroTik | RouterOS 7 REST API, Basic over https, groep met alleen `read,api,rest-api` | 1C | Lokaal (connector) |
 | Providermodem / router via UPnP (generiek) | UPnP IGD: beschrijving, `GetExternalIPAddress`, `GetGenericPortMappingEntry`; geen login | 2P | Lokaal (connector) |
 | Tabellen (generiek) | ARP/DHCP: `arp -a` (Windows, macOS/Linux), `ip neigh`, dnsmasq, ISC dhcpd, Windows DHCP-export; mDNS via `avahi-browse` | 2P | Lokaal (connector) |
@@ -63,7 +63,9 @@ firmware op afstand. Wat we zonder providerlogin uitlezen:
 | Firmware | Meestal niet zichtbaar; beheerd door de provider | Bevinding alleen via end-of-life van het model |
 | Wat echt openstaat van buiten | Buitenkant (gegevens van derden, eigen poortcheck) | Stap 2, na akkoord op de scangrenzen |
 
-Doorgezette poorten (uit UPnP of uit de NAT-regels van een eigen router zoals MikroTik)
+Zie [open-poorten.md](open-poorten.md) voor wat we per router uitlezen en de eerlijke status.
+
+Doorgezette poorten (uit UPnP of uit de NAT-regels van een eigen router zoals MikroTik, UniFi, Meraki of FRITZ!Box)
 worden bevindingen. RDP, SMB, Telnet, SSH, VNC, databases en beheerpagina's van camera's,
 NAS en routers tellen zwaar ("beheerpoort open naar internet"). Staat een eigen router
 achter het modem (privé-WAN-adres, dubbele NAT), dan meldt Qbicle dat ook het modem

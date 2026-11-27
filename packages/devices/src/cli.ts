@@ -94,7 +94,7 @@ async function main(): Promise<number> {
 
   const result = await discover({ connectors, oui, vulnDb, eolDb, now, privacy: { ...DEFAULT_PRIVACY, pseudonymKey } });
   if (values.json) {
-    console.log(JSON.stringify({ sources: result.sources, readouts: result.readouts.map((r) => ({ ...r, clients: r.clients.length })), clients: result.clients, assets: result.assets, components: result.components, vulns: result.vulns.map((v) => ({ asset: v.component.assetKey, cve: v.cve.id, certainty: v.certainty, kev: Boolean(v.kev), ncsc: v.ncsc?.id })), findings: result.findings, score: result.score }, null, 2));
+    console.log(JSON.stringify({ sources: result.sources, readouts: result.readouts.map((r) => ({ ...r, clients: r.clients.length })), clients: result.clients, assets: result.assets, components: result.components, vulns: result.vulns.map((v) => ({ asset: v.component.assetKey, cve: v.cve.id, certainty: v.certainty, kev: Boolean(v.kev), ncsc: v.ncsc?.id })), findings: result.findings, openPoorten: result.openPoorten, score: result.score }, null, 2));
   } else print(result);
   return result.sources.some((s) => s.outcome === 'error') ? 2 : 0;
 }
@@ -121,6 +121,7 @@ function print(r: DiscoveryResult): void {
   console.table(rows);
   console.log('? = afgeleid (mogelijk)\n');
   for (const f of r.findings) console.log(`• [${f.certainty}] ${f.title}\n    ${f.detail}`);
+  console.log(`\nOpen poorten naar internet: ${r.openPoorten.uitleg}`);
   console.log(`\nUrgentie ${r.score.urgency}/100 (${r.score.band.label})${r.score.bandRaisedByKev ? ', verhoogd door actief misbruikt lek' : ''}`);
   for (const a of r.score.topActions) console.log(`  → ${a.title}`);
 }

@@ -1,6 +1,6 @@
 import { buildInventory, type InventoryAsset, type Observation, type Source } from '@qbicle/inventory';
 import { score, type Outcome, type ScoreResult } from '@qbicle/score';
-import { deviceFindings, forwardFindings, type DeviceFindingResult } from './findings.ts';
+import { deviceFindings, forwardCoverage, forwardFindings, type DeviceFindingResult, type ForwardCoverage } from './findings.ts';
 import { readoutToObservations, type ClassifiedClient } from './observations.ts';
 import type { OuiDb } from './oui.ts';
 import type { PrivacyPolicy } from './privacy.ts';
@@ -29,6 +29,8 @@ export interface DiscoveryResult extends DeviceFindingResult {
   clients: ClassifiedClient[];
   assets: InventoryAsset[];
   score: ScoreResult;
+  /** Wat we weten over open poorten naar internet: gecontroleerd, deels of niet gecontroleerd. */
+  openPoorten: ForwardCoverage;
 }
 
 /**
@@ -64,5 +66,5 @@ export async function discover(input: DiscoveryInput): Promise<DiscoveryResult> 
     if (r.privateWanIp) r.warnings.push(`Deze router staat achter een ander modem of router (WAN-adres ${r.privateWanIp}, dubbele NAT). Koppel ook het modem van de provider, anders zien we de echte rand van het netwerk niet.`);
   }
   const outcomes: Outcome[] = sources.map((s) => (s.outcome === 'ok' && found.findings.length > 0 ? 'finding' : s.outcome));
-  return { readouts, sources, observations, clients, assets, ...found, score: score({ findings: found.findings, outcomes }) };
+  return { readouts, sources, observations, clients, assets, ...found, score: score({ findings: found.findings, outcomes }), openPoorten: forwardCoverage(readouts) };
 }

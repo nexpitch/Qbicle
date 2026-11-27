@@ -1,6 +1,6 @@
 import { ConnectorError, ReadOnlyGuard, type AllowRule, type Transport } from '../transport.ts';
-import type { ClientDevice, NetworkDevice, Readout, RouterConnector } from '../types.ts';
-import { json } from './util.ts';
+import type { ClientDevice, NetworkDevice, PortForward, Readout, RouterConnector } from '../types.ts';
+import { json, portRange } from './util.ts';
 
 /**
  * UniFi Network (Ubiquiti) via de officiële Network API op de console
@@ -16,7 +16,21 @@ export const UNIFI_RULES: AllowRule[] = [
   { method: 'GET', path: /^\/proxy\/network\/integration\/v1\/sites(\?offset=\d+&limit=\d+)?$/ },
   { method: 'GET', path: /^\/proxy\/network\/integration\/v1\/sites\/[\w-]+\/(devices|clients)(\?offset=\d+&limit=\d+)?$/ },
   { method: 'GET', path: /^\/proxy\/network\/integration\/v1\/sites\/[\w-]+\/devices\/[\w-]+$/ },
+  // Doorgezette poorten staan (nog) niet in de Network API v1. We lezen ze uit de
+  // klassieke lijst van de console; zelfde API-sleutel, alleen GET.
+  { method: 'GET', path: /^\/proxy\/network\/api\/s\/[\w-]+\/rest\/portforward$/ },
 ];
+
+interface UnifiPortForward {
+  name?: string;
+  enabled?: boolean;
+  /** "any" of een adres/bereik dat toegang heeft. */
+  src?: string;
+  dst_port?: string;
+  fwd?: string;
+  fwd_port?: string;
+  proto?: 'tcp' | 'udp' | 'tcp_udp' | string;
+}
 
 interface Page<T> {
   offset: number;
@@ -81,6 +95,47 @@ export class UnifiConnector implements RouterConnector {
     return out;
   }
 
+  /** null = niet uitgelezen (dan zeggen we "niet gecontroleerd", nooit "geen open poorten"). */
+  private async portForwards(site: UnifiSite, warnings: string[]): Promise<PortForward[] | null> {
+    const ref = site.internalReference;
+    if (!ref || !/^[\w-]+$/.test(ref)) {
+      warnings.push('Doorgezette poorten niet uitgelezen: site zonder interne naam');
+      return null;
+    }
+    let body: { data?: UnifiPortForward[] };
+    try {
+      body = json<{ data?: UnifiPortForward[] }>(await this.t.send({ method: 'GET', path: `/proxy/network/api/s/${ref}/rest/portforward` }), 'Port forwarding');
+    } catch (err) {
+      if (!(err instanceof ConnectorError) || err.code === 'niet_toegestaan') throw err;
+      warnings.push('Doorgezette poorten niet uitgelezen (oudere UniFi-versie of API-sleutel zonder toegang)');
+      return null;
+    }
+    if (!Array.isArray(body.data)) {
+      warnings.push('Doorgezette poorten niet uitgelezen: onverwacht antwoord');
+      return null;
+    }
+    const out: PortForward[] = [];
+    for (const r of body.data) {
+      const ext = portRange(r.dst_port);
+      const int = portRange(r.fwd_port ?? r.dst_port);
+      if (!r.fwd || ext.length === 0) continue;
+      const protos: Array<'tcp' | 'udp'> = r.proto === 'udp' ? ['udp'] : r.proto === 'tcp' ? ['tcp'] : ['tcp', 'udp'];
+      for (const [i, port] of ext.entries()) for (const protocol of protos) {
+        out.push({
+          protocol,
+          externalPort: port,
+          internalIp: r.fwd,
+          internalPort: int[i] ?? int[0] ?? port,
+          description: r.name,
+          enabled: r.enabled !== false,
+          origin: 'regel',
+          allowedFrom: r.src && r.src !== 'any' ? [r.src] : undefined,
+        });
+      }
+    }
+    return out;
+  }
+
   async read(): Promise<Readout> {
     const readAt = (this.opts.now?.() ?? new Date()).toISOString();
     const warnings: string[] = [];
@@ -90,6 +145,8 @@ export class UnifiConnector implements RouterConnector {
 
     const devices: NetworkDevice[] = [];
     const clients: ClientDevice[] = [];
+    const portForwards: PortForward[] = [];
+    let portForwardsRead = true;
     for (const site of sites) {
       if (!/^[\w-]+$/.test(site.id)) throw new ConnectorError('antwoord_onbekend', 'Onverwachte site-id');
       for (const d of await this.all<UnifiDevice>(`${BASE}/sites/${site.id}/devices`, 'Apparaten', warnings)) {
@@ -104,6 +161,9 @@ export class UnifiConnector implements RouterConnector {
         }
         devices.push(toNetworkDevice(detail));
       }
+      const fw = await this.portForwards(site, warnings);
+      if (fw) portForwards.push(...fw);
+      else portForwardsRead = false;
       for (const c of await this.all<UnifiClient>(`${BASE}/sites/${site.id}/clients`, 'Clients', warnings)) {
         if (c.type === 'VPN' || c.type === 'TELEPORT') continue; // Op afstand verbonden, geen apparaat op dit netwerk.
         clients.push({
@@ -117,7 +177,7 @@ export class UnifiConnector implements RouterConnector {
         });
       }
     }
-    return { product: 'unifi', readAt, devices, clients, wanIps: [], warnings: [...warnings, 'WAN-adres komt niet uit de UniFi Network API; vul het aan via de buitenkant of Site Manager'] };
+    return { product: 'unifi', readAt, devices, clients, wanIps: [], portForwards, portForwardsRead, warnings: [...warnings, 'WAN-adres komt niet uit de UniFi Network API; vul het aan via de buitenkant of Site Manager'] };
   }
 }
 

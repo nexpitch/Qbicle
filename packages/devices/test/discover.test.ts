@@ -55,6 +55,9 @@ describe('van router tot score', () => {
     ]);
     const keys = r.findings.map((f) => `${f.key}@${f.asset.value}`).sort();
     expect(keys).toEqual([
+      'apparaat.beheerpoort_open_naar_internet@mac:00:1b:a9:aa:bb:cc', // printer-beheerpagina doorgezet in UniFi
+      'apparaat.beheerpoort_open_naar_internet@mac:a4:c3:f0:11:22:33', // RDP naar de laptop, Portfreigabe in de FRITZ!Box
+      'apparaat.beheerpoort_open_naar_internet@mac:c0:56:e3:12:34:56', // camera-inlogpagina, Portfreigabe in de FRITZ!Box
       'apparaat.beheerpoort_open_naar_internet@serial:9A1B0C2D3E4F', // Winbox doorgezet in de NAT-regels
       'netwerkapparaat.kwetsbaarheid@serial:989BCB000001',
       'netwerkapparaat.kwetsbaarheid@serial:9A1B0C2D3E4F',
