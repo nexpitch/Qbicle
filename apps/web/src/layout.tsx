@@ -62,6 +62,7 @@ export function Layout(props: {
                 {org ? <span class="org-name hide-sm">{org.name}</span> : null}
                 {org ? link(`/o/${org.id}/overzicht`, 'Overzicht', 'overzicht') : null}
                 {org ? link(`/o/${org.id}/abonnement`, 'Abonnement', 'abonnement') : null}
+                {org ? link(`/o/${org.id}/account`, 'Account', 'account') : null}
                 <form data-api="/api/v1/auth/uitloggen" data-next="/inloggen">
                   <button class="linkbtn" type="submit">Uitloggen</button>
                 </form>

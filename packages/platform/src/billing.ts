@@ -597,6 +597,8 @@ export interface BillingDetails {
   land: string;
   kvk: string | null;
   btwNummer: string | null;
+  /** Kenmerk of inkoopordernummer dat op elke factuur komt. */
+  referentie: string | null;
 }
 
 async function billingDetailsRow(q: Queryable, organizationId: string): Promise<BillingDetails & { organisatie: string }> {
@@ -610,9 +612,11 @@ async function billingDetailsRow(q: Queryable, organizationId: string): Promise<
     billing_country: string;
     kvk_number: string | null;
     vat_number: string | null;
+    billing_reference: string | null;
   }>(
     q,
-    `SELECT name, billing_name, billing_email::text, billing_address, billing_postcode, billing_city, billing_country, kvk_number, vat_number
+    `SELECT name, billing_name, billing_email::text, billing_address, billing_postcode, billing_city, billing_country, kvk_number, vat_number,
+            billing_reference
        FROM organization WHERE id = $1`,
     [organizationId],
   );
@@ -627,6 +631,7 @@ async function billingDetailsRow(q: Queryable, organizationId: string): Promise<
     land: r.billing_country,
     kvk: r.kvk_number,
     btwNummer: r.vat_number,
+    referentie: r.billing_reference,
   };
 }
 
@@ -659,9 +664,20 @@ export async function updateBillingDetails(
   if (btw && !/^[A-Z]{2}[0-9A-Z]{2,13}$/.test(btw)) throw new PlatformError('ongeldige_invoer', 'Dit btw-nummer klopt niet. Voorbeeld: NL123456789B01.');
   await p.pool.query(
     `UPDATE organization SET billing_name = $2, billing_email = $3, billing_address = $4, billing_postcode = $5,
-            billing_city = $6, billing_country = $7, kvk_number = $8, vat_number = $9
+            billing_city = $6, billing_country = $7, kvk_number = $8, vat_number = $9, billing_reference = $10
       WHERE id = $1`,
-    [organizationId, opt(input.naam, 200, 'Naam'), email, opt(input.adres, 400, 'Adres'), opt(input.postcode, 16, 'Postcode'), opt(input.plaats, 100, 'Plaats'), land, kvk, btw],
+    [
+      organizationId,
+      opt(input.naam, 200, 'Naam'),
+      email,
+      opt(input.adres, 400, 'Adres'),
+      opt(input.postcode, 16, 'Postcode'),
+      opt(input.plaats, 100, 'Plaats'),
+      land,
+      kvk,
+      btw,
+      opt(input.referentie, 100, 'Referentie'),
+    ],
   );
   await audit(p.pool, actor, { organizationId, action: 'factuurgegevens.gewijzigd', subject: organizationId });
   return billingDetailsRow(p.pool, organizationId);

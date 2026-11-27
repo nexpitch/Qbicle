@@ -170,3 +170,22 @@ form:not(:has(#iv-maand:checked)) .bij-maand { display: none; }
 .foot { max-width: 1120px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: .84rem; }
 @media (max-width: 600px) { .top nav .hide-sm { display: none; } }
 .top nav form { margin: 0; display: flex; }
+
+/* Account, abonnement en facturen */
+.subnav { display: flex; gap: 6px; flex-wrap: wrap; font-size: .9rem; }
+.subnav a { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); text-decoration: none; }
+.subnav a:hover, .subnav a[aria-current="page"] { color: var(--fg); border-color: var(--line-strong); }
+.dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: .94rem; }
+.dl dt { color: var(--muted); }
+.dl dd { margin: 0; }
+.leeg { color: var(--muted); font-style: italic; }
+.span-2 { grid-column: 1 / -1; }
+.row.nowrap { flex-wrap: nowrap; }
+.row .grow { flex: 1 1 240px; }
+.contact { border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; align-content: start; background: var(--surface-2); }
+.contact.urgent { border-color: #F0DDBB; }
+.rollen { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
+.rollen b { color: var(--fg); }
+.small-btn { padding: 8px 12px; font-size: .85rem; }
+input[type=tel] { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; font: 400 1rem var(--f-ui); background: #fff; color: var(--fg); }
+.grid.twee { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }

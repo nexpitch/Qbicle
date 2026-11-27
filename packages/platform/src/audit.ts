@@ -45,6 +45,8 @@ export type AuditAction =
   | 'betaling.status'
   | 'factuur.uitgegeven'
   | 'factuurgegevens.gewijzigd'
+  | 'contactpersoon.gewijzigd'
+  | 'contactpersoon.verwijderd'
   | 'audit_opdracht.aangemaakt'
   // Interne cockpit (apps/cockpit) en operationele onderdelen (packages/ops).
   | `cockpit.${string}`

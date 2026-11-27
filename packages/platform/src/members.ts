@@ -133,6 +133,7 @@ export async function inviteMember(
       [organizationId, email],
     );
     if (already) throw new PlatformError('conflict', 'Deze persoon is al lid van de organisatie.');
+    await checkUserLimit(p, q, organizationId, email);
 
     // Een nieuwe uitnodiging vervangt een openstaande voor hetzelfde adres.
     await q.query(
@@ -167,6 +168,34 @@ export async function inviteMember(
       `Ken je de afzender niet? Dan kun je deze mail negeren.`,
   });
   return { id: result.inv.id, email, role: input.role, expiresAt: result.inv.expires_at, createdAt: result.inv.created_at };
+}
+
+/**
+ * Het pakket bepaalt hoeveel gebruikers een organisatie heeft (leden plus
+ * openstaande uitnodigingen). Zonder abonnement geldt geen grens, zodat
+ * organisaties die een IT-partner aanmaakt gewoon werken.
+ */
+async function checkUserLimit(p: Platform, q: Queryable, organizationId: string, email: string): Promise<void> {
+  const sub = await one<{ plan: string }>(
+    q,
+    `SELECT plan FROM subscription WHERE organization_id = $1 AND status IN ('proef', 'actief', 'achterstallig', 'opgezegd')`,
+    [organizationId],
+  );
+  const plan = sub ? p.catalog.plans.find((x) => x.id === sub.plan) : undefined;
+  if (!plan) return;
+  const n = await one<{ n: number }>(
+    q,
+    `SELECT (SELECT count(*) FROM membership WHERE organization_id = $1)
+          + (SELECT count(*) FROM invitation WHERE organization_id = $1 AND email <> $2
+              AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()) AS n`,
+    [organizationId, email],
+  );
+  if (Number(n?.n ?? 0) >= plan.limieten.gebruikers) {
+    throw new PlatformError(
+      'conflict',
+      `${plan.naam} heeft ruimte voor ${plan.limieten.gebruikers} gebruikers, inclusief openstaande uitnodigingen. Trek een uitnodiging in, verwijder een gebruiker of kies een groter pakket.`,
+    );
+  }
 }
 
 export async function listInvitations(p: Platform, userId: string, organizationId: string): Promise<Invitation[]> {

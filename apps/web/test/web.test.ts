@@ -65,6 +65,22 @@ describe.skipIf(!hasDb)('web-app', () => {
     const abo = await (await web.request(`/o/${org}/abonnement`, { headers: { cookie } })).text();
     expect(abo).toMatch(/QB-\d{4}-\d{6}/);
 
+    // Account: gegevens, contactpersonen en gebruikers op één plek.
+    const acc = await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text();
+    expect(acc).toContain('Bedrijfsgegevens');
+    expect(acc).toContain('Contact bij een urgent lek');
+    expect(acc).toContain('1 van 5 gebruikers');
+    expect(acc).toContain('Vul nog in:');
+    const put = await web.request(`/api/v1/organisaties/${org}/contactpersonen/security`, {
+      method: 'PUT',
+      headers: { origin: ORIGIN, 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ naam: 'Kees', email: 'kees@web.nl', telefoon: '' }),
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+    expect(await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text()).toContain('kees@web.nl');
+    expect((await web.request('/uitnodiging')).status).toBe(200);
+    expect((await web.request(`/o/${org}/account`)).status).toBe(302);
+
     // Een ander ziet niets van deze organisatie.
     expect((await web.request(`/o/${org}/abonnement`)).status).toBe(302);
   });

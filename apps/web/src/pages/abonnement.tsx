@@ -284,6 +284,12 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
           <dl>
             <dt>Factuurdatum</dt>
             <dd>{datum(inv.issuedAt)}</dd>
+            {c.referentie ? (
+              <>
+                <dt>Uw referentie</dt>
+                <dd>{c.referentie}</dd>
+              </>
+            ) : null}
             <dt>Status</dt>
             <dd>Betaald</dd>
           </dl>

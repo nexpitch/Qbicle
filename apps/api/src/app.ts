@@ -14,6 +14,9 @@ import {
   startSubscription,
   syncPayment,
   updateBillingDetails,
+  listContacts,
+  removeContact,
+  setContact,
   BILLING_INTERVALS,
   acceptInvitation,
   addDomain,
@@ -96,6 +99,7 @@ const schemas = {
   renameOrg: z.object({ name: z.string().max(200) }),
   changeRole: z.object({ role }),
   invite: z.object({ email, role: role.default('lezer') }),
+  contact: z.object({ naam: z.string().max(200).nullish(), email: z.string().max(320).nullish(), telefoon: z.string().max(40).nullish() }),
   createClient: z.object({ name: z.string().max(200) }),
   grantPartner: z.object({ partnerOrganizationId: id, access: z.enum(PARTNER_ACCESS).default('lezer') }),
   addDomain: z.object({ name: z.string().max(300) }),
@@ -122,6 +126,7 @@ const schemas = {
     land: z.string().max(2).nullish(),
     kvk: z.string().max(20).nullish(),
     btwNummer: z.string().max(30).nullish(),
+    referentie: z.string().max(100).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
 };
@@ -296,6 +301,17 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     await removeMember(p, user(c), param(c, 'org'), param(c, 'user'));
     return c.body(null, 204);
   });
+  // Contactpersonen (geen gebruikers: wie we bereiken bij een lek of een factuurvraag).
+  v1.get('/organisaties/:org/contactpersonen', requireUser, async (c) => c.json(await listContacts(p, user(c).userId, param(c, 'org'))));
+  v1.put('/organisaties/:org/contactpersonen/:soort', requireUser, async (c) => {
+    const input = await body(c, schemas.contact);
+    return c.json(await setContact(p, user(c), param(c, 'org'), c.req.param('soort') ?? '', input));
+  });
+  v1.delete('/organisaties/:org/contactpersonen/:soort', requireUser, async (c) => {
+    await removeContact(p, user(c), param(c, 'org'), c.req.param('soort') ?? '');
+    return c.body(null, 204);
+  });
+
   v1.get('/organisaties/:org/uitnodigingen', requireUser, async (c) => c.json(await listInvitations(p, user(c).userId, param(c, 'org'))));
   v1.post('/organisaties/:org/uitnodigingen', requireUser, async (c) => {
     const input = await body(c, schemas.invite);

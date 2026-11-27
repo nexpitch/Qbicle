@@ -2,8 +2,13 @@
 import { createApi, SESSION_COOKIE, type ApiOptions } from '@qbicle/api/src/app.ts';
 import {
   authenticate,
+  can,
   getBilling,
+  getBillingDetails,
   getInvoice,
+  listContacts,
+  listInvitations,
+  listMembers,
   getOrganization,
   getPayment,
   listInvoices,
@@ -20,6 +25,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Layout } from './layout.tsx';
+import { AccountPage, UitnodigingPage } from './pages/account.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import {
   AbonnementPage,
@@ -140,6 +146,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/aanmelden/check-je-mail', (c) => c.html(<CheckMailPage />));
   app.get('/inloggen', (c) => c.html(<InloggenPage />));
   app.get('/inloggen/check-je-mail', (c) => c.html(<CheckMailPage />));
+  app.get('/uitnodiging', (c) => c.html(<UitnodigingPage user={c.get('session')?.user} />));
   app.get('/inloggen/bevestigen', (c) => c.html(<TokenPage title="Inloggen" api="/api/v1/auth/inloggen" next="/overzicht" />));
 
   // Ingelogd ------------------------------------------------------------------------
@@ -155,7 +162,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     const s = needUser(c);
     if (!s) return undefined;
     const org = await getOrganization(p, s.user.id, c.req.param('org') ?? '');
-    return { s, org: { id: org.id, name: org.name }, user: s.user };
+    return { s, org: { id: org.id, name: org.name }, user: s.user, access: org.access };
   };
 
   app.get('/o/:org/overzicht', async (c) => {
@@ -163,6 +170,36 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     if (!ctx) return c.redirect('/inloggen');
     const b = await getBilling(p, ctx.s.user.id, ctx.org.id).catch(() => null);
     return c.html(<OverzichtPage user={ctx.user} org={ctx.org} b={b} />);
+  });
+
+  app.get('/o/:org/account', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const uid = ctx.s.user.id;
+    const magFacturen = can(ctx.access, 'abonnement:lezen');
+    const [details, contacts, members, invitations, b] = await Promise.all([
+      magFacturen ? getBillingDetails(p, uid, ctx.org.id) : null,
+      listContacts(p, uid, ctx.org.id),
+      listMembers(p, uid, ctx.org.id),
+      can(ctx.access, 'leden:uitnodigen') ? listInvitations(p, uid, ctx.org.id) : null,
+      magFacturen ? getBilling(p, uid, ctx.org.id) : null,
+    ]);
+    const pakket = b?.toegang !== 'geen_abonnement' ? b?.abonnement?.pakket : null;
+    return c.html(
+      <AccountPage
+        user={{ email: ctx.user.email, id: uid }}
+        org={ctx.org}
+        a={{
+          access: ctx.access,
+          details,
+          contacts,
+          members,
+          invitations,
+          maxGebruikers: pakket ? pakket.limieten.gebruikers : null,
+          pakketNaam: pakket ? pakket.naam : null,
+        }}
+      />,
+    );
   });
 
   app.get('/o/:org/welkom', async (c) => {
