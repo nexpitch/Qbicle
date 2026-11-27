@@ -52,6 +52,8 @@ export interface ScanView {
   workerActief: boolean;
   /** Alleen bij status 'wachtrij'. */
   wacht: WaitInfo | null;
+  /** Mislukt, maar opnieuw proberen heeft zin (niet bij een niet-bevestigd of afgemeld domein). */
+  retryable: boolean;
 }
 
 /** Zo lang mag een scan in de wachtrij staan voordat we zeggen dat de scanner niet draait. */
@@ -174,6 +176,7 @@ export async function getScan(p: Platform, userId: string, organizationId: strin
     pct,
     result,
     workerActief,
+    retryable: s.status === 'mislukt' && !/niet \(meer\) bevestigd|gevraagd het niet te scannen/.test(s.error ?? ''),
     wacht: s.status === 'wachtrij' ? waitInfo({ createdAt: s.created_at, workerActief, anderBezig: s.ander_bezig }) : null,
   };
 }
@@ -261,7 +264,8 @@ export async function domainScanInfo(
       nextText = 'Elke week automatisch opnieuw scannen hoort bij een abonnement. Je kunt wel zelf een scan starten.';
     }
     if (next && !workerActief) nextText += ' Op dit moment draait de scanner niet; de scan start zodra hij weer draait.';
-    const lastStart = r.latest_at ? new Date(r.latest_at.getTime() + SCAN_COOLDOWN_MINUTES * MIN) : null;
+    // Na een mislukte scan mag je meteen opnieuw proberen (de daglimiet blijft gelden).
+    const lastStart = r.latest_at && r.latest_status !== 'mislukt' ? new Date(r.latest_at.getTime() + SCAN_COOLDOWN_MINUTES * MIN) : null;
     domains.set(r.id, {
       last: r.last_id ? { id: r.last_id, finishedAt: r.last_at!, urgency: r.last_urgency } : null,
       current: r.cur_id ? { id: r.cur_id, status: r.cur_status!, createdAt: r.cur_at! } : null,

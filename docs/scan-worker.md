@@ -72,3 +72,13 @@ bash scripts/klantomgeving.sh                 # start web, database én de worke
 docker compose --profile web logs -f worker   # meekijken wat de worker doet
 docker compose run --rm worker --eenmalig     # of: één ronde met de hand
 ```
+
+## DNS
+
+De scanner vraagt DNS eerst aan de resolver van het systeem (in Docker: die van Docker).
+Faalt die zelf (EBADRESP, SERVFAIL, time-out), dan stelt hij dezelfde vraag aan 1.1.1.1 en 8.8.8.8
+(`QBICLE_DNS_TERUGVAL`, bijvoorbeeld `9.9.9.9,1.1.1.1` of `uit`).
+Een naam met alleen een CNAME (vaak `www.…`) geeft op een SOA-vraag in Node EBADRESP; dan kijkt de
+scanner of de naam ergens naar wijst. Werkt DNS bij Qbicle echt niet, dan krijgt de klant
+"Dit ligt aan onze kant, niet aan je domein" met een knop Opnieuw proberen (zonder wachttijd),
+en komt de fout in de cockpit.

@@ -259,8 +259,8 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/o/:org/scans/:scan', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
-    const s = await getScan(p, ctx.s.user.id, ctx.org.id, c.req.param('scan'));
-    return c.html(<ScanPage user={ctx.user} org={ctx.org} s={s} />);
+    const [s, access] = await Promise.all([getScan(p, ctx.s.user.id, ctx.org.id, c.req.param('scan')), resolveAccess(p.pool, ctx.s.user.id, ctx.org.id)]);
+    return c.html(<ScanPage user={ctx.user} org={ctx.org} s={s} magScannen={Boolean(access && can(access, 'scans:starten'))} />);
   });
 
   app.get('/o/:org/account', async (c) => {

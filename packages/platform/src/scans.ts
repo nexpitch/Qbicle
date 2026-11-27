@@ -51,7 +51,7 @@ export async function requestScan(
   const recent = await one<{ wacht: number }>(
     p.pool,
     `SELECT ceil(extract(epoch FROM max(created_at) + make_interval(mins => $2) - now()) / 60)::int AS wacht
-       FROM scan WHERE domain_id = $1 HAVING max(created_at) > now() - make_interval(mins => $2)`,
+       FROM scan WHERE domain_id = $1 AND status <> 'mislukt' HAVING max(created_at) > now() - make_interval(mins => $2)`,
     [d.id, SCAN_COOLDOWN_MINUTES],
   );
   if (recent) {

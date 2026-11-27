@@ -86,7 +86,22 @@ export interface NodeNetOptions {
   dohUrl?: string;
   /** Link naar de uitlegpagina, komt in de User-Agent. */
   infoUrl?: string;
+  /**
+   * Publieke DNS-servers voor als de resolver van het systeem (bijv. die van Docker)
+   * faalt. Standaard 1.1.1.1 en 8.8.8.8; een lege lijst zet de terugval uit.
+   */
+  fallbackDns?: string[];
+  /** Andere DNS-servers dan die van het systeem (vooral voor tests). */
+  dnsServers?: string[];
 }
+
+export const DEFAULT_FALLBACK_DNS = ['1.1.1.1', '8.8.8.8'];
+
+/** Fouten van de resolver zelf (niet: "bestaat niet" of "geen record"): dan een andere resolver proberen. */
+const RESOLVER_FAILURE = new Set(['ESERVFAIL', 'ETIMEOUT', 'ECONNREFUSED', 'EREFUSED', 'ECONNRESET', 'EBADRESP', 'EFORMERR', 'ECANCELLED', 'EAI_AGAIN']);
+
+/** De DNS-opzoeking van Qbicle zelf werkt niet; dat zegt niets over het domein. */
+export class DnsLookupError extends NetError {}
 
 /** Tijdelijke netwerkfouten: één keer opnieuw proberen voordat een check "onbekend" wordt. */
 const TRANSIENT = new Set(['ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'EAI_AGAIN']);
@@ -144,6 +159,30 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
   const dohUrl = opts.dohUrl ?? 'https://cloudflare-dns.com/dns-query';
   const userAgent = `QbicleScanner/${SCANNER_VERSION} (+${opts.infoUrl ?? 'https://qbicle.example/scanner'})`;
   const resolver = new dnsp.Resolver({ timeout: timeoutMs, tries: 2 });
+  if (opts.dnsServers?.length) resolver.setServers(opts.dnsServers);
+  // QBICLE_DNS_TERUGVAL="9.9.9.9,1.1.1.1" of "uit".
+  const envFallback = process.env.QBICLE_DNS_TERUGVAL;
+  const fallbackServers =
+    opts.fallbackDns ?? (envFallback === 'uit' ? [] : envFallback ? envFallback.split(',').map((x) => x.trim()).filter(Boolean) : DEFAULT_FALLBACK_DNS);
+  let fallback: dnsp.Resolver | null = null;
+  if (fallbackServers.length) {
+    fallback = new dnsp.Resolver({ timeout: timeoutMs, tries: 2 });
+    fallback.setServers(fallbackServers);
+  }
+
+  /**
+   * Vraag eerst de resolver van het systeem; faalt die zelf (EBADRESP, SERVFAIL,
+   * time-out...), dan dezelfde vraag aan een publieke resolver.
+   */
+  async function ask<T>(fn: (r: dnsp.Resolver) => Promise<T>): Promise<T> {
+    try {
+      return await fn(resolver);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? '';
+      if (!fallback || !RESOLVER_FAILURE.has(code)) throw e;
+      return fn(fallback);
+    }
+  }
 
   async function doh(name: string, type: string, extra: Record<string, string> = {}) {
     const u = new URL(dohUrl);
@@ -161,10 +200,10 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
   return {
     async domainExists(name) {
       try {
-        await resolver.resolveSoa(name);
+        await ask((r) => r.resolveSoa(name));
         return true;
       } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code;
+        const code = (e as NodeJS.ErrnoException).code ?? '';
         if (code === 'ENODATA') return true;
         if (code === 'ENOTFOUND' || code === 'NXDOMAIN') {
           // Sommige resolvers (ook die van Docker) melden een DNSSEC-fout (SERVFAIL)
@@ -177,16 +216,29 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
             return false;
           }
         }
-        throw e;
+        // Een naam met een CNAME (vaak www.voorbeeld.nl) geeft op een SOA-vraag een
+        // antwoord zonder SOA; Node meldt dat als EBADRESP. Kijk dan of de naam wel
+        // ergens naar wijst.
+        try {
+          const [cname, a, aaaa] = await Promise.all([
+            orEmpty(ask((r) => r.resolveCname(name))),
+            orEmpty(ask((r) => r.resolve4(name))),
+            orEmpty(ask((r) => r.resolve6(name))),
+          ]);
+          if (cname.length || a.length || aaaa.length) return true;
+        } catch {
+          // valt door naar de foutmelding hieronder
+        }
+        throw new DnsLookupError(code || 'EDNS', `DNS-opzoeking van ${name} werkte niet (${code || 'onbekende fout'}).`);
       }
     },
     async resolveTxt(name) {
-      const recs = await orEmpty(resolver.resolveTxt(name));
+      const recs = await orEmpty(ask((r) => r.resolveTxt(name)));
       return recs.map((chunks) => chunks.join(''));
     },
-    resolveMx: (name) => orEmpty(resolver.resolveMx(name)),
+    resolveMx: (name) => orEmpty(ask((r) => r.resolveMx(name))),
     async resolveCaa(name) {
-      const recs = await orEmpty(resolver.resolveCaa(name));
+      const recs = await orEmpty(ask((r) => r.resolveCaa(name)));
       return recs.map((r) => {
         const { critical, ...rest } = r as unknown as Record<string, unknown> & { critical: number };
         const [tag, value] = Object.entries(rest)[0] ?? ['', ''];
@@ -195,8 +247,8 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
     },
     async resolveAddresses(name) {
       const [a, aaaa] = await Promise.all([
-        orEmpty(resolver.resolve4(name)),
-        orEmpty(resolver.resolve6(name)),
+        orEmpty(ask((r) => r.resolve4(name))),
+        orEmpty(ask((r) => r.resolve6(name))),
       ]);
       return [...a, ...aaaa];
     },
