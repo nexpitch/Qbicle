@@ -19,7 +19,7 @@ port_in_use() {
 }
 
 # Een eerdere Qbicle-app eerst netjes stoppen, zodat zijn poort vrijkomt.
-docker compose --profile web stop web >/dev/null 2>&1 || true
+docker compose --profile web stop web worker >/dev/null 2>&1 || true
 
 # Vrije poort kiezen: 3000 als die vrij is, anders 3300, 3301, ...
 PORT_WEB="${QBICLE_WEB_PORT:-}"
@@ -53,8 +53,9 @@ docker compose up -d db
 echo "2/4 Database bijwerken..."
 docker compose --profile tools run --rm migrate
 
-echo "3/4 Klantomgeving bouwen en starten (de eerste keer duurt dit een paar minuten)..."
-docker compose --profile web up --build -d web
+echo "3/4 Klantomgeving en scanner bouwen en starten (de eerste keer duurt dit een paar minuten)..."
+# --force-recreate: ook na een update draaien app en scanner zeker de nieuwe code.
+docker compose --profile web up --build --force-recreate -d web worker
 
 printf "4/4 Wachten tot de app reageert"
 for _ in $(seq 1 60); do
@@ -73,13 +74,25 @@ if ! curl -fs -o /dev/null $URL/aanmelden; then
   exit 1
 fi
 
+# De scanner (worker) moet draaien, anders blijven scans in de wachtrij staan.
+sleep 3
+if [[ -z "$(docker compose --profile web ps --status running -q worker)" ]]; then
+  echo
+  echo "Let op: de scanner start niet. Scans blijven dan in de wachtrij staan. Dit zegt hij:"
+  docker compose --profile web logs --tail 30 worker
+  echo "Probeer opnieuw: bash scripts/klantomgeving.sh"
+  exit 1
+fi
+echo "De scanner draait ook (hij kijkt elke paar seconden of er een scan klaarstaat)."
+
 echo
 echo "=================================================="
 echo "  Qbicle draait. Open dit adres in je browser:"
 echo "  $URL"
 echo "=================================================="
 echo "Na het aanmelden verschijnt de inloglink hieronder (regel met 'inloggen/bevestigen')."
-echo "Kopieer die link naar je browser. Stoppen: Ctrl+C."
+echo "Kopieer die link naar je browser. Regels met 'worker' laten zien wat de scanner doet."
+echo "Stoppen: Ctrl+C."
 echo
 command -v open >/dev/null && open $URL/aanmelden || true
-docker compose --profile web logs -f --since 1s web
+docker compose --profile web logs -f --since 1s web worker

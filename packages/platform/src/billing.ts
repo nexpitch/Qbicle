@@ -48,7 +48,14 @@ export interface Subscription {
   trialEndsAt: Date | null;
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
+  /**
+   * Opgezegd en de huidige periode is de laatste. Bij een opzegging binnen de
+   * opzegtermijn volgt eerst nog een verlenging: dan is dit false en staat de
+   * einddatum in endsAt.
+   */
   cancelAtPeriodEnd: boolean;
+  /** Einddatum na opzeggen (exclusief), rekening houdend met de opzegtermijn. */
+  endsAt: Date | null;
   createdAt: Date;
   /** Wijziging die bij de volgende periode ingaat (downgrade of andere betaaltermijn). */
   pendingPlan: string | null;
@@ -100,9 +107,10 @@ interface SubRow {
   pending_plan: string | null;
   pending_interval: BillingInterval | null;
   cancel_reason: CancelReason | null;
+  ends_at: Date | null;
 }
 const SUB_COLS = `id, organization_id, plan, billing_interval, monthly_price_cents, status, trial_ends_at,
-  current_period_start, current_period_end, cancel_at_period_end, created_at, pending_plan, pending_interval, cancel_reason`;
+  current_period_start, current_period_end, cancel_at_period_end, created_at, pending_plan, pending_interval, cancel_reason, ends_at`;
 const toSub = (r: SubRow): Subscription => ({
   id: r.id,
   organizationId: r.organization_id,
@@ -118,6 +126,7 @@ const toSub = (r: SubRow): Subscription => ({
   pendingPlan: r.pending_plan,
   pendingInterval: r.pending_interval,
   cancelReason: r.cancel_reason,
+  endsAt: r.ends_at,
 });
 
 interface PayRow {
@@ -176,11 +185,57 @@ export const GRACE_DAYS = 3;
 
 export function accessState(sub: Subscription | undefined, now = new Date()): AccessState {
   if (!sub || sub.status === 'beeindigd') return 'geen_abonnement';
+  // Opgezegd en de einddatum is voorbij: klaar.
+  if (sub.status === 'opgezegd' && (sub.endsAt ?? sub.currentPeriodEnd) && (sub.endsAt ?? sub.currentPeriodEnd)! <= now) return 'geen_abonnement';
   if ((sub.status === 'actief' || sub.status === 'opgezegd') && sub.currentPeriodEnd && sub.currentPeriodEnd > now) return 'actief';
   // Mislukte verlenging: de betaalde periode loopt gewoon door, plus een paar dagen respijt.
   if (sub.status === 'achterstallig' && sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() + GRACE_DAYS * 86_400_000 > now.getTime()) return 'actief';
   if (sub.status === 'proef' && sub.trialEndsAt && sub.trialEndsAt > now) return 'proef';
   return 'betaling_nodig';
+}
+
+/** Eén betaaltermijn verder (zelfde rekenwijze als bij het aanmaken van een betaling). */
+function addInterval(d: Date, interval: BillingInterval, n = 1): Date {
+  const x = new Date(d);
+  if (interval === 'jaar') x.setFullYear(x.getFullYear() + n);
+  else x.setMonth(x.getMonth() + n);
+  return x;
+}
+
+/**
+ * Einddatum bij opzeggen nu: het einde van de eerste periode waarvoor de
+ * opzegging minstens de opzegtermijn vóór het einde binnen is. Te laat
+ * opgezegd? Dan volgt nog één verlenging (een maand of een jaar).
+ */
+export function contractEnd(sub: Pick<Subscription, 'currentPeriodEnd' | 'interval'>, noticeMonths: number, now = new Date()): Date {
+  let end = sub.currentPeriodEnd ?? now;
+  if (end < now) end = now;
+  for (let i = 0; i < 100; i++) {
+    const deadline = new Date(end);
+    deadline.setMonth(deadline.getMonth() - noticeMonths);
+    if (now <= deadline) return end;
+    end = addInterval(end, sub.interval);
+  }
+  return end;
+}
+
+/** Uiterste opzegdatum (inclusief) om te voorkomen dat het contract op `end` verlengt. */
+export function noticeDeadline(end: Date, noticeMonths: number): Date {
+  const d = new Date(end);
+  d.setMonth(d.getMonth() - noticeMonths);
+  return d;
+}
+
+/**
+ * Moet er voor dit abonnement een volgende periode betaald worden? Gedeeld met
+ * de incassobatch in de cockpit: na tijdig opzeggen niet, na een stilzwijgende
+ * verlenging (opgezegd binnen de opzegtermijn) wel.
+ */
+export function needsRenewal(sub: Subscription, now = new Date()): boolean {
+  if (!sub.currentPeriodEnd) return false;
+  if (sub.status === 'actief' || sub.status === 'achterstallig') return !sub.cancelAtPeriodEnd;
+  if (sub.status === 'opgezegd') return !sub.cancelAtPeriodEnd && !!sub.endsAt && sub.endsAt > sub.currentPeriodEnd && sub.endsAt > now;
+  return false;
 }
 
 async function currentSubscription(q: Queryable, organizationId: string, lock = false): Promise<Subscription | undefined> {
@@ -303,7 +358,11 @@ export async function startSubscription(
   });
 }
 
-/** Opzeggen: een proef stopt direct, een betaald abonnement loopt door tot het einde van de periode. */
+/**
+ * Opzeggen: een proef stopt direct. Een betaald abonnement loopt door tot het
+ * einde van de eerste periode die minstens één opzegtermijn na nu eindigt
+ * (Erik, 27-11-2026: 1 maand opzegtermijn, anders stilzwijgend verlengd).
+ */
 export async function cancelSubscription(
   p: Platform,
   actor: UserActor,
@@ -316,23 +375,29 @@ export async function cancelSubscription(
   return withTransaction(p.pool, async (q) => {
     const cur = await currentSubscription(q, organizationId, true);
     if (!cur) throw new PlatformError('conflict', 'Er is geen lopend abonnement om op te zeggen.');
+    if (cur.status === 'opgezegd') throw new PlatformError('conflict', 'Je abonnement is al opgezegd.');
     const paidAndRunning = accessState(cur) === 'actief';
+    const endsAt = paidAndRunning ? contractEnd(cur, p.catalog.opzegtermijnMaanden) : null;
+    const lastPeriod = endsAt !== null && cur.currentPeriodEnd !== null && endsAt.getTime() <= cur.currentPeriodEnd.getTime();
     const r = await one<SubRow>(
       q,
       paidAndRunning
-        ? `UPDATE subscription SET status = 'opgezegd', cancel_at_period_end = true, canceled_at = now(),
+        ? `UPDATE subscription SET status = 'opgezegd', cancel_at_period_end = $4, ends_at = $5, canceled_at = now(),
                   pending_plan = NULL, pending_interval = NULL, cancel_reason = $2, cancel_feedback = $3 WHERE id = $1 RETURNING ${SUB_COLS}`
         : `UPDATE subscription SET status = 'beeindigd', canceled_at = now(),
                   pending_plan = NULL, pending_interval = NULL, cancel_reason = $2, cancel_feedback = $3 WHERE id = $1 RETURNING ${SUB_COLS}`,
-      [cur.id, reason, feedback],
+      paidAndRunning ? [cur.id, reason, feedback, lastPeriod, endsAt] : [cur.id, reason, feedback],
     );
-    await q.query(
-      // Een incasso die al bij de bank ligt, annuleert de klant hier niet; de uitkomst komt van de bank.
-      `UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = payment.id)`,
-      [cur.id],
-    );
+    // Open betalingen vervallen alleen als er geen verlenging meer komt.
+    // Een incasso die al bij de bank ligt, annuleert de klant hier niet; de uitkomst komt van de bank.
+    if (!paidAndRunning || lastPeriod) {
+      await q.query(
+        `UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = payment.id)`,
+        [cur.id],
+      );
+    }
     if (!paidAndRunning) await q.query(`UPDATE organization SET plan = 'gratis' WHERE id = $1`, [organizationId]);
-    await audit(q, actor, { organizationId, action: 'abonnement.opgezegd', subject: cur.id, detail: { directStoppen: !paidAndRunning, reden: reason } });
+    await audit(q, actor, { organizationId, action: 'abonnement.opgezegd', subject: cur.id, detail: { directStoppen: !paidAndRunning, reden: reason, eindigtOp: endsAt?.toISOString() ?? null } });
     return toSub(r!);
   });
 }
@@ -360,6 +425,13 @@ export interface BillingOverview {
   } | null;
   betaalwijze: PaymentMethodInfo;
   gebruik: { gebruikers: number; domeinen: number };
+  /** Lopend contract: verlengt stilzwijgend op `datum`, tenzij uiterlijk `opzeggenVoor` opgezegd. */
+  verlenging: { datum: Date; interval: BillingInterval; opzeggenUiterlijk: Date } | null;
+  /** Opgezegd: laatste dag van het abonnement is de dag vóór `eindigtOp`. */
+  eindigtOp: Date | null;
+  /** Wat er gebeurt als je nu opzegt. */
+  opzeggen: { eindigtOp: Date; nogEenBetaling: boolean } | null;
+  opzegtermijnMaanden: number;
 }
 
 export async function getBilling(p: Platform, userId: string, organizationId: string): Promise<BillingOverview> {
@@ -375,7 +447,7 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
   const open = pays.find((x) => x.status === 'open' && x.subscription_id && x.subscription_id === sub?.id);
   const pendingPlan = sub?.pendingPlan ? findPlan(p.catalog, sub.pendingPlan) ?? null : null;
   let volgende: BillingOverview['volgendeBetaling'] = null;
-  if (sub && !sub.cancelAtPeriodEnd && (state === 'actief' || state === 'proef')) {
+  if (sub && (state === 'proef' || (state === 'actief' && needsRenewal(sub)))) {
     const datum = state === 'proef' ? sub.trialEndsAt! : sub.currentPeriodEnd!;
     const pk = sub.pendingPlan ? pendingPlan : findPlan(p.catalog, sub.plan) ?? null;
     const iv = sub.pendingInterval ?? sub.interval;
@@ -385,7 +457,22 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
     const excl = periodAmountCents(monthly, iv) + extraExcl;
     volgende = { datum, exclCents: excl, inclCents: excl + vatCents(p.catalog, excl), pakket: pk, interval: iv, extraDomeinen: extra, extraDomeinenExclCents: extraExcl };
   }
+  const notice = p.catalog.opzegtermijnMaanden;
+  const running = sub && state === 'actief' && sub.status !== 'opgezegd' && sub.currentPeriodEnd && !sub.cancelAtPeriodEnd;
+  const verlenging = running
+    ? { datum: sub!.currentPeriodEnd!, interval: sub!.pendingInterval ?? sub!.interval, opzeggenUiterlijk: noticeDeadline(sub!.currentPeriodEnd!, notice) }
+    : null;
+  let opzeggen: BillingOverview['opzeggen'] = null;
+  if (running) {
+    const eind = contractEnd(sub!, notice);
+    opzeggen = { eindigtOp: eind, nogEenBetaling: eind > sub!.currentPeriodEnd! };
+  }
+  const eindigtOp = sub && sub.status === 'opgezegd' ? sub.endsAt ?? sub.currentPeriodEnd : null;
   return {
+    verlenging,
+    eindigtOp,
+    opzeggen,
+    opzegtermijnMaanden: notice,
     gepland: sub?.pendingPlan && sub.pendingInterval ? { pakket: pendingPlan, interval: sub.pendingInterval, per: sub.currentPeriodEnd } : null,
     volgendeBetaling: volgende,
     betaalwijze: await paymentMethodInfo(p.pool, organizationId),
@@ -430,6 +517,11 @@ export async function checkoutSubscription(
   return withTransaction(p.pool, async (q) => {
     let sub = await currentSubscription(q, organizationId, true);
     if (!sub) throw new PlatformError('conflict', 'Kies eerst een pakket.');
+    if (sub.status === 'opgezegd' && !needsRenewal(sub)) {
+      const eind = sub.endsAt ?? sub.currentPeriodEnd;
+      if (eind && eind > new Date()) throw new PlatformError('conflict', `Je abonnement is opgezegd en eindigt op ${nlDate(eind)}. Zet het eerst weer aan als je wilt blijven.`);
+      throw new PlatformError('conflict', 'Je abonnement is gestopt. Kies opnieuw een pakket om verder te gaan.');
+    }
     // Loopt er al een automatische incasso voor dit abonnement, dan niet nog een keer laten betalen.
     const running = await one(
       q,
@@ -453,9 +545,7 @@ export async function checkoutSubscription(
     const now = new Date();
     const starts = [now, sub.trialEndsAt, sub.status !== 'proef' ? sub.currentPeriodEnd : null].filter((d): d is Date => !!d && d >= now);
     const start = new Date(Math.max(...starts.map((d) => d.getTime())));
-    const end = new Date(start);
-    if (sub.interval === 'jaar') end.setFullYear(end.getFullYear() + 1);
-    else end.setMonth(end.getMonth() + 1);
+    const end = addInterval(start, sub.interval);
 
     const description = `${plan.naam}, ${sub.interval === 'jaar' ? 'jaar' : 'maand'} ${nlDate(start)} t/m ${nlDate(new Date(end.getTime() - 86_400_000))}`;
     const lines = await periodLines(p, q, organizationId, plan, sub.interval, monthly, description);
@@ -558,7 +648,7 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
           await q.query(
             `UPDATE subscription SET plan = $2, billing_interval = $3, monthly_price_cents = $4,
                     pending_plan = $5, pending_interval = $6,
-                    cancel_at_period_end = false, canceled_at = NULL,
+                    cancel_at_period_end = false, ends_at = NULL, canceled_at = NULL,
                     status = CASE WHEN status = 'opgezegd' THEN 'actief' ELSE status END
               WHERE id = $1`,
             [r.subscription_id, plan.id, t.interval, plan.maandprijsCenten[t.interval], t.pendingInterval ? plan.id : null, t.pendingInterval ?? null],
@@ -588,8 +678,10 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
           );
         } else await q.query(
           `UPDATE subscription
-              SET status = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN 'opgezegd' ELSE 'actief' END,
-                  cancel_at_period_end = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN true ELSE false END,
+              SET status = CASE WHEN status = 'opgezegd' OR ($4 AND status = 'beeindigd') THEN 'opgezegd' ELSE 'actief' END,
+                  -- Opgezegd binnen de opzegtermijn: deze verlenging is de laatste als hij tot ends_at loopt.
+                  cancel_at_period_end = CASE WHEN status = 'opgezegd' THEN (ends_at IS NULL OR date_trunc('milliseconds', ends_at) <= $3)
+                                              WHEN $4 AND status = 'beeindigd' THEN true ELSE false END,
                   -- Verlenging: de lopende periode schuift door. Anders begint hij bij de betaalde periode
                   -- (bij betalen tijdens de proef is dat het einde van de proef).
                   current_period_start = CASE WHEN current_period_start IS NOT NULL AND current_period_end >= $2
@@ -961,7 +1053,7 @@ export async function changePlan(
     await q.query('SELECT 1 FROM organization WHERE id = $1 FOR UPDATE', [organizationId]);
     const sub = (await currentSubscription(q, organizationId, true))!;
     const preview = computeChange(p, sub, plan, interval, await usageCounts(q, organizationId));
-    const reactivate = `cancel_at_period_end = false, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL,
+    const reactivate = `cancel_at_period_end = false, ends_at = NULL, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL,
                         status = CASE WHEN status = 'opgezegd' THEN 'actief' ELSE status END`;
 
     if (preview.soort === 'gelijk') {
@@ -1071,8 +1163,8 @@ export async function resumeSubscription(p: Platform, actor: UserActor, organiza
   await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
   const r = await one<SubRow>(
     p.pool,
-    `UPDATE subscription SET status = 'actief', cancel_at_period_end = false, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL
-      WHERE organization_id = $1 AND status = 'opgezegd' AND current_period_end > now()
+    `UPDATE subscription SET status = 'actief', cancel_at_period_end = false, ends_at = NULL, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL
+      WHERE organization_id = $1 AND status = 'opgezegd' AND coalesce(ends_at, current_period_end) > now()
       RETURNING ${SUB_COLS}`,
     [organizationId],
   );

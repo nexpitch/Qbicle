@@ -428,3 +428,7 @@ label.vink input { width: 18px; height: 18px; accent-color: var(--petrol); }
 .scan-stappen li[data-stap-status="bezig"] .status i { animation: scan-puls 1s ease-in-out infinite; }
 @keyframes scan-puls { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .scan-stappen li .status i { animation: none; } .voortgang progress::-webkit-progress-value { transition: none; } }
+.scan-stappen .stap-tekst { display: grid; gap: 2px; min-width: 0; }
+.scan-stappen .stap-uitleg { color: var(--muted); font-size: .84rem; font-weight: 400; }
+[data-scan-vast] strong { display: block; }
+[data-scan-vast] .hint { display: block; color: inherit; opacity: .85; font-size: .84rem; }
