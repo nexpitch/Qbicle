@@ -55,7 +55,7 @@ De shell regelt inloggen, MFA, CSRF en headers; modules zien alleen ingelogde me
 1. Shell: inloggen met MFA, rollen, navigatie, overzicht, audit-log, medewerkers (deze stap).
 2. Bedrijven en gebruikers: zoeken (naam, domein, e-mail, KvK), filteren op abonnementsstatus, detail met tabbladen, notities (alleen voor Qbicle, niet te wijzigen), gebruikers blokkeren met reden en overal uitloggen.
 3. Abonnementen (filter op status en betaalwijze, MRR), facturen en betalingen (openstaand, betaald, mislukt, terugbetaald), en per klant de betaalwijze: automatische incasso (standaard) of factuur met termijn. Bij factuur is een reden verplicht; elke wijziging staat in het audit-log.
-4. Incassobatch: automatisch klaargezet, controleren, met één knop indienen (testmodus tot Mollie er is).
+4. Incassobatch (migratie `0010`): een agent of geplande taak zet verlengingen klaar (`npm run cockpit:beheer -- incasso-klaarzetten`), alleen voor klanten met betaalwijze incasso. Jij controleert in de cockpit (regel uitsluiten of bedrag aanpassen, altijd met reden), valideert, en dient met één knop in. Indienen gebeurt nooit automatisch en kan maar één keer; dezelfde periode wordt nooit dubbel geïncasseerd. In testmodus zet je per regel de uitkomst (betaald, of mislukt met reden). Betaald verlengt het abonnement en maakt een factuur; mislukt zet het abonnement op achterstallig.
 5. Mislukte incasso's met voorgestelde vervolgactie.
 
 Gebruik, gezondheid, support en agents worden parallel gebouwd (`packages/ops`).
