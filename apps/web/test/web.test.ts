@@ -81,10 +81,17 @@ describe.skipIf(!hasDb)('web-app', () => {
       let html = await (await get(`/o/${org}/overzicht`)).text();
       expect(html).toContain('Voeg je domein toe');
       expect(html).toContain('Vul met voorbeelddata');
+      // Lege staat toont al alle onderdelen, ingeklapt, met wanneer de scan komt.
+      expect(html).toContain('Alles in beeld');
+      expect(html.match(/<details class="sect"/g)?.length).toBe(8);
+      expect(html).toContain('Nog niet gescand');
+      expect(html).toContain('Voeg een domein toe om te starten');
 
       expect((await json(`/api/v1/organisaties/${org}/demodata`, {}, cookie)).status).toBe(201);
       html = await (await get(`/o/${org}/overzicht`)).text();
-      expect(html).toContain('Wat je nu kunt doen');
+      expect(html).toContain('Direct aandacht');
+      expect(html).toContain('id="sectie-koppelingen"');
+      expect(html).not.toMatch(/<details class="sect"[^>]* open/);
       expect(html).toContain('Urgentie over tijd');
       expect(html).toContain('Netwerkapparatuur');
       expect(html).not.toMatch(/style="/);
@@ -99,6 +106,11 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(await detail.text()).toContain('Bevindingen');
 
       expect(await (await get(`/o/${org}/domeinen`)).text()).toContain('voorbeeldbedrijf.example');
+      await json(`/api/v1/organisaties/${org}/domeinen/lijst`, { domeinen: 'kopieer-test.nl' }, cookie);
+      const dom = await (await get(`/o/${org}/domeinen`)).text();
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie.kopieer-test.nl"');
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie"');
+      expect(dom).toMatch(/data-kopieer="qbicle-verificatie=[0-9a-f]{32}"/);
       expect((await get(`/o/${org}/assets/00000000-0000-0000-0000-000000000000`)).status).toBe(404);
     } finally {
       delete process.env.QBICLE_DEMODATA;

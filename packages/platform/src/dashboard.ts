@@ -13,6 +13,7 @@ import {
 } from '@qbicle/score';
 import type { Platform } from './context.ts';
 import { many, one } from './db.ts';
+import { SCAN_INTERVAL_DAYS } from './scanstatus.ts';
 import { notFound } from './errors.ts';
 import { authorize, isUuid } from './organizations.ts';
 
@@ -139,6 +140,14 @@ export interface NextStep {
   label: string;
 }
 
+/** Wanneer de (volgende) scan komt, in gewone taal op te bouwen in de webapp. */
+export interface ScanPlan {
+  status: 'geen_domein' | 'niet_bevestigd' | 'bezig' | 'eerste' | 'gepland';
+  /** Bij "gepland": vroegste volgende wekelijkse controle (laatste geslaagde scan + 7 dagen). */
+  volgende: Date | null;
+}
+
+
 export interface Dashboard {
   /** Er is minstens één asset of scan, dus iets om te laten zien. */
   hasData: boolean;
@@ -150,6 +159,7 @@ export interface Dashboard {
   urgencyBefore: number | null;
   coverage: { pct: number; warning: string | null } | null;
   lastScanAt: Date | null;
+  scanPlan: ScanPlan;
   domains: { total: number; verified: number };
   counts: {
     assets: number;
@@ -562,6 +572,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     urgencyBefore,
     coverage: lastScanAt ? { pct: current.coverage.pct, warning: current.coverageWarning } : null,
     lastScanAt,
+    scanPlan: await scanPlanFor(p, organizationId, domains),
     domains,
     counts,
     since,
@@ -575,6 +586,25 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     activity,
     nextStep,
   };
+}
+
+async function scanPlanFor(p: Platform, organizationId: string, domains: { total: number; verified: number }): Promise<ScanPlan> {
+  if (!domains.total) return { status: 'geen_domein', volgende: null };
+  if (!domains.verified) return { status: 'niet_bevestigd', volgende: null };
+  const r = (await one<{ bezig: boolean; nooit: boolean; oudste: Date | null }>(
+    p.pool,
+    `SELECT bool_or(s.status IN ('wachtrij', 'bezig')) AS bezig,
+            bool_or(ok.last_ok IS NULL) AS nooit,
+            min(ok.last_ok) AS oudste
+       FROM domain d
+       LEFT JOIN LATERAL (SELECT max(k.finished_at) AS last_ok FROM scan k WHERE k.domain_id = d.id AND k.status = 'klaar') ok ON true
+       LEFT JOIN scan s ON s.domain_id = d.id AND s.status IN ('wachtrij', 'bezig')
+      WHERE d.organization_id = $1 AND d.verified_at IS NOT NULL`,
+    [organizationId],
+  ))!;
+  if (r.bezig) return { status: 'bezig', volgende: null };
+  if (r.nooit || !r.oudste) return { status: 'eerste', volgende: null };
+  return { status: 'gepland', volgende: new Date(r.oudste.getTime() + SCAN_INTERVAL_DAYS * DAY) };
 }
 
 // Detail per asset ------------------------------------------------------------------------

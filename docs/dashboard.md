@@ -4,10 +4,12 @@ De hoofdpagina van een organisatie (`/o/<org>/overzicht`). Opbouw, van boven naa
 
 1. **Volgende stap**: één concrete actie (domein toevoegen, bevestigen, of de zwaarste open actie).
 2. **Kerncijfers**: urgentie 0–100 met band en verschil met 30 dagen geleden, open acties, assets in beeld, opgelost in 30 dagen.
-3. **Wat je nu kunt doen**: alle acties uit het scoremodel, zwaarste eerst, met voor wie (zelf, IT-partner, webbouwer) en de betrokken assets.
-4. **Urgentie over tijd**: wekelijks punt over 12 weken, met tabelweergave.
-5. **Meldingen**, **Sinds vorige maand** (opgelost en nieuw) en **Activiteit**.
-6. **Alles wat we bewaken**: assets per soort (domeinen, websites, mail, servers, cloud, netwerk, apparaten).
+3. **Direct aandacht**: de acties met niveau urgent of aandacht (hooguit 5), urgente assets en meldingen. De overige acties staan ingeklapt onder "voor later".
+4. **Alles in beeld**: één uitklapbare sectie per soort (domeinen, websites, mail, servers, cloud, netwerk, apparaten) plus extra secties
+   zoals Koppelingen. Elke kop toont teller en status; de inhoud is standaard ingeklapt. Ook zonder data staan alle secties er, met
+   "nog niet gescand" en wanneer de scan komt (`scanPlan`: laatste geslaagde scan + 7 dagen, gelijk aan de planner).
+   Extra secties levert de route aan als `DashSection` (zie `koppelingenSectie`), zodat bijvoorbeeld het systeemregister er los bij kan.
+5. **Urgentie over tijd**, **Sinds vorige maand** (opgelost en nieuw) en **Activiteit**.
 
 Daarnaast: `/o/<org>/assets` (alle assets, filter per soort), `/o/<org>/assets/<id>` (bevindingen met zekerheid,
 wat te doen, CVE's en bronnen) en `/o/<org>/domeinen` (toevoegen en bevestigen via DNS of admin@/postmaster@).

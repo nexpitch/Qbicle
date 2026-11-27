@@ -6,13 +6,18 @@ import type {
   Dashboard,
   DashboardAction,
   DashboardAsset,
+  DnsHostResult,
   Domain,
+  DomainOverview,
   DomainScanInfo,
   Level,
   TrendPoint,
 } from '@qbicle/platform';
-import { ASSET_GROUPS, FOR_WHO_LABELS } from '@qbicle/platform';
-import { datum, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { ASSET_GROUPS, FOR_WHO_LABELS, TXT_LABEL } from '@qbicle/platform';
+import type { Child } from 'hono/jsx';
+import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
+import { KoppelingStatusBadge } from './koppelingen.tsx';
+import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
 
 /**
@@ -51,17 +56,38 @@ function kort(d: Date | string): string {
   return new Date(d).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' });
 }
 
+/** Kalenderdag in Nederlandse tijd, voor "vandaag" en "gisteren". */
+function dag(d: Date | string): string {
+  return new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Europe/Amsterdam' });
+}
+
 function wanneer(d: Date | string, now = new Date()): string {
-  const days = Math.floor((now.getTime() - new Date(d).getTime()) / 86400000);
-  if (days <= 0) return 'vandaag';
-  if (days === 1) return 'gisteren';
-  if (days < 7) return `${days} dagen geleden`;
-  return kort(d);
+  const t = tijd(d);
+  if (dag(d) === dag(now)) return `vandaag ${t}`;
+  if (dag(d) === dag(new Date(now.getTime() - 86400000))) return `gisteren ${t}`;
+  return `${kort(d)} ${t}`;
 }
 
 // Dashboard ---------------------------------------------------------------------------------
 
-export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean }) {
+/**
+ * Een extra sectie onder "Alles in beeld", naast de assetsoorten: bijvoorbeeld
+ * koppelingen of het register bedrijfskritische systemen. De route bouwt hem op,
+ * zodat elk onderdeel zijn eigen gegevens aanlevert zonder dat deze pagina ze kent.
+ */
+export interface DashSection {
+  key: string;
+  label: string;
+  uitleg: string;
+  count: number;
+  /** null: nog niets om te beoordelen (grijze stip, "nog niet gekoppeld" e.d.). */
+  level: Level | null;
+  /** Korte status rechts in de kop, bijvoorbeeld "2 met aandacht" of "Nog niet gekoppeld". */
+  status: string;
+  body: Child;
+}
+
+export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean; extra?: DashSection[] }) {
   const { d, org, b } = props;
   const base = `/o/${org.id}`;
   return (
@@ -73,6 +99,7 @@ export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | 
           <p class="small">
             {d.lastScanAt ? `Laatst bijgewerkt ${wanneer(d.lastScanAt)}` : 'Nog geen scan afgerond'}
             {d.coverage ? ` · ${d.coverage.pct}% gecontroleerd` : ''}
+            {` · ${scanPlanText(d)}`}
           </p>
         </div>
       </div>
@@ -89,25 +116,36 @@ export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | 
       {d.hasData ? (
         <>
           <Kpis d={d} base={base} />
-          <div class="dash-cols">
-            <div class="stack-lg">
-              <ActionsCard actions={d.actions} base={base} />
-              <TrendCard trend={d.trend} />
-            </div>
-            <div class="stack-lg">
-              {d.meldingen.length ? <MeldingenCard d={d} /> : null}
-              <ChangesCard d={d} base={base} />
-              <ActivityCard d={d} />
-            </div>
-          </div>
-          <AssetsCard d={d} base={base} />
+          <AandachtCard d={d} base={base} />
         </>
       ) : (
         <EmptyState base={base} demo={props.demo} meldingen={d.meldingen} />
       )}
+
+      <AllesCard d={d} base={base} extra={props.extra ?? []} />
+
+      {d.hasData ? (
+        <div class="dash-cols">
+          <TrendCard trend={d.trend} />
+          <div class="stack-lg">
+            <ChangesCard d={d} base={base} />
+            <ActivityCard d={d} />
+          </div>
+        </div>
+      ) : null}
       {d.hasData && props.demo ? <DemoForm base={base} again /> : null}
     </Layout>
   );
+}
+
+/** "Volgende controle 4 dec 09:30", in de kop en in elke lege sectie. */
+function scanPlanText(d: Dashboard): string {
+  const p = d.scanPlan;
+  if (p.status === 'geen_domein') return 'Voeg een domein toe om te starten';
+  if (p.status === 'niet_bevestigd') return 'Eerste scan zodra je domein is bevestigd';
+  if (p.status === 'bezig') return 'Scan loopt nu';
+  if (p.status === 'eerste') return 'Eerste scan staat in de wachtrij';
+  return `Volgende controle ${p.volgende && p.volgende.getTime() > Date.now() ? wanneer(p.volgende) : 'binnenkort'}`;
 }
 
 function NextStepCard(props: { d: Dashboard }) {
@@ -202,17 +240,22 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
   );
 }
 
-function ActionsCard(props: { actions: DashboardAction[]; base: string }) {
-  const top = props.actions.slice(0, 5);
-  const rest = props.actions.slice(5);
+/** Bovenaan: wat nu aandacht nodig heeft (urgent en aandacht), plus meldingen. De rest klapt in. */
+function AandachtCard(props: { d: Dashboard; base: string }) {
+  const { d } = props;
+  const now = d.actions.filter((a) => a.level === 'crit' || a.level === 'warn');
+  const top = now.slice(0, 5);
+  const rest = d.actions.slice(top.length);
+  const meldingen = d.meldingen;
+  const assets = d.assets.filter((a) => a.level === 'crit').slice(0, 4);
   return (
-    <section class="card" id="acties" aria-labelledby="acties-kop">
+    <section class="card attention" id="acties" aria-labelledby="acties-kop">
       <div class="row between">
-        <h2 id="acties-kop">Wat je nu kunt doen</h2>
+        <h2 id="acties-kop">Direct aandacht</h2>
         <span class="small">belangrijkste eerst</span>
       </div>
       {top.length === 0 ? (
-        <p class="melding ok">Er staat niets open. We blijven je systemen bewaken.</p>
+        <p class="melding ok">Niets dat nu direct aandacht nodig heeft. We blijven alles bewaken.</p>
       ) : (
         <ol class="actions">
           {top.map((a, i) => (
@@ -220,12 +263,40 @@ function ActionsCard(props: { actions: DashboardAction[]; base: string }) {
           ))}
         </ol>
       )}
+      {assets.length ? (
+        <p class="small">
+          Urgent:{' '}
+          {assets.map((a, i) => (
+            <>
+              {i ? ', ' : ''}
+              <a href={`${props.base}/assets/${a.id}`}>{a.label}</a>
+            </>
+          ))}
+        </p>
+      ) : null}
+      {meldingen.length ? (
+        <ul class="list">
+          {meldingen.map((m) => (
+            <li class="list-item">
+              <span class={`dot lvl-${m.level}`} aria-hidden="true"></span>
+              <div class="stack-xs">
+                <p>{m.text}</p>
+                {m.href ? (
+                  <a class="small" href={m.href}>
+                    {m.linkText ?? 'Bekijken'}
+                  </a>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {rest.length ? (
         <details class="more">
-          <summary>Nog {rest.length} kleinere {rest.length === 1 ? 'actie' : 'acties'}</summary>
-          <ol class="actions" start={6}>
+          <summary>Nog {rest.length} {rest.length === 1 ? 'actie' : 'acties'} voor later</summary>
+          <ol class="actions" start={top.length + 1}>
             {rest.map((a, i) => (
-              <ActionRow a={a} i={i + 5} base={props.base} />
+              <ActionRow a={a} i={i + top.length} base={props.base} />
             ))}
           </ol>
         </details>
@@ -309,29 +380,6 @@ function TrendCard(props: { trend: TrendPoint[] }) {
           </details>
         </>
       )}
-    </section>
-  );
-}
-
-function MeldingenCard(props: { d: Dashboard }) {
-  return (
-    <section class="card" aria-labelledby="meldingen-kop">
-      <h2 id="meldingen-kop">Meldingen</h2>
-      <ul class="list">
-        {props.d.meldingen.map((m) => (
-          <li class="list-item">
-            <span class={`dot lvl-${m.level}`} aria-hidden="true"></span>
-            <div class="stack-xs">
-              <p>{m.text}</p>
-              {m.href ? (
-                <a class="small" href={m.href}>
-                  {m.linkText ?? 'Bekijken'}
-                </a>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }
@@ -432,31 +480,78 @@ function AssetTable(props: { assets: DashboardAsset[]; base: string }) {
   );
 }
 
-function AssetsCard(props: { d: Dashboard; base: string }) {
-  const { d, base } = props;
+/** Eén uitklapbare sectie: kop met stip, naam, teller en status; inhoud ingeklapt. */
+function Section(props: { id: string; label: string; uitleg: string; count: number; level: Level | null; status: string; children: Child }) {
   return (
-    <section class="card" aria-labelledby="assets-kop">
+    <details class="sect" id={`sectie-${props.id}`}>
+      <summary>
+        <span class={`dot ${props.level ? `lvl-${props.level}` : 'lvl-none'}`} aria-hidden="true"></span>
+        <span class="sect-name">
+          <b>{props.label}</b>
+          <span class="small">{props.uitleg}</span>
+        </span>
+        <span class="sect-count" aria-label={`${props.count} stuks`}>
+          {props.count}
+        </span>
+        <span class="sect-status">{props.level ? <Status kind={props.level}>{props.status}</Status> : <span class="small">{props.status}</span>}</span>
+      </summary>
+      <div class="sect-body">{props.children}</div>
+    </details>
+  );
+}
+
+const NIET_VAN_BUITEN: Record<string, string> = {
+  netwerk: 'Routers, firewalls en wifi zien we via een koppeling met je router (Business-pakket).',
+  apparaten: 'Apparaten in je netwerk zien we via een koppeling met je router (Business-pakket).',
+  cloud: 'Clouddiensten zien we deels van buiten. Met een koppeling met Microsoft 365 of AWS zien we de instellingen erachter.',
+};
+
+function AllesCard(props: { d: Dashboard; base: string; extra: DashSection[] }) {
+  const { d, base } = props;
+  const plan = scanPlanText(d);
+  const total = d.counts.assets + props.extra.reduce((n, x) => n + x.count, 0);
+  return (
+    <section class="card" aria-labelledby="alles-kop">
       <div class="row between">
-        <h2 id="assets-kop">Alles wat we bewaken</h2>
-        <a href={`${base}/assets`}>Alle {d.counts.assets} assets</a>
+        <h2 id="alles-kop">Alles in beeld</h2>
+        {d.counts.assets ? <a href={`${base}/assets`}>Alle {d.counts.assets} assets</a> : <span class="small">{total ? `${total} gevonden` : 'Nog niets gevonden'}</span>}
       </div>
-      <p class="small">Niet alleen je website: alles wat aan internet hangt en waar een incident kan beginnen.</p>
-      <div class="groups">
-        {d.groups.map((g) => (
-          <a class={`group${g.count === 0 ? ' empty' : ''}`} href={`${base}/assets?soort=${g.key}`}>
-            <span class="group-count">{g.count}</span>
-            <span class="group-label">{g.label}</span>
-            {g.count === 0 ? (
-              <span class="small">Nog niet gekoppeld</span>
-            ) : g.withIssues ? (
-              <Status kind={g.level}>{g.withIssues} met aandacht</Status>
-            ) : (
-              <Status kind={g.level === 'unk' ? 'unk' : 'ok'}>{g.level === 'unk' ? 'Deels onbekend' : 'In orde'}</Status>
-            )}
-          </a>
+      <p class="small">Niet alleen je website: alles wat aan internet hangt en waar een incident kan beginnen. Klik een onderdeel open.</p>
+      <div class="sects">
+        {d.groups.map((g) => {
+          const list = d.assets.filter((a) => a.group === g.key);
+          const status =
+            g.count === 0 ? (g.key === 'netwerk' || g.key === 'apparaten' ? 'Nog niet gekoppeld' : d.lastScanAt ? 'Niets gevonden' : 'Nog niet gescand') : g.withIssues ? `${g.withIssues} met aandacht` : g.level === 'unk' ? 'Deels onbekend' : 'In orde';
+          return (
+            <Section id={g.key} label={g.label} uitleg={g.uitleg} count={g.count} level={g.count ? (g.withIssues ? g.level : g.level === 'unk' ? 'unk' : 'ok') : null} status={status}>
+              {list.length ? (
+                <>
+                  <AssetTable assets={list.slice(0, 10)} base={base} />
+                  {list.length > 10 ? (
+                    <a class="small" href={`${base}/assets?soort=${g.key}`}>
+                      Alle {list.length} bekijken
+                    </a>
+                  ) : null}
+                </>
+              ) : (
+                <div class="stack-xs">
+                  <p class="small">{d.lastScanAt ? 'Bij de laatste scan niets van deze soort gevonden.' : `Nog niet gescand. ${plan}.`}</p>
+                  {NIET_VAN_BUITEN[g.key] ? (
+                    <p class="small">
+                      {NIET_VAN_BUITEN[g.key]} <a href={`${base}/koppelingen`}>Naar koppelingen</a>
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </Section>
+          );
+        })}
+        {props.extra.map((x) => (
+          <Section id={x.key} label={x.label} uitleg={x.uitleg} count={x.count} level={x.level} status={x.status}>
+            {x.body}
+          </Section>
         ))}
       </div>
-      <AssetTable assets={d.assets.slice(0, 6)} base={base} />
     </section>
   );
 }
@@ -478,7 +573,7 @@ function EmptyState(props: { base: string; demo: boolean; meldingen: Dashboard['
       <h2>Hier komt je overzicht</h2>
       <p class="muted">
         Zodra je domein is bevestigd, zoeken we alles wat van buitenaf zichtbaar is: domeinen, websites, mail, servers en clouddiensten. Met
-        het Business-pakket komen daar je netwerkapparatuur en apparaten bij.
+        het Business-pakket komen daar je netwerkapparatuur en apparaten bij. Hieronder zie je al welke onderdelen we gaan bewaken.
       </p>
       {props.demo ? (
         <div class="stack-sm">
@@ -547,7 +642,7 @@ function FindingCard(props: { f: AssetFindingDetail }) {
             {CERTAINTY_LABEL[f.certainty]}
           </span>
         </div>
-        <span class="small">Gezien sinds {datum(f.firstSeen)}</span>
+        <span class="small">Gezien sinds {datumTijd(f.firstSeen)}</span>
       </div>
       <h3>{f.title}</h3>
       <p>{f.detail}</p>
@@ -621,7 +716,7 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
                     <div class="stack-xs">
                       <p>{f.title}</p>
                       <p class="small">
-                        {f.resolvedAt ? `Opgelost ${datum(f.resolvedAt)}` : `Geaccepteerd ${datum(f.acceptedAt)}`}
+                        {f.resolvedAt ? `Opgelost ${datumTijd(f.resolvedAt)}` : `Geaccepteerd ${datumTijd(f.acceptedAt)}`}
                       </p>
                     </div>
                   </li>
@@ -639,9 +734,9 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
               <dt>Bereikbaar</dt>
               <dd>{EXPOSURE_LABEL[a.asset.exposure] ?? a.asset.exposure}</dd>
               <dt>Eerst gezien</dt>
-              <dd>{datum(a.asset.firstSeen)}</dd>
+              <dd>{datumTijd(a.asset.firstSeen)}</dd>
               <dt>Laatst gezien</dt>
-              <dd>{datum(a.asset.lastSeen)}</dd>
+              <dd>{datumTijd(a.asset.lastSeen)}</dd>
               <dt>Gevonden via</dt>
               <dd>{a.asset.source === 'demo' ? 'Voorbeelddata' : a.asset.source}</dd>
             </dl>
@@ -676,11 +771,68 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
   );
 }
 
+
+// Kopiëren ----------------------------------------------------------------------------------------
+
+/** Waarde met een kopieerknop erachter; app.js zet hem op het klembord en meldt "Gekopieerd". */
+export function Copy(props: { value: string; label: string }) {
+  return (
+    <span class="copy">
+      <code class="break">{props.value}</code>
+      <button type="button" class="copy-btn" data-kopieer={props.value} aria-label={`Kopieer ${props.label}`} title={`Kopieer ${props.label}`}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2" />
+          <path d="M5 15V5a2 2 0 0 1 2-2h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span class="copy-ok" aria-hidden="true">Gekopieerd</span>
+      </button>
+    </span>
+  );
+}
+
+/** De TXT-regel, met kopieerknoppen en de korte naam voor partijen die het domein zelf aanvullen. */
+function DnsRecord(props: { name: string; value: string; withType?: boolean; providerNaam?: string | null }) {
+  return (
+    <dl class="facts">
+      {props.withType ? (
+        <>
+          <dt>Type</dt>
+          <dd>
+            <Copy value="TXT" label="type" />
+          </dd>
+        </>
+      ) : null}
+      <dt>Naam</dt>
+      <dd class="stack-xs">
+        <Copy value={props.name} label="naam" />
+        <span class="small">
+          {props.providerNaam ? `Bij ${props.providerNaam} vul` : 'Vult je provider het domein zelf aan (zoals Wix, Strato of TransIP)? Vul'} je alleen in:{' '}
+        </span>
+        <Copy value={TXT_LABEL} label="korte naam" />
+      </dd>
+      <dt>Waarde</dt>
+      <dd>
+        <Copy value={props.value} label="waarde" />
+      </dd>
+    </dl>
+  );
+}
+
 // Domeinen -------------------------------------------------------------------------------------
 
 export function DomeinenPage(
-  props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> }; magScannen?: boolean },
+  props: Ctx & {
+    domains: Domain[];
+    magBeheren: boolean;
+    sent?: boolean;
+    overview: DomainOverview;
+    added?: { aantal: number; bestaatAl: number; ongeldig: string };
+    scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> };
+    magScannen?: boolean;
+  },
 ) {
+  const ov = props.overview;
+  const over = ov.gebruikt > ov.limiet;
   const { org } = props;
   const api = `/api/v1/organisaties/${org.id}/domeinen`;
   return (
@@ -695,6 +847,23 @@ export function DomeinenPage(
         </p>
       </div>
       {props.sent ? <p class="melding ok">De bevestigingslink is verstuurd. Open de mail en klik op de link.</p> : null}
+      {props.added ? (
+        <p class={`melding ${props.added.ongeldig ? 'warn' : 'ok'}`}>
+          {props.added.aantal === 1 ? '1 domein toegevoegd' : `${props.added.aantal} domeinen toegevoegd`}
+          {props.added.bestaatAl ? `, ${props.added.bestaatAl} stond${props.added.bestaatAl === 1 ? '' : 'en'} er al` : ''}
+          {props.added.ongeldig ? `. Niet herkend als domein: ${props.added.ongeldig}` : ''}.
+        </p>
+      ) : null}
+      <div class="row between">
+        <p class="small">
+          {ov.gebruikt} van {ov.limiet} domeinen in je pakket{ov.plan ? '' : ' (zonder abonnement)'} · extra domein {euroKort(ov.extraDomeinCenten)} per maand
+        </p>
+      </div>
+      {over ? (
+        <p class="melding warn">
+          Je hebt {ov.extra} {ov.extra === 1 ? 'domein' : 'domeinen'} meer dan in je pakket zit. Elk extra domein kost {euroKort(ov.extraDomeinCenten)} per maand (excl. btw) en wordt gewoon bewaakt.
+        </p>
+      ) : null}
       {props.domains.map((d) => (
         <section class="card">
           <div class="row between">
@@ -703,7 +872,20 @@ export function DomeinenPage(
           </div>
           {d.verified ? (
             <>
-              <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+              <p class="small">Bevestigd op {datumTijd(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+              {(() => {
+                const sm = ov.summaries.get(d.id);
+                return sm ? (
+                  <div class="row domain-stats">
+                    <span>
+                      <b>{sm.assets}</b> assets
+                    </span>
+                    <span>
+                      <b>{sm.openFindings}</b> open bevindingen
+                    </span>
+                  </div>
+                ) : null;
+              })()}
               {props.scans ? (
                 <DomeinScanBlok
                   orgId={org.id}
@@ -719,16 +901,10 @@ export function DomeinenPage(
               <div class="stack-sm">
                 <h3>Via DNS (aangeraden)</h3>
                 <p class="small">Zet deze TXT-regel bij je domeinbeheerder, of stuur hem naar je IT-partner. Het kan een uur duren voor hij zichtbaar is.</p>
-                <dl class="facts">
-                  <dt>Naam</dt>
-                  <dd>
-                    <code>{d.instructions.dns.name}</code>
-                  </dd>
-                  <dt>Waarde</dt>
-                  <dd>
-                    <code class="break">{d.instructions.dns.value}</code>
-                  </dd>
-                </dl>
+                <p class="small">
+                  <a href={`/o/${org.id}/domeinen/${d.id}/waar`}>Weet je niet waar je domein staat? Wij zoeken het op.</a>
+                </p>
+                <DnsRecord name={d.instructions.dns.name} value={d.instructions.dns.value} withType />
                 <form data-api={`${api}/${d.id}/verificatie/dns`}>
                   <FormError />
                   <button class="btn" type="submit">
@@ -738,8 +914,8 @@ export function DomeinenPage(
               </div>
               <div class="stack-sm">
                 <h3>Via e-mail</h3>
-                <p class="small">We sturen een bevestigingslink naar een beheeradres van dit domein.</p>
-                <form data-api={`${api}/${d.id}/verificatie/email`} data-next={`/o/${org.id}/domeinen?mail=verstuurd`}>
+                <p class="small">We sturen een bevestigingslink naar een adres op @{d.name}. Kies een beheeradres of vul je eigen adres in.</p>
+                <form class="stack mail-verif" data-api={`${api}/${d.id}/verificatie/email`} data-next={`/o/${org.id}/domeinen?mail=verstuurd`}>
                   <FormError />
                   <label>
                     Adres
@@ -747,7 +923,13 @@ export function DomeinenPage(
                       {d.instructions.emailAddresses.map((e) => (
                         <option value={e}>{e}</option>
                       ))}
+                      <option value="ander">Ander adres op @{d.name}…</option>
                     </select>
+                  </label>
+                  <label class="eigen-adres">
+                    Jouw adres
+                    <span class="hint">Moet eindigen op @{d.name}.</span>
+                    <input type="email" name="eigenAdres" autocomplete="email" placeholder={`naam@${d.name}`} />
                   </label>
                   <button class="btn secondary" type="submit">
                     Stuur bevestigingslink
@@ -760,15 +942,31 @@ export function DomeinenPage(
           )}
         </section>
       ))}
+      {props.magBeheren && ov.suggesties.length ? (
+        <section class="card">
+          <h2>Hoort dit ook bij jullie?</h2>
+          <p class="small">Deze domeinen zagen we bij je websites, servers of certificaten. Voeg ze toe als ze van jullie zijn.</p>
+          <div class="row">
+            {ov.suggesties.map((sug) => (
+              <form data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}`}>
+                <input type="hidden" name="domeinen" value={sug} />
+                <button class="btn secondary" type="submit">
+                  + {sug}
+                </button>
+              </form>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {props.magBeheren ? (
         <section class="card narrow">
-          <h2>Domein toevoegen</h2>
-          <form class="stack" data-api={api}>
+          <h2>{props.domains.length ? 'Meer domeinen toevoegen' : 'Domein toevoegen'}</h2>
+          <form class="stack" data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}&ongeldig={ongeldigTekst}`}>
             <FormError />
             <label>
-              Domeinnaam
-              <span class="hint">Bijvoorbeeld jouwbedrijf.nl, zonder www of https.</span>
-              <input type="text" name="name" required autocomplete="off" inputmode="url" placeholder="jouwbedrijf.nl" />
+              Domeinnamen
+              <span class="hint">Eén of meer, bijvoorbeeld jouwbedrijf.nl en jouwwebshop.nl. Je kunt een hele lijst plakken; scheid met een komma of nieuwe regel.</span>
+              <textarea name="domeinen" rows={4} required autocomplete="off" placeholder={'jouwbedrijf.nl\njouwwebshop.nl'}></textarea>
             </label>
             <button class="btn" type="submit">
               Toevoegen
@@ -778,4 +976,145 @@ export function DomeinenPage(
       ) : null}
     </Layout>
   );
+}
+
+// Waar staat mijn domein? ----------------------------------------------------------------------
+
+const ZEKERHEID_KIND: Record<string, Level> = { waarschijnlijk: 'ok', mogelijk: 'warn', onbekend: 'unk' };
+const ZEKERHEID_LABEL: Record<string, string> = { waarschijnlijk: 'Waarschijnlijk', mogelijk: 'Mogelijk', onbekend: 'Niet gevonden' };
+
+function doorstuurMail(r: DnsHostResult, orgName: string): string {
+  const subject = `Graag een DNS-regel toevoegen voor ${r.domain}`;
+  const body = [
+    'Hoi,',
+    '',
+    `Wil je voor ${r.domain} deze TXT-regel toevoegen in de DNS${r.dnsBeheer.naam ? ` (die lijkt bij ${r.dnsBeheer.naam} te staan)` : ''}?`,
+    '',
+    `Type: TXT`,
+    `Naam: ${r.instructions.dns.name}`,
+    `Waarde: ${r.instructions.dns.value}`,
+    '',
+    `Hiermee bevestigen we bij Qbicle dat ${r.domain} van ${orgName} is, zodat Qbicle de beveiliging van onze internetsystemen kan bewaken. De regel verandert niets aan de website of de mail.`,
+    '',
+    'Dank je wel!',
+  ].join('\n');
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+export function WaarStaatDomeinPage(props: Ctx & { domainId: string; r: DnsHostResult }) {
+  const { r, org } = props;
+  const p = r.dnsBeheer.provider;
+  return (
+    <Layout title={`Waar staat ${r.domain}?`} user={props.user} org={org} active="domeinen">
+      <div class="intro">
+        <p class="small">
+          <a href={`/o/${org.id}/overzicht`}>Overzicht</a> / <a href={`/o/${org.id}/domeinen`}>Domeinen</a>
+        </p>
+        <h1 class="break">Waar staat {r.domain}?</h1>
+        <p class="lead">We hebben openbare gegevens opgezocht: de naamservers, de registratie van de domeinnaam en de mailservers. We hebben niets bij je domein veranderd.</p>
+      </div>
+      <section class="card next-step">
+        <div class="row between">
+          <p class="eyebrow">DNS-beheer</p>
+          <Status kind={ZEKERHEID_KIND[r.dnsBeheer.zekerheid]!}>{ZEKERHEID_LABEL[r.dnsBeheer.zekerheid]}</Status>
+        </div>
+        <h2>{r.dnsBeheer.naam ? `Je DNS staat ${r.dnsBeheer.zekerheid === 'waarschijnlijk' ? 'waarschijnlijk' : 'mogelijk'} bij ${r.dnsBeheer.naam}` : 'We weten niet zeker waar je DNS staat'}</h2>
+        <p class="muted">{r.dnsBeheer.reden}</p>
+        {p ? (
+          <div class="stack-sm">
+            <h3>Zo zet je de regel erin bij {p.naam}</h3>
+            <ol class="steps-plain">
+              {p.stappen.map((st) => (
+                <li>{st}</li>
+              ))}
+            </ol>
+            <p class="small">Menunamen kunnen iets anders heten. Kom je er niet uit, stuur de regel dan door.</p>
+          </div>
+        ) : null}
+        <DnsRecord name={r.instructions.dns.name} value={r.instructions.dns.value} withType providerNaam={p?.naam ?? null} />
+        <div class="row">
+          {p ? (
+            <a class="btn" href={p.inlog} rel="noopener noreferrer" target="_blank">
+              Inloggen bij {p.naam}
+            </a>
+          ) : null}
+          <a class={p ? 'btn secondary' : 'btn'} href={doorstuurMail(r, org.name)}>
+            Stuur de regel naar je IT-partner of webbouwer
+          </a>
+          <a class="btn secondary" href={`/o/${org.id}/domeinen`}>
+            Terug naar domeinen
+          </a>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Wat we vonden</h2>
+        <dl class="facts">
+          <dt>Naamservers</dt>
+          <dd>{r.nameservers.length ? r.nameservers.join(', ') : 'Niet gevonden'}</dd>
+          <dt>Domeinnaam geregistreerd via</dt>
+          <dd>
+            {r.registrar.naam ?? 'Niet gevonden'}
+            {r.registrar.naam ? <span class="small"> · hier betaal je meestal voor de domeinnaam</span> : null}
+          </dd>
+          <dt>Mail loopt via</dt>
+          <dd>{r.mail.provider ? r.mail.provider.naam : r.mail.servers.length ? r.mail.servers.join(', ') : 'Geen mailservers gevonden'}</dd>
+        </dl>
+        <p class="small">Registratie en DNS-beheer kunnen bij verschillende partijen liggen. De DNS pas je aan bij de partij van de naamservers.</p>
+      </section>
+    </Layout>
+  );
+}
+
+// Secties naast de assets ------------------------------------------------------------------
+
+/** Koppelingen als sectie op het overzicht: wat gekoppeld is, met status en bevindingen. */
+export function koppelingenSectie(standen: KoppelingStand[], plan: string | null, base: string): DashSection {
+  const byId = new Map(standen.map((s) => [s.id, s]));
+  const inGebruik = standen.filter((s) => s.status !== 'niet_gekoppeld' && s.status !== 'ingetrokken');
+  const worst = (s: KoppelingStand): Level =>
+    s.status === 'fout' || s.bevindingen.some((b) => b.urgentie === 'crit')
+      ? 'crit'
+      : s.status === 'let_op' || s.status === 'wacht_op_it' || s.bevindingen.some((b) => b.urgentie === 'warn')
+        ? 'warn'
+        : 'ok';
+  const levels = inGebruik.map(worst);
+  const aandacht = levels.filter((l) => l !== 'ok').length;
+  const level: Level | null = !inGebruik.length ? null : levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
+  return {
+    key: 'koppelingen',
+    label: 'Koppelingen',
+    uitleg: 'Microsoft 365, cloud en router: de instellingen achter je systemen',
+    count: inGebruik.length,
+    level,
+    status: !inGebruik.length ? 'Nog niet gekoppeld' : aandacht ? `${aandacht} met aandacht` : 'In orde',
+    body: inGebruik.length ? (
+      <div class="stack-sm">
+        <ul class="list">
+          {inGebruik.map((s) => {
+            const k = KOPPELINGEN.find((x) => x.id === s.id);
+            if (!k) return null;
+            const open = s.bevindingen.filter((b) => b.urgentie !== 'ok').length;
+            return (
+              <li class="list-item">
+                <span class={`dot lvl-${worst(s)}`} aria-hidden="true"></span>
+                <div class="stack-xs">
+                  <a href={`${base}/koppelingen/${k.id}`}>{k.naam}</a>
+                  <span class="small">{s.melding ?? (open ? `${open} ${open === 1 ? 'punt' : 'punten'} om op te pakken` : 'Geen bijzonderheden')}</span>
+                </div>
+                <KoppelingStatusBadge k={k} s={byId.get(k.id)} plan={plan} />
+              </li>
+            );
+          })}
+        </ul>
+        <a class="small" href={`${base}/koppelingen`}>
+          Alle koppelingen
+        </a>
+      </div>
+    ) : (
+      <p class="small">
+        Van buiten zien we wat iedereen op internet ziet. Met een alleen-lezen koppeling kijken we ook naar MFA, beheerders en openbare opslag.{' '}
+        <a href={`${base}/koppelingen`}>Koppeling kiezen</a>
+      </p>
+    ),
+  };
 }

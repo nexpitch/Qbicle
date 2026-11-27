@@ -27,13 +27,15 @@ import {
   demoDataAllowed,
   domainScanInfo,
   getScan,
+  domainOverview,
+  findDnsHost,
   getAssetDetail,
   getDashboard,
   listDomains,
   resolveAccess,
 } from '@qbicle/platform';
 import { Layout } from './layout.tsx';
-import { AssetPage, AssetsPage, DashboardPage, DomeinenPage } from './pages/dashboard.tsx';
+import { AssetPage, AssetsPage, DashboardPage, DomeinenPage, koppelingenSectie, WaarStaatDomeinPage } from './pages/dashboard.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import {
   AbonnementPage,
@@ -185,7 +187,8 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
       resolveAccess(p.pool, ctx.s.user.id, ctx.org.id),
     ]);
     const demo = demoDataAllowed() && Boolean(access && can(access, 'org:wijzigen'));
-    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} />);
+    const extra = [koppelingenSectie(koppelingen.lijst(ctx.org.id), await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`)];
+    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} />);
   });
 
   app.get('/o/:org/assets', async (c) => {
@@ -212,6 +215,9 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     ]);
     const magBeheren = Boolean(access && can(access, 'domeinen:beheren'));
     const magScannen = Boolean(access && can(access, 'scans:starten'));
+    const overview = await domainOverview(p, ctx.s.user.id, ctx.org.id, domains);
+    const q = c.req.query();
+    const added = q.toegevoegd !== undefined ? { aantal: Number(q.toegevoegd) || 0, bestaatAl: Number(q.bestaat) || 0, ongeldig: (q.ongeldig ?? '').slice(0, 300) } : undefined;
     return c.html(
       <DomeinenPage
         user={ctx.user}
@@ -220,9 +226,18 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
         magBeheren={magBeheren}
         magScannen={magScannen}
         scans={scans}
-        sent={c.req.query('mail') === 'verstuurd'}
+        sent={q.mail === 'verstuurd'}
+        overview={overview}
+        added={added}
       />,
     );
+  });
+
+  app.get('/o/:org/domeinen/:dom/waar', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const r = await findDnsHost(p, ctx.s.user.id, ctx.org.id, c.req.param('dom'));
+    return c.html(<WaarStaatDomeinPage user={ctx.user} org={ctx.org} domainId={c.req.param('dom')} r={r} />);
   });
 
   app.get('/o/:org/scans/:scan', async (c) => {

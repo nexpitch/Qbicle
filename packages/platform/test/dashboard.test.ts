@@ -44,6 +44,7 @@ describe.skipIf(!hasDb)('klantdashboard', () => {
     expect(d.nextStep.title).toMatch(/domein toe/);
     expect(d.meldingen[0]!.text).toMatch(/nog geen domein/);
     expect(d.trend).toEqual([]);
+    expect(d.scanPlan).toEqual({ status: 'geen_domein', volgende: null });
   });
 
   it('met voorbeelddata: urgentie, acties, assets per soort, trend en wat is opgelost', async () => {
@@ -69,6 +70,9 @@ describe.skipIf(!hasDb)('klantdashboard', () => {
     expect(d.meldingen.some((m) => /verloopt binnen 14 dagen/.test(m.text))).toBe(true);
     expect(d.nextStep.href).toMatch(new RegExp(`^/o/${org}/assets/`));
     expect(d.activity.length).toBeGreaterThan(2);
+    // Volgende wekelijkse controle: laatste geslaagde scan + 7 dagen.
+    expect(d.scanPlan.status).toBe('gepland');
+    expect(d.scanPlan.volgende!.getTime()).toBe(d.lastScanAt!.getTime() + 7 * 86400000);
   });
 
   it('opnieuw vullen vervangt de voorbeelddata in plaats van te verdubbelen', async () => {
