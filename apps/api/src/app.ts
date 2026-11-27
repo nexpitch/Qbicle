@@ -49,6 +49,19 @@ import {
   logoutEverywhere,
   authorize,
   one,
+  addSysteem,
+  listSystemen,
+  removeSysteem,
+  updateSysteem,
+  JA_NEE,
+  SYSTEEM_DATALOCATIE,
+  SYSTEEM_GEGEVENS,
+  SYSTEEM_HOSTING,
+  SYSTEEM_IMPACT,
+  SYSTEEM_INLOGGEN,
+  SYSTEEM_SOORTEN,
+  SYSTEEM_TERUGVAL,
+  SYSTEEM_UPDATES,
   ORG_KINDS,
   PARTNER_ACCESS,
   PlatformError,
@@ -142,6 +155,22 @@ const schemas = {
     referentie: z.string().max(100).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
+  systeem: z.object({
+    naam: z.string().max(120),
+    leverancier: z.string().max(120).nullish(),
+    soort: z.enum(SYSTEEM_SOORTEN),
+    hosting: z.enum(SYSTEEM_HOSTING).optional(),
+    adres: z.string().max(300).nullish(),
+    eigenaar: z.string().max(120).nullish(),
+    impactUitval: z.enum(SYSTEEM_IMPACT),
+    gegevens: z.array(z.enum(SYSTEEM_GEGEVENS)).max(4).optional(),
+    inloggen: z.enum(SYSTEEM_INLOGGEN).optional(),
+    updates: z.enum(SYSTEEM_UPDATES).optional(),
+    verwerkersovereenkomst: z.enum(JA_NEE).optional(),
+    datalocatie: z.enum(SYSTEEM_DATALOCATIE).optional(),
+    terugval: z.enum(SYSTEEM_TERUGVAL).optional(),
+    notities: z.string().max(1000).nullish(),
+  }),
   testKoppeling: z.object({ uitkomst: z.enum(['gelukt', 'te_veel_rechten', 'mislukt']).default('gelukt') }),
 };
 
@@ -499,6 +528,21 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const opts: { before?: string; limit?: number } = { limit: Number.isFinite(limit) ? limit : 50 };
     if (before && /^\d{1,18}$/.test(before)) opts.before = before;
     return c.json(await listAudit(p.pool, org, opts));
+  });
+
+  // Register bedrijfskritische systemen ----------------------------------------------
+  v1.get('/organisaties/:org/systemen', requireUser, async (c) => c.json(await listSystemen(p, user(c).userId, param(c, 'org'))));
+  v1.post('/organisaties/:org/systemen', requireUser, async (c) => {
+    const input = await body(c, schemas.systeem);
+    return c.json(await addSysteem(p, user(c), param(c, 'org'), input), 201);
+  });
+  v1.put('/organisaties/:org/systemen/:sys', requireUser, async (c) => {
+    const input = await body(c, schemas.systeem);
+    return c.json(await updateSysteem(p, user(c), param(c, 'org'), param(c, 'sys'), input));
+  });
+  v1.delete('/organisaties/:org/systemen/:sys', requireUser, async (c) => {
+    await removeSysteem(p, user(c), param(c, 'org'), param(c, 'sys'));
+    return c.body(null, 204);
   });
 
   // Koppelingen (testmodus) ---------------------------------------------------------

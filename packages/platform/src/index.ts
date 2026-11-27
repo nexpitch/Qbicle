@@ -18,6 +18,7 @@ export * from './scans.ts';
 export * from './catalog.ts';
 export * from './payments.ts';
 export * from './billing.ts';
+export * from './systemen.ts';
 export * from './dashboard.ts';
 export * from './demo.ts';
 export * from './dnshost.ts';

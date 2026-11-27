@@ -25,9 +25,13 @@
 
   function formToJson(form, submitter) {
     var data = {};
+    // Groepen vinkjes (data-meerdere) worden een lijst, ook als er niets is aangevinkt.
+    form.querySelectorAll('[data-meerdere]').forEach(function (el) { data[el.name] = []; });
     new FormData(form).forEach(function (value, key) {
       var el = form.querySelector('[name="' + key + '"]');
-      if (el && el.hasAttribute('data-lijst')) {
+      if (el && el.hasAttribute('data-meerdere')) {
+        data[key].push(value);
+      } else if (el && el.hasAttribute('data-lijst')) {
         data[key] = String(value).split(/[\s,;]+/).filter(Boolean);
       } else {
         data[key] = value;

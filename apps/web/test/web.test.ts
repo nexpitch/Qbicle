@@ -118,7 +118,8 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(html).toContain('Vul met voorbeelddata');
       // Lege staat toont al alle onderdelen, ingeklapt, met wanneer de scan komt.
       expect(html).toContain('Alles in beeld');
-      expect(html.match(/<details class="sect"/g)?.length).toBe(8);
+      expect(html.match(/<details class="sect"/g)?.length).toBe(9);
+      expect(html).toContain('Nog niets vastgelegd');
       expect(html).toContain('Nog niet gescand');
       expect(html).toContain('Voeg een domein toe om te starten');
 
