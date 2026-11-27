@@ -54,6 +54,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
+import { demoDataAllowed, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -358,6 +359,16 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const input = await body(c, schemas.scan);
     const opts = input.maxLevel === undefined ? {} : { maxLevel: input.maxLevel };
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
+  });
+
+  // Dashboard -------------------------------------------------------------------------
+  v1.get('/organisaties/:org/dashboard', requireUser, async (c) => c.json(await getDashboard(p, user(c).userId, param(c, 'org'))));
+  v1.get('/organisaties/:org/assets/:asset', requireUser, async (c) =>
+    c.json(await getAssetDetail(p, user(c).userId, param(c, 'org'), param(c, 'asset'))),
+  );
+  v1.post('/organisaties/:org/demodata', requireUser, async (c) => {
+    if (!demoDataAllowed()) return c.json({ fout: 'niet_gevonden', bericht: 'Deze pagina bestaat niet.' }, 404);
+    return c.json(await seedDemoData(p, user(c), param(c, 'org')), 201);
   });
 
   // Pakketten, registratie en abonnement ---------------------------------------------

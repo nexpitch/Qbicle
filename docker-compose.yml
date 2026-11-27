@@ -102,6 +102,7 @@ services:
       # Testbetalingen tot Mollie gekoppeld is (wacht op de BV).
       QBICLE_BETAALPROVIDER: nep
       QBICLE_NEPBETALING: "aan"
+      QBICLE_DEMODATA: "aan"
       # 'aan' = mail (inloglinks) in het Terminal-venster in plaats van via Brevo.
       QBICLE_MAIL_CONSOLE: ${QBICLE_MAIL_CONSOLE:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
