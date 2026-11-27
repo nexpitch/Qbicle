@@ -8,6 +8,7 @@ import type {
   DashboardAsset,
   DnsHostResult,
   Domain,
+  DomainImpact,
   DomainOverview,
   Level,
   TrendPoint,
@@ -818,7 +819,7 @@ function DnsRecord(props: { name: string; value: string; withType?: boolean; pro
 
 // Domeinen -------------------------------------------------------------------------------------
 
-export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; overview: DomainOverview; added?: { aantal: number; bestaatAl: number; ongeldig: string } }) {
+export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; verwijderd?: string; overview: DomainOverview; added?: { aantal: number; bestaatAl: number; ongeldig: string } }) {
   const ov = props.overview;
   const over = ov.gebruikt > ov.limiet;
   const { org } = props;
@@ -834,6 +835,7 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
           Vanuit je domein vinden we je websites, mail en servers. We scannen alleen domeinen waarvan je hebt bevestigd dat ze van jullie zijn.
         </p>
       </div>
+      {props.verwijderd ? <p class="melding ok">{props.verwijderd} is verwijderd en wordt niet meer gescand.</p> : null}
       {props.sent ? <p class="melding ok">De bevestigingslink is verstuurd. Open de mail en klik op de link.</p> : null}
       {props.added ? (
         <p class={`melding ${props.added.ongeldig ? 'warn' : 'ok'}`}>
@@ -856,7 +858,14 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
         <section class="card">
           <div class="row between">
             <h2 class="break">{d.name}</h2>
-            {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
+            <div class="row">
+              {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
+              {props.magBeheren ? (
+                <a class="small" href={`/o/${org.id}/domeinen/${d.id}/beheren`}>
+                  Wijzigen of verwijderen
+                </a>
+              ) : null}
+            </div>
           </div>
           {d.verified ? (
             <>
@@ -1097,4 +1106,90 @@ export function koppelingenSectie(standen: KoppelingStand[], plan: string | null
       </p>
     ),
   };
+}
+
+// Domein wijzigen of verwijderen --------------------------------------------------------------
+
+export function DomeinBeherenPage(props: Ctx & { impact: DomainImpact; overview: DomainOverview }) {
+  const { org, impact: im, overview: ov } = props;
+  const d = im.domain;
+  const api = `/api/v1/organisaties/${org.id}/domeinen/${d.id}`;
+  const back = `/o/${org.id}/domeinen`;
+  const extraNa = Math.max(0, ov.gebruikt - 1 - ov.limiet);
+  return (
+    <Layout title={`${d.name} beheren`} user={props.user} org={org} active="domeinen">
+      <div class="intro">
+        <p class="small">
+          <a href={`/o/${org.id}/overzicht`}>Overzicht</a> / <a href={back}>Domeinen</a> / {d.name}
+        </p>
+        <h1 class="break">{d.name}</h1>
+        <p class="small">
+          Toegevoegd op {datumTijd(d.createdAt)} · {d.verified ? `bevestigd op ${datumTijd(d.verifiedAt)}` : 'nog niet bevestigd'}
+          {im.lastScanAt ? ` · laatste scan ${datumTijd(im.lastScanAt)}` : ''}
+        </p>
+      </div>
+
+      <section class="card stack-sm" aria-labelledby="naam-kop">
+        <h2 id="naam-kop">Naam aanpassen</h2>
+        <p class="small">
+          Voor een tikfout of een verkeerde extensie. Een andere naam is een ander domein: {d.verified ? 'je moet hem opnieuw bevestigen, en ' : ''}
+          {im.assets ? `de ${im.assets} assets van ${d.name} gaan naar het archief.` : 'je krijgt een nieuwe code voor de DNS-regel.'}
+        </p>
+        <form class="stack" data-api={api} data-method="PATCH" data-next={back}>
+          <FormError />
+          <label>
+            Domeinnaam
+            <input type="text" name="naam" value={d.name} required autocomplete="off" spellcheck={false} />
+          </label>
+          <div>
+            <button class="btn secondary" type="submit">
+              Naam opslaan
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card stack-sm danger-zone" aria-labelledby="weg-kop">
+        <h2 id="weg-kop">Domein verwijderen</h2>
+        <p class="melding crit" role="note">
+          <b>Let op, dit kun je niet ongedaan maken.</b> Wat er gebeurt als je {d.name} verwijdert:
+        </p>
+        <ul class="gevolgen">
+          <li>We scannen {d.name} en de subdomeinen niet meer. Je krijgt er ook geen meldingen meer over.</li>
+          <li>
+            {im.scans ? `De scangeschiedenis (${im.scans} ${im.scans === 1 ? 'scan' : 'scans'}) wordt gewist.` : 'Er is nog geen scangeschiedenis.'}
+          </li>
+          <li>
+            {im.assets
+              ? `${im.assets} ${im.assets === 1 ? 'asset gaat' : 'assets gaan'} naar het archief${im.openFindings ? `, met ${im.openFindings} open ${im.openFindings === 1 ? 'bevinding' : 'bevindingen'}` : ''}. Ze tellen niet meer mee in je overzicht en urgentie.`
+              : 'Er hangen nog geen assets aan dit domein.'}
+          </li>
+          <li>
+            {ov.extra > 0
+              ? `Je hebt nu ${ov.extra} extra ${ov.extra === 1 ? 'domein' : 'domeinen'} boven je pakket. Daarna ${extraNa}: dat scheelt ${euroKort(ov.extraDomeinCenten)} per maand vanaf de volgende verlenging.`
+              : 'Je abonnement en prijs veranderen niet.'}
+          </li>
+          {d.verified ? <li>Voeg je het later weer toe, dan moet je het opnieuw bevestigen.</li> : null}
+          <li>In het logboek staat wie het domein heeft verwijderd en wanneer.</li>
+        </ul>
+        <form class="stack" data-api={api} data-method="DELETE" data-next={`${back}?verwijderd=${encodeURIComponent(d.name)}`}>
+          <FormError />
+          <label>
+            <span>
+              Typ <b class="break">{d.name}</b> om te bevestigen
+            </span>
+            <input type="text" name="bevestiging" required autocomplete="off" spellcheck={false} placeholder={d.name} />
+          </label>
+          <div>
+            <button class="btn danger" type="submit">
+              {d.name} definitief verwijderen
+            </button>
+          </div>
+        </form>
+      </section>
+      <p>
+        <a href={back}>Terug naar domeinen</a>
+      </p>
+    </Layout>
+  );
 }

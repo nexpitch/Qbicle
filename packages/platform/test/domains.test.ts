@@ -7,7 +7,11 @@ import {
   getDomain,
   isHostVerifiedFor,
   listDomains,
+  acceptInvitation,
+  domainImpact,
+  inviteMember,
   removeDomain,
+  renameDomain,
   requestScan,
   reverifyDomains,
   startEmailVerification,
@@ -145,7 +149,7 @@ describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
     await expect(getDomain(p, kees.userId, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
     await expect(requestScan(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
     await expect(verifyDomainByDns(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
-    await expect(removeDomain(p, kees, otherOrg, d!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    await expect(removeDomain(p, kees, otherOrg, d!.id, { bevestiging: d!.name })).rejects.toMatchObject({ code: 'niet_gevonden' });
   });
 
   it('opt-out wordt gerespecteerd, ook na verificatie', async () => {
@@ -178,5 +182,48 @@ describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
     const d = await addDomain(p, anna, org, { name: 'druk.nl' });
     for (let i = 0; i < 10; i++) await verifyDomainByDns(p, anna, org, d.id);
     await expect(verifyDomainByDns(p, anna, org, d.id)).rejects.toMatchObject({ code: 'te_veel_verzoeken' });
+  });
+
+  it('naam aanpassen: bevestiging vervalt, nieuwe code, assets gearchiveerd, logboek', async () => {
+    const d = await addDomain(p, anna, org, { name: 'tikfuot.nl' });
+    p.dns.set('_qbicle-verificatie.tikfuot.nl', [d.instructions.dns.value]);
+    await verifyDomainByDns(p, anna, org, d.id);
+    await p.pool.query(`INSERT INTO asset (organization_id, domain_id, type, value, source, visibility) VALUES ($1, $2, 'website', 'tikfuot.nl', 'test', 'primair')`, [org, d.id]);
+    expect((await domainImpact(p, anna.userId, org, d.id)).assets).toBe(1);
+
+    const r = await renameDomain(p, anna, org, d.id, { name: 'www.tikfout.nl' });
+    expect(r.name).toBe('tikfout.nl');
+    expect(r.verified).toBe(false);
+    expect(r.instructions.dns.value).not.toBe(d.instructions.dns.value);
+    expect((await domainImpact(p, anna.userId, org, d.id)).assets).toBe(0);
+    const log = await p.pool.query(`SELECT detail FROM audit_log WHERE action = 'domein.gewijzigd' AND subject = $1`, [d.id]);
+    expect(log.rows[0].detail).toMatchObject({ van: 'tikfuot.nl', naar: 'tikfout.nl', was_bevestigd: true, assets_gearchiveerd: 1 });
+    await expect(renameDomain(p, anna, org, d.id, { name: 'dubbel.nl' })).rejects.toMatchObject({ code: 'conflict' });
+    await expect(renameDomain(p, anna, org, d.id, { name: 'server.local' })).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+  });
+
+  it('verwijderen: alleen met de naam ingetypt, alleen eigenaar of beheerder, scans weg, assets gearchiveerd', async () => {
+    const d = await addDomain(p, anna, org, { name: 'weg-ermee.nl' });
+    await p.pool.query(`INSERT INTO asset (organization_id, domain_id, type, value, source, visibility) VALUES ($1, $2, 'website', 'weg-ermee.nl', 'test', 'primair')`, [org, d.id]);
+    await p.pool.query(`INSERT INTO scan (domain_id, trigger) VALUES ($1, 'handmatig')`, [d.id]);
+    const impact = await domainImpact(p, anna.userId, org, d.id);
+    expect(impact).toMatchObject({ assets: 1, scans: 1 });
+
+    // Een lezer mag kijken, maar niet verwijderen.
+    const lex = await loginAs(p, 'lex@bakkerij.nl');
+    await inviteMember(p, anna, org, { email: 'lex@bakkerij.nl', role: 'lezer' });
+    await acceptInvitation(p, lex, extractToken(p.mailer.last('lex@bakkerij.nl')!.text, 'qbu_')!);
+    await expect(removeDomain(p, lex, org, d.id, { bevestiging: 'weg-ermee.nl' })).rejects.toMatchObject({ code: 'geen_toegang' });
+
+    await expect(removeDomain(p, anna, org, d.id, { bevestiging: '' })).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(removeDomain(p, anna, org, d.id, { bevestiging: 'weg-ermee.com' })).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    const r = await removeDomain(p, anna, org, d.id, { bevestiging: ' Weg-Ermee.nl ' });
+    expect(r.gearchiveerd).toBe(1);
+    await expect(getDomain(p, anna.userId, org, d.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
+    const asset = await p.pool.query(`SELECT status, domain_id FROM asset WHERE value = 'weg-ermee.nl'`);
+    expect(asset.rows[0]).toEqual({ status: 'verdwenen', domain_id: null });
+    expect((await p.pool.query(`SELECT count(*)::int AS n FROM scan WHERE domain_id = $1`, [d.id])).rows[0].n).toBe(0);
+    const log = await p.pool.query(`SELECT detail FROM audit_log WHERE action = 'domein.verwijderd' AND subject = $1`, [d.id]);
+    expect(log.rows[0].detail).toMatchObject({ domein: 'weg-ermee.nl', assets_gearchiveerd: 1, scans_gewist: 1 });
   });
 });

@@ -337,6 +337,7 @@ const ACTIVITY_TEXT: Record<string, (d: Record<string, unknown>) => string> = {
   'domein.toegevoegd': (d) => `Domein ${d.domein ?? ''} toegevoegd`,
   'domein.geverifieerd': (d) => `Domein ${d.domein ?? ''} bevestigd als van jullie`,
   'domein.verwijderd': (d) => `Domein ${d.domein ?? ''} verwijderd`,
+  'domein.gewijzigd': (d) => `Domein ${d.van ?? ''} gewijzigd in ${d.naar ?? ''}`,
   'domein.verificatie_vervallen': (d) => `Bevestiging van ${d.domein ?? 'een domein'} is vervallen`,
   'scan.aangevraagd': (d) => `Scan aangevraagd${d.domein ? ` voor ${d.domein}` : ''}`,
   'uitnodiging.geaccepteerd': () => 'Een nieuwe collega doet mee',
