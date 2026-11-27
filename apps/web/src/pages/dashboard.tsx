@@ -11,6 +11,7 @@ import type {
   DomainOverview,
   DomainScanInfo,
   Level,
+  SysteemRegister,
   TrendPoint,
 } from '@qbicle/platform';
 import { ASSET_GROUPS, FOR_WHO_LABELS, TXT_LABEL } from '@qbicle/platform';
@@ -1114,6 +1115,50 @@ export function koppelingenSectie(standen: KoppelingStand[], plan: string | null
       <p class="small">
         Van buiten zien we wat iedereen op internet ziet. Met een alleen-lezen koppeling kijken we ook naar MFA, beheerders en openbare opslag.{' '}
         <a href={`${base}/koppelingen`}>Koppeling kiezen</a>
+      </p>
+    ),
+  };
+}
+
+/** Sectie "Systemen" in Alles in beeld: register van bedrijfskritische systemen. */
+export function systemenSectie(reg: SysteemRegister, base: string): DashSection {
+  const worst = (s: SysteemRegister['systemen'][number]): Level =>
+    s.beoordeling.acties.some((a) => a.urgentie === 'crit') ? 'crit' : s.beoordeling.acties.length ? 'warn' : 'ok';
+  const levels = reg.systemen.map(worst);
+  const aandacht = levels.filter((l) => l !== 'ok').length;
+  const level: Level | null = !reg.systemen.length ? null : levels.includes('crit') ? 'crit' : levels.includes('warn') ? 'warn' : 'ok';
+  return {
+    key: 'systemen',
+    label: 'Systemen',
+    uitleg: 'Software waar je bedrijf op draait: ERP, CRM, boekhouding, webshop',
+    count: reg.systemen.length,
+    level,
+    status: !reg.systemen.length ? 'Nog niets vastgelegd' : aandacht ? `${aandacht} met aandacht` : 'In orde',
+    body: reg.systemen.length ? (
+      <div class="stack-sm">
+        <ul class="list">
+          {reg.systemen.map((s) => {
+            const eerste = s.beoordeling.acties[0];
+            return (
+              <li class="list-item">
+                <span class={`dot lvl-${worst(s)}`} aria-hidden="true"></span>
+                <div class="stack-xs">
+                  <a href={`${base}/systemen/${s.id}`}>{s.naam}</a>
+                  <span class="small">{eerste ? eerste.tekst : 'Geen bijzonderheden'}</span>
+                </div>
+                <span class="small">Impact {s.beoordeling.impact}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <a class="small" href={`${base}/systemen`}>
+          Alle systemen
+        </a>
+      </div>
+    ) : (
+      <p class="small">
+        Leg vast welke software onmisbaar is, wie de eigenaar is en wat er gebeurt bij uitval. Dan zie je hier wat er nog mist.{' '}
+        <a href={`${base}/systemen/nieuw`}>Systeem toevoegen</a>
       </p>
     ),
   };

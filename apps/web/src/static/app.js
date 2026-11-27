@@ -4,6 +4,15 @@
 (function () {
   'use strict';
 
+  function store(op, key, value) {
+    try {
+      if (op === 'set') sessionStorage.setItem('qbicle_' + key, value);
+      else if (op === 'remove') sessionStorage.removeItem('qbicle_' + key);
+      else return sessionStorage.getItem('qbicle_' + key);
+    } catch (e) { return null; }
+    return null;
+  }
+
   function pick(obj, path) {
     return path.split('.').reduce(function (o, k) { return o == null ? undefined : o[k]; }, obj);
   }
@@ -16,9 +25,13 @@
 
   function formToJson(form, submitter) {
     var data = {};
+    // Groepen vinkjes (data-meerdere) worden een lijst, ook als er niets is aangevinkt.
+    form.querySelectorAll('[data-meerdere]').forEach(function (el) { data[el.name] = []; });
     new FormData(form).forEach(function (value, key) {
       var el = form.querySelector('[name="' + key + '"]');
-      if (el && el.hasAttribute('data-lijst')) {
+      if (el && el.hasAttribute('data-meerdere')) {
+        data[key].push(value);
+      } else if (el && el.hasAttribute('data-lijst')) {
         data[key] = String(value).split(/[\s,;]+/).filter(Boolean);
       } else {
         data[key] = value;
@@ -71,7 +84,10 @@
         if (out) { out.value = String(pick(r.json, form.dataset.toonVeld) ?? ''); out.hidden = false; out.focus(); out.select(); }
         return;
       }
-      if (form.dataset.nextVeld) { location.href = pick(r.json, form.dataset.nextVeld); return; }
+      if (form.dataset.nextVeld) {
+        var dest = pick(r.json, form.dataset.nextVeld);
+        if (dest) { location.href = dest; return; }
+      }
       if (form.dataset.next) { location.href = nextUrl(form.dataset.next, r.json); return; }
       location.reload();
     } catch (x) {
@@ -131,10 +147,22 @@
       status.textContent = 'Deze link is niet compleet. Kopieer de hele link uit de e-mail, of vraag een nieuwe aan.';
     } else {
       send(tokenBox.dataset.tokenPost, 'POST', { token: token }).then(function (r) {
+        // Uitnodiging openen zonder in te loggen: token even bewaren, inloggen, daarna verder.
+        if (r.status === 401 && tokenBox.dataset.bewaarToken) {
+          store('set', tokenBox.dataset.bewaarToken, token);
+          location.href = '/inloggen';
+          return;
+        }
         if (!r.ok) { status.textContent = r.json.bericht || 'Deze link werkt niet meer. Vraag een nieuwe aan.'; return; }
         var reg = r.json.registratie;
-        if (reg && reg.organizationId) {
+        var pending = store('get', 'uitnodiging');
+        if (pending && !tokenBox.dataset.bewaarToken) {
+          store('remove', 'uitnodiging');
+          location.href = '/uitnodiging#token=' + encodeURIComponent(pending);
+        } else if (reg && reg.organizationId) {
           location.href = '/o/' + reg.organizationId + (reg.product === 'audit' ? '/audit/bestellen' : '/welkom');
+        } else if (r.json.organizationId) {
+          location.href = '/o/' + r.json.organizationId + '/overzicht';
         } else {
           location.href = tokenBox.dataset.next || '/overzicht';
         }

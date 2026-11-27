@@ -26,6 +26,19 @@ export interface PaymentProvider {
   createPayment(input: CreatePaymentInput): Promise<{ providerPaymentId: string; checkoutUrl: string }>;
   /** Vraagt de actuele status op bij de provider. Wij vertrouwen nooit op wat de browser zegt. */
   getStatus(providerPaymentId: string): Promise<ProviderStatus>;
+  /**
+   * Het incassomandaat dat bij een geslaagde (eerste) betaling is ontstaan, als de
+   * provider dat ondersteunt. Bij Mollie: de mandate van de customer.
+   */
+  mandateFor?(providerPaymentId: string): Promise<ProviderMandate | null>;
+}
+
+export interface ProviderMandate {
+  providerMandateId: string;
+  method: 'sepa' | 'creditcard';
+  accountHolder: string | null;
+  /** Laatste vier tekens van het rekeningnummer. */
+  accountLast4: string | null;
 }
 
 /**
@@ -47,6 +60,11 @@ export class NepBetaalprovider implements PaymentProvider {
 
   async getStatus(providerPaymentId: string): Promise<ProviderStatus> {
     return this.status.get(providerPaymentId) ?? 'verlopen';
+  }
+
+  async mandateFor(providerPaymentId: string): Promise<ProviderMandate | null> {
+    if (this.status.get(providerPaymentId) !== 'betaald') return null;
+    return { providerMandateId: 'nep_mdt_' + providerPaymentId.slice(4, 16), method: 'sepa', accountHolder: 'Testrekening', accountLast4: '0000' };
   }
 
   /** Alleen voor de testbetaalpagina en tests: zet de uitkomst. */

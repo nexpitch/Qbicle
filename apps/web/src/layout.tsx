@@ -73,8 +73,9 @@ export function Layout(props: {
                 {org ? link(`/o/${org.id}/overzicht`, 'Overzicht', 'overzicht') : null}
                 {org ? link(`/o/${org.id}/assets`, 'Assets', 'assets') : null}
                 {org ? link(`/o/${org.id}/domeinen`, 'Domeinen', 'domeinen') : null}
+                {org ? link(`/o/${org.id}/systemen`, 'Systemen', 'systemen') : null}
                 {org ? link(`/o/${org.id}/koppelingen`, 'Koppelingen', 'koppelingen') : null}
-                {org ? link(`/o/${org.id}/abonnement`, 'Abonnement', 'abonnement') : null}
+                {org ? link(`/o/${org.id}/account`, 'Account', 'account') : null}
                 <form data-api="/api/v1/auth/uitloggen" data-next="/inloggen">
                   <button class="linkbtn" type="submit">Uitloggen</button>
                 </form>

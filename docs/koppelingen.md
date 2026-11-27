@@ -26,3 +26,14 @@ Ontwerp: Claude Doc "Qbicle: systemen en opslag beoordelen (koppelingen)", 27-11
 2. Register bedrijfskritische systemen (ERP, webshop, boekhouding) met impact op operatie en reputatie.
 3. Microsoft 365 echt koppelen (Entra-app op de BV, Publisher Verification).
 4. AWS-leesrol via CloudFormation (SecurityAudit + ExternalId).
+
+## Register bedrijfskritische systemen
+
+- Tabel `systeem` (migratie 0015; 0010 t/m 0014 zijn op andere branches in gebruik).
+- `packages/platform/src/systemen.ts`: toevoegen, wijzigen, verwijderen (audit-log), en `beoordeelSysteem`:
+  impact hoog / middel / laag en acties in gewone taal (MFA, terugvalplan, updates, verwerkersovereenkomst,
+  gegevens buiten de EU, eigenaar).
+- MKB tot 5 systemen, Business onbeperkt (afgedwongen met een lock per organisatie).
+- Pagina's `/o/:org/systemen`, `/o/:org/systemen/nieuw`, `/o/:org/systemen/:id`. API onder
+  `/api/v1/organisaties/:org/systemen`. Wijzigen vraagt `domeinen:beheren`.
+- Nog niet: impact meewegen in de urgentiescore, voorstellen uit DNS en apps in Microsoft 365.
