@@ -8,9 +8,9 @@ import { authorize } from './organizations.ts';
 
 /**
  * Meerdere domeinen per klant: in één keer een lijst toevoegen, een teller
- * tegen de pakketlimiet en per domein wat we zien. De limiet is voorlopig
- * zacht (melding, geen blokkade) tot de prijskeuze voor extra domeinen
- * gemaakt is.
+ * tegen de pakketlimiet en per domein wat we zien. Boven de limiet blokkeren
+ * we niet: elk extra domein is een add-on (prijs in config/abonnementen.json,
+ * keuze Erik 27-11). Het factureren van de add-on hoort bij billing.
  */
 
 type UserActor = Actor & { userId: string };
@@ -57,6 +57,9 @@ export interface DomainSummary {
 export interface DomainOverview {
   limiet: number;
   plan: string | null;
+  /** Extra domeinen boven de limiet en hun prijs per maand (add-on). */
+  extra: number;
+  extraDomeinCenten: number;
   gebruikt: number;
   summaries: Map<string, DomainSummary>;
   /** Domeinen die we bij de assets zien maar nog niet in de lijst staan. */
@@ -101,5 +104,5 @@ export async function domainOverview(p: Platform, userId: string, organizationId
     const r = registrableDomain(value);
     if (r && !known.has(r) && ![...known].some((k) => r.endsWith(`.${k}`))) suggesties.add(r);
   }
-  return { limiet: limits.domeinen, plan: limits.plan, gebruikt: domains.length, summaries, suggesties: [...suggesties].sort().slice(0, 10) };
+  return { limiet: limits.domeinen, plan: limits.plan, extra: Math.max(0, domains.length - limits.domeinen), extraDomeinCenten: p.catalog.extraDomeinCenten, gebruikt: domains.length, summaries, suggesties: [...suggesties].sort().slice(0, 10) };
 }

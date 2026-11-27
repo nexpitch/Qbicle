@@ -35,7 +35,7 @@ describe.skipIf(!hasDb)('meerdere domeinen', () => {
 
     const domains = await listDomains(p, eva.userId, org);
     const ov = await domainOverview(p, eva.userId, org, domains);
-    expect(ov).toMatchObject({ gebruikt: 3, limiet: 1, plan: null });
+    expect(ov).toMatchObject({ gebruikt: 3, limiet: 1, plan: null, extra: 2, extraDomeinCenten: 500 });
   });
 
   it('per domein assets en bevindingen, en suggesties uit wat we zien', async () => {

@@ -13,7 +13,7 @@ import type {
   TrendPoint,
 } from '@qbicle/platform';
 import { ASSET_GROUPS, FOR_WHO_LABELS } from '@qbicle/platform';
-import { datum, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { datum, euroKort, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -704,12 +704,12 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
       ) : null}
       <div class="row between">
         <p class="small">
-          {ov.gebruikt} van {ov.limiet} domeinen in je pakket{ov.plan ? '' : ' (zonder abonnement)'}
+          {ov.gebruikt} van {ov.limiet} domeinen in je pakket{ov.plan ? '' : ' (zonder abonnement)'} · extra domein {euroKort(ov.extraDomeinCenten)} per maand
         </p>
       </div>
       {over ? (
         <p class="melding warn">
-          Je hebt meer domeinen dan in je pakket zitten. Ze worden voorlopig gewoon bewaakt; extra domeinen kun je straks als uitbreiding afnemen.
+          Je hebt {ov.extra} {ov.extra === 1 ? 'domein' : 'domeinen'} meer dan in je pakket zit. Elk extra domein kost {euroKort(ov.extraDomeinCenten)} per maand (excl. btw) en wordt gewoon bewaakt.
         </p>
       ) : null}
       {props.domains.map((d) => (
