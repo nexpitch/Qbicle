@@ -1,4 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { beoordeelCloud } from './google/cloud.ts';
+import { testRuwCloud, testRuwWorkspace, TEST_NU } from './google/testmodus.ts';
+import { beoordeelWorkspace } from './google/workspace.ts';
 import { inPakket, vindKoppeling, type Koppeling, type KoppelingId, type VoorbeeldBevinding } from './catalogus.ts';
 
 /**
@@ -55,6 +58,9 @@ interface Gedeeld {
   verlooptOp: Date;
 }
 
+/** Nagebootst "te veel" recht per koppeling, in de taal van die dienst. */
+const TE_VEEL_TEST: Partial<Record<KoppelingId, string>> = { 'google-workspace': 'drive.readonly', 'google-cloud': 'roles/storage.objectViewer' };
+
 const DEEL_DAGEN = 7;
 const DEEL_PREFIX = 'qbk_';
 const MAX_LOG = 50;
@@ -76,6 +82,13 @@ function leeg(id: KoppelingId): KoppelingStand {
     logboek: [],
     interesse: false,
   };
+}
+
+/** Google: de echte beoordeling op voorbeelddata. Andere koppelingen: de voorbeelden uit de catalogus. */
+function testBevindingen(k: Koppeling): VoorbeeldBevinding[] {
+  const u = k.id === 'google-workspace' ? beoordeelWorkspace(testRuwWorkspace(), TEST_NU) : k.id === 'google-cloud' ? beoordeelCloud(testRuwCloud()) : null;
+  if (!u) return structuredClone(k.voorbeeldBevindingen);
+  return u.bevindingen.map(({ urgentie, titel, actie }) => ({ urgentie, titel, actie }));
 }
 
 export class KoppelingenTeststand {
@@ -174,12 +187,12 @@ export class KoppelingenTeststand {
     s.melding = null;
     if (uitkomst === 'te_veel_rechten') {
       s.status = 'let_op';
-      s.verleendeRechten.push(k.categorie === 'cloud' ? 'AdministratorAccess' : 'Directory.ReadWrite.All');
+      s.verleendeRechten.push(TE_VEEL_TEST[k.id] ?? (k.categorie === 'cloud' ? 'AdministratorAccess' : 'Directory.ReadWrite.All'));
       s.melding = 'Er zijn meer rechten gegeven dan Qbicle nodig heeft. We gebruiken ze niet, maar haal ze voor de zekerheid weg.';
     }
     s.gekoppeldOp = nu;
     s.laatsteRonde = nu;
-    s.bevindingen = structuredClone(k.voorbeeldBevindingen);
+    s.bevindingen = testBevindingen(k);
     this.log(s, 'Toestemming gevonden. Rechten gecontroleerd.');
     this.log(s, `Eerste ronde: instellingen gelezen, ${s.bevindingen.length} bevindingen.`);
     return structuredClone(s);

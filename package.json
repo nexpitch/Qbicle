@@ -26,6 +26,7 @@
     "web": "tsx apps/web/src/server.ts",
     "cockpit": "tsx apps/cockpit/src/server.ts",
     "cockpit:beheer": "tsx apps/cockpit/src/cli.ts",
+    "google": "tsx packages/koppelingen/src/google/cli.ts",
     "kennis:bijwerken": "tsx packages/scanner/src/kennis/bijwerken.ts"
   },
   "devDependencies": {

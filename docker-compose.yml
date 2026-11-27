@@ -5,6 +5,7 @@
 #   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
 #                                                            testset scannen (map ./testset)
 #   docker compose run --rm bewaker                          één ronde van de bewakingsagent (cockpit)
+#   docker compose run --rm google workspace --test         Google-koppeling in testmodus (bash scripts/google-test.sh)
 #   docker compose run --rm worker --eenmalig                scans plannen en de wachtrij één keer afwerken
 #   docker compose --profile api up api                      API op http://localhost:8080/api/v1
 #   docker compose --profile web up web                      klantomgeving op http://localhost:3000
@@ -46,6 +47,17 @@ services:
       QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     volumes:
       - ./testset:/data
+
+  # Google Workspace en Google Cloud alleen-lezen uitlezen (koppeling). Makkelijker: bash scripts/google-test.sh
+  # Sleutelbestand van je eigen test-serviceaccount in ./geheim (staat in .gitignore, nooit committen of delen).
+  google:
+    build: .
+    profiles: ["tools"]
+    environment:
+      QBICLE_GOOGLE_SLEUTEL: /geheim/google-sleutel.json
+    volumes:
+      - ./geheim:/geheim:ro
+    entrypoint: ["npx", "--no-install", "tsx", "packages/koppelingen/src/google/cli.ts"]
 
   # Bewakingsagent: zet vastgelopen scans opnieuw in de wachtrij en doet voorstellen
   # in de cockpit. In productie elke 5 minuten; lokaal met de hand.
