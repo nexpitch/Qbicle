@@ -221,17 +221,17 @@ export async function domainScanInfo(
             l.id AS last_id, l.finished_at AS last_at, ss.urgency AS last_urgency,
             c.id AS cur_id, c.status AS cur_status, c.created_at AS cur_at,
             x.status AS latest_status, x.id AS latest_id, x.created_at AS latest_at,
-            (SELECT count(*)::int FROM scan f WHERE f.domain_id = d.id AND f.status = 'mislukt'
+            (SELECT count(*)::int FROM scan f WHERE f.domain_id = d.id AND f.status = 'mislukt' AND f.check_keys IS NULL
                AND f.created_at > coalesce(l.finished_at, '-infinity')) AS failures,
             EXISTS (SELECT 1 FROM subscription sub WHERE sub.organization_id = d.organization_id
                      AND sub.status IN ${ACTIVE_SUBSCRIPTION}) AS subscribed
        FROM domain d
-       LEFT JOIN LATERAL (SELECT id, finished_at FROM scan WHERE domain_id = d.id AND status = 'klaar'
+       LEFT JOIN LATERAL (SELECT id, finished_at FROM scan WHERE domain_id = d.id AND status = 'klaar' AND check_keys IS NULL
                           ORDER BY finished_at DESC LIMIT 1) l ON true
        LEFT JOIN score_snapshot ss ON ss.scan_id = l.id
        LEFT JOIN LATERAL (SELECT id, status, created_at FROM scan WHERE domain_id = d.id AND status IN ('wachtrij', 'bezig')
                           ORDER BY created_at DESC LIMIT 1) c ON true
-       LEFT JOIN LATERAL (SELECT id, status, created_at FROM scan WHERE domain_id = d.id
+       LEFT JOIN LATERAL (SELECT id, status, created_at FROM scan WHERE domain_id = d.id AND check_keys IS NULL
                           ORDER BY created_at DESC LIMIT 1) x ON true
       WHERE d.organization_id = $1`,
     [organizationId],

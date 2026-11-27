@@ -2,6 +2,8 @@
 import type {
   AssetDetail,
   AssetFindingDetail,
+  AssetOplossingen,
+  FindingOplossing,
   BillingOverview,
   Dashboard,
   DashboardAction,
@@ -15,11 +17,12 @@ import type {
   SysteemRegister,
   TrendPoint,
 } from '@qbicle/platform';
-import { ASSET_GROUPS, dekkingVoor, FOR_WHO_LABELS, TXT_LABEL, type Dekking, type DekkingOverzicht } from '@qbicle/platform';
+import { ASSET_GROUPS, dekkingVoor, FOR_WHO_LABELS, TXT_LABEL, ZELF_TE_DOEN, type Dekking, type DekkingOverzicht } from '@qbicle/platform';
 import type { Child } from 'hono/jsx';
 import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
+import { OplosBlok } from './oplossen.tsx';
 import { WebProfielSectie } from './webprofiel.tsx';
 
 /**
@@ -256,7 +259,9 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
         <h3>{a.title}</h3>
         <p class="small">{a.why}</p>
         <div class="row tags">
-          <span class="badge">{FOR_WHO_LABELS[a.forWho]}</span>
+          <span class={`badge${ZELF_TE_DOEN.has(a.key) ? ' zelf' : ''}`}>
+            {ZELF_TE_DOEN.has(a.key) ? 'Kun je zelf, met uitleg' : FOR_WHO_LABELS[a.forWho]}
+          </span>
           {a.assets.slice(0, 3).map((x) => (
             <a class="tag" href={`${props.base}/assets/${x.id}`}>
               {x.label}
@@ -264,6 +269,13 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
           ))}
           {a.assets.length > 3 ? <span class="small">en {a.assets.length - 3} meer</span> : null}
         </div>
+        {a.assets[0] ? (
+          <p>
+            <a class="btn secondary klein" href={`${props.base}/assets/${a.assets[0].id}?uitleg=${encodeURIComponent(a.key)}#uitleg`}>
+              Zo los je het op →
+            </a>
+          </p>
+        ) : null}
       </div>
       <Status kind={a.level}>{LEVEL_LABEL[a.level]}</Status>
     </li>
@@ -723,10 +735,18 @@ export function AssetsPage(props: Ctx & { d: Dashboard; soort: string | undefine
 
 // Detail per asset --------------------------------------------------------------------------
 
-function FindingCard(props: { f: AssetFindingDetail }) {
-  const { f } = props;
+function FindingCard(props: {
+  f: AssetFindingDetail;
+  o?: FindingOplossing;
+  orgId: string;
+  assetId: string;
+  open?: boolean;
+  anker?: boolean;
+  domainId?: string | null;
+}) {
+  const { f, o } = props;
   return (
-    <article class={`finding lvl-${f.level}`}>
+    <article class={`finding lvl-${f.level}`} id={props.anker ? 'uitleg' : undefined}>
       <div class="row between">
         <div class="row">
           <Status kind={f.level}>{LEVEL_LABEL[f.level]}</Status>
@@ -739,7 +759,9 @@ function FindingCard(props: { f: AssetFindingDetail }) {
       <h3>{f.title}</h3>
       <p>{f.detail}</p>
       {f.certainty === 'mogelijk' || f.certainty === 'onbekend' ? <p class="small">{CERTAINTY_UITLEG[f.certainty]}</p> : null}
-      {f.action ? (
+      {f.action && o?.gids ? (
+        <OplosBlok f={{ id: f.id, action: f.action }} o={o} orgId={props.orgId} assetId={props.assetId} open={props.open} domainId={props.domainId} />
+      ) : f.action ? (
         <div class="todo">
           <p class="kpi-label">Wat te doen · {FOR_WHO_LABELS[f.action.forWho]}</p>
           <p>
@@ -773,8 +795,11 @@ function FindingCard(props: { f: AssetFindingDetail }) {
   );
 }
 
-export function AssetPage(props: Ctx & { a: AssetDetail }) {
+export function AssetPage(props: Ctx & { a: AssetDetail; opl?: AssetOplossingen; uitleg?: string }) {
   const { a, org } = props;
+  // Vanuit "Direct aandacht" (?uitleg=actie): die bevinding staat open, anders de eerste.
+  const gekozen = props.uitleg ? a.open.findIndex((f) => f.action?.key === props.uitleg) : -1;
+  const openIdx = gekozen >= 0 ? gekozen : 0;
   const base = `/o/${org.id}`;
   const group = ASSET_GROUPS.find((g) => g.key === a.asset.group);
   return (
@@ -792,8 +817,23 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
         <div class="stack-lg">
           <section class="card" aria-labelledby="bev-kop">
             <h2 id="bev-kop">Bevindingen</h2>
+            {props.opl?.netOpgelost.map((n) => (
+              <p class="melding ok" role="status">
+                ✓ Opgelost: {n.title}. Goed gedaan!
+              </p>
+            ))}
             {a.open.length ? (
-              a.open.map((f) => <FindingCard f={f} />)
+              a.open.map((f, i) => (
+                <FindingCard
+                  f={f}
+                  o={props.opl?.perBevinding.get(f.id)}
+                  orgId={org.id}
+                  assetId={a.asset.id}
+                  open={i === openIdx}
+                  anker={i === openIdx}
+                  domainId={props.opl?.domainId}
+                />
+              ))
             ) : (
               <p class="melding ok">Op dit asset staat niets open.</p>
             )}

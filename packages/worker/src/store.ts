@@ -14,6 +14,8 @@ import type { Finding } from '@qbicle/score';
  *   (unknown, error), dan weten we het niet en blijft de bevinding open.
  * - Komt een opgeloste bevinding later terug, dan is dat een nieuwe rij, zodat
  *   de trend over de afgelopen weken klopt.
+ * - Een hercontrole (job.checkKeys) draait alleen een paar checks: geen score,
+ *   geen websites als verdwenen markeren, geen mail na de eerste scan.
  * - Alles in één transactie, samen met het afronden van de scan. Is de scan
  *   intussen door iemand anders opgepakt, dan slaan we niets op.
  */
@@ -26,6 +28,8 @@ export interface ScanJob {
   maxLevel: 0 | 1;
   attempts: number;
   claimedBy: string;
+  /** Hercontrole: alleen deze checks (null = volledige scan). */
+  checkKeys?: string[] | null;
 }
 
 export interface StoreResult {
@@ -84,7 +88,8 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
 
   // Websites die de scanner eerder vond en nu met zekerheid niet meer: verdwenen.
   // Alleen als het opzoeken van alle websites lukte; anders weten we het niet.
-  const discoveryComplete = report.maxLevel >= 1 && report.websites.every((w) => w.status !== 'onbekend');
+  const partial = Boolean(job.checkKeys?.length);
+  const discoveryComplete = !partial && report.maxLevel >= 1 && report.websites.every((w) => w.status !== 'onbekend');
   if (discoveryComplete) {
     await client.query(
       `UPDATE asset SET status = 'verdwenen'
@@ -182,7 +187,8 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
     [job.domainId, job.id],
   );
   const s = report.score;
-  await client.query(
+  // Een hercontrole draait maar een paar checks; die score zegt niets over het geheel.
+  if (!partial) await client.query(
     `INSERT INTO score_snapshot (scan_id, urgency, band, coverage_pct, model_version, detail)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (scan_id) DO UPDATE SET urgency = EXCLUDED.urgency, band = EXCLUDED.band,
@@ -196,7 +202,7 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
   );
 
   return { assets: assetIds.size, checks: report.checks.length, nieuw, bijgewerkt, opgelost: toResolve.length, urgency: s.urgency,
-    eerste: (eerdere?.n ?? 0) === 0, acties: s.actionCount };
+    eerste: !partial && (eerdere?.n ?? 0) === 0, acties: s.actionCount };
 }
 
 async function storeVulns(client: pg.PoolClient, findingId: string, f: Finding): Promise<void> {

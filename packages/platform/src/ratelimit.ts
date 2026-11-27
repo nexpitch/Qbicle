@@ -18,6 +18,7 @@ export const LIMITS = {
   dnsCheckPerDomein: { bucket: 'dnscheck-domein', max: 10, windowSeconds: 3600 },
   verificatiemailPerDomein: { bucket: 'verificatiemail-domein', max: 5, windowSeconds: 86400 },
   scanPerDomein: { bucket: 'scan-domein', max: 6, windowSeconds: 86400 },
+  hercontrolePerDomein: { bucket: 'hercontrole-domein', max: 30, windowSeconds: 86400 },
 } as const satisfies Record<string, Limit>;
 
 /**

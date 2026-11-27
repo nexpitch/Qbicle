@@ -171,6 +171,25 @@
       });
     }
   }
+  // Hercontrole van één bevinding: elke 2 seconden de stand ophalen, bij klaar de pagina verversen.
+  document.querySelectorAll('[data-hercontrole]').forEach(function (box) {
+    var tekst = box.querySelector('[data-hercontrole-tekst]');
+    var start = Date.now();
+    var poll = async function () {
+      var r;
+      try { r = await send(box.dataset.hercontrole, 'GET'); } catch (e) { r = null; }
+      if (r && r.status === 401) { location.href = '/inloggen'; return; }
+      if (r && r.ok && (r.json.status === 'klaar' || r.json.status === 'mislukt')) { location.reload(); return; }
+      if (r && r.ok && tekst && r.json.tekst) tekst.textContent = r.json.tekst;
+      if (Date.now() - start > 120000) {
+        if (tekst) tekst.textContent = 'Dit duurt langer dan normaal. Ververs de pagina over een minuut.';
+        return;
+      }
+      setTimeout(poll, 2000);
+    };
+    setTimeout(poll, 1500);
+  });
+
   // Live voortgang van een scan: elke 2 seconden de stand ophalen en de stappen bijwerken.
   // Na afloop door naar het overzicht met de resultaten.
   var scanBox = document.querySelector('[data-scan]');

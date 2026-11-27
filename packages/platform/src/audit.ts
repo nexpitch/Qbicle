@@ -36,6 +36,7 @@ export type AuditAction =
   | 'domein.verwijderd'
   | 'domein.gewijzigd'
   | 'scan.aangevraagd'
+  | 'scan.hercontrole'
   | 'registratie.aangevraagd'
   | 'registratie.afgerond'
   | 'abonnement.gestart'

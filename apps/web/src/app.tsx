@@ -39,6 +39,7 @@ import {
   domainOverview,
   findDnsHost,
   getAssetDetail,
+  getAssetOplossingen,
   getDashboard,
   listDomains,
   resolveAccess,
@@ -224,8 +225,12 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/o/:org/assets/:asset', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
-    const a = await getAssetDetail(p, ctx.s.user.id, ctx.org.id, c.req.param('asset'));
-    return c.html(<AssetPage user={ctx.user} org={ctx.org} a={a} />);
+    const [a, opl] = await Promise.all([
+      getAssetDetail(p, ctx.s.user.id, ctx.org.id, c.req.param('asset')),
+      getAssetOplossingen(p, ctx.s.user.id, ctx.org.id, c.req.param('asset')),
+    ]);
+    if (!can(ctx.access, 'scans:starten')) for (const o of opl.perBevinding.values()) o.kanHercontrole = false;
+    return c.html(<AssetPage user={ctx.user} org={ctx.org} a={a} opl={opl} uitleg={c.req.query('uitleg')} />);
   });
 
   app.get('/o/:org/domeinen', async (c) => {
