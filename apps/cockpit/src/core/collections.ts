@@ -567,6 +567,6 @@ export async function settleTestItem(p: Platform, itemId: string, outcome: 'beta
     [itemId],
   );
   if (!r?.provider_payment_id) throw new PlatformError('niet_gevonden', 'Deze regel is (nog) niet ingediend.');
-  provider.settle(r.provider_payment_id, outcome);
+  await provider.settle(r.provider_payment_id, outcome);
   return syncItem(p, itemId, actor, outcome === 'mislukt' ? (reason ?? 'onbekend') : undefined);
 }

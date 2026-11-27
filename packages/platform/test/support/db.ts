@@ -79,13 +79,16 @@ export async function createTestPlatform(): Promise<TestPlatform> {
   const name = `qbicle_test_${process.pid}_${Math.random().toString(36).slice(2, 10)}`;
   await admin((c) => c.query(`CREATE DATABASE ${name} TEMPLATE ${TEMPLATE}`));
   const pool = new pg.Pool({ connectionString: urlFor(name), max: 5 });
+  // Bij het opruimen (DROP ... WITH (FORCE)) kan een verbinding die net sluit nog een
+  // foutmelding krijgen; die hoort bij het opruimen, niet bij de test.
+  pool.on('error', () => {});
   return {
     pool,
     mailer: new MemoryMailer(),
     dns: new FakeDns(),
     config: { ...DEFAULT_CONFIG, appOrigin: 'https://app.qbicle.test' },
     catalog: loadCatalog(),
-    payments: new NepBetaalprovider('https://app.qbicle.test'),
+    payments: new NepBetaalprovider('https://app.qbicle.test', pool),
     async close() {
       await pool.end();
       await admin((c) => c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));

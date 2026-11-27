@@ -37,7 +37,7 @@ describe.skipIf(!hasDb)('cockpit: incasso en wat de klant ondertussen doet', () 
   const settleSelf = async (paymentId: string) => {
     const r = (await h.p.pool.query('SELECT provider_payment_id FROM payment WHERE id = $1', [paymentId])).rows[0];
     if (!isNepProvider(h.p.payments)) throw new Error('testmodus verwacht');
-    h.p.payments.settle(r.provider_payment_id, 'betaald');
+    await h.p.payments.settle(r.provider_payment_id, 'betaald');
     return syncPayment(h.p, paymentId);
   };
 

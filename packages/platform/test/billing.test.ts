@@ -113,7 +113,7 @@ describe.skipIf(!hasDb)('abonnementen, betalen en facturen', () => {
 
     const inv = await listInvoices(p, eigenaar.userId, org);
     expect(inv).toHaveLength(1);
-    expect(inv[0]!.number).toMatch(/^QB-\d{4}-\d{6}$/);
+    expect(inv[0]!.number).toMatch(/^TEST-\d{4}-\d{6}$/);
     expect(inv[0]!.customer).toMatchObject({ naam: 'Drukkerij Eva BV', kvk: '12345678', btwNummer: 'NL123456789B01' });
     expect(inv[0]!.amountInclCents).toBe(payment.amountInclCents);
 

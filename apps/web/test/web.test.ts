@@ -63,7 +63,7 @@ describe.skipIf(!hasDb)('web-app', () => {
     const done = await (await web.request(`/betaling/${pay.betaling.id}`, { headers: { cookie } })).text();
     expect(done).toContain('je betaling is gelukt');
     const abo = await (await web.request(`/o/${org}/abonnement`, { headers: { cookie } })).text();
-    expect(abo).toMatch(/QB-\d{4}-\d{6}/);
+    expect(abo).toMatch(/TEST-\d{4}-\d{6}/);
 
     // Account: gegevens, contactpersonen en gebruikers op één plek.
     const acc = await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text();
@@ -90,7 +90,7 @@ describe.skipIf(!hasDb)('web-app', () => {
 
     // Facturen: overzicht, csv en pdf.
     const fact = await (await web.request(`/o/${org}/facturen`, { headers: { cookie } })).text();
-    expect(fact).toMatch(/QB-\d{4}-\d{6}/);
+    expect(fact).toMatch(/TEST-\d{4}-\d{6}/);
     const invId = fact.match(/facturen\/([0-9a-f-]{36})\/pdf/)![1]!;
     const csv = await web.request(`/o/${org}/facturen/export.csv`, { headers: { cookie } });
     expect(csv.headers.get('content-type')).toContain('text/csv');
