@@ -9,6 +9,7 @@ import {
   listContacts,
   listInvitations,
   listMembers,
+  previewPlanChange,
   getOrganization,
   getPayment,
   listInvoices,
@@ -27,8 +28,8 @@ import { fileURLToPath } from 'node:url';
 import { Layout } from './layout.tsx';
 import { AccountPage, UitnodigingPage } from './pages/account.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
+import { AbonnementPage, OpzeggenPage, WijzigenPage } from './pages/abonnement-beheer.tsx';
 import {
-  AbonnementPage,
   AuditBestellenPage,
   BetalingPage,
   FactuurPage,
@@ -215,6 +216,28 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
     const invoices = await listInvoices(p, ctx.s.user.id, ctx.org.id);
     return c.html(<AbonnementPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} invoices={invoices} />);
+  });
+
+  app.get('/o/:org/abonnement/wijzigen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
+    let w;
+    try {
+      w = await previewPlanChange(p, ctx.s.user.id, ctx.org.id, { plan: c.req.query('pakket') ?? '', interval: c.req.query('interval') ?? '' });
+    } catch (err) {
+      if (err instanceof PlatformError && err.code === 'ongeldige_invoer') return c.redirect(`/o/${ctx.org.id}/abonnement#wijzigen`);
+      throw err;
+    }
+    const proefTot = b.toegang === 'proef' ? (b.abonnement?.trialEndsAt ?? null) : null;
+    return c.html(<WijzigenPage user={ctx.user} org={ctx.org} w={w} magBeheren={b.magBeheren} proefTot={proefTot} />);
+  });
+
+  app.get('/o/:org/abonnement/opzeggen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
+    return c.html(<OpzeggenPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} />);
   });
 
   app.get('/o/:org/facturen/:inv', async (c) => {

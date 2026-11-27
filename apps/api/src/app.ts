@@ -15,6 +15,12 @@ import {
   syncPayment,
   updateBillingDetails,
   listContacts,
+  changePlan,
+  previewPlanChange,
+  cancelScheduledChange,
+  resumeSubscription,
+  revokeMandate,
+  requestInvoicePayment,
   removeContact,
   setContact,
   BILLING_INTERVALS,
@@ -112,6 +118,8 @@ const schemas = {
     interval: z.enum(BILLING_INTERVALS).default('jaar'),
   }),
   subscription: z.object({ pakket: z.string().max(40), interval: z.enum(BILLING_INTERVALS) }),
+  cancel: z.object({ reden: z.string().max(40).nullish(), toelichting: z.string().max(1000).nullish() }),
+  invoiceRequest: z.object({ toelichting: z.string().max(600) }),
   auditOrder: z.object({
     pakket: z.string().max(40),
     doelbedrijf: z.string().max(200),
@@ -388,13 +396,31 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
   v1.get('/organisaties/:org/abonnement', requireUser, async (c) => c.json(await getBilling(p, user(c).userId, param(c, 'org'))));
   v1.put('/organisaties/:org/abonnement', requireUser, async (c) => {
     const input = await body(c, schemas.subscription);
-    return c.json(await startSubscription(p, user(c), param(c, 'org'), { plan: input.pakket, interval: input.interval }));
+    const r = await changePlan(p, user(c), param(c, 'org'), { plan: input.pakket, interval: input.interval });
+    return c.json({ ...r.subscription, wijziging: r.preview, betaling: r.payment ?? null, betaalpagina: r.checkoutUrl ?? null });
+  });
+  v1.get('/organisaties/:org/abonnement/voorbeeld', requireUser, async (c) =>
+    c.json(await previewPlanChange(p, user(c).userId, param(c, 'org'), { plan: c.req.query('pakket') ?? '', interval: c.req.query('interval') ?? '' })),
+  );
+  v1.delete('/organisaties/:org/abonnement/geplande-wijziging', requireUser, async (c) => c.json(await cancelScheduledChange(p, user(c), param(c, 'org'))));
+  v1.post('/organisaties/:org/abonnement/heractiveren', requireUser, async (c) => c.json(await resumeSubscription(p, user(c), param(c, 'org'))));
+  v1.delete('/organisaties/:org/machtiging', requireUser, async (c) => {
+    await revokeMandate(p, user(c), param(c, 'org'));
+    return c.body(null, 204);
+  });
+  v1.post('/organisaties/:org/betaalwijze/factuur-aanvragen', requireUser, async (c) => {
+    const { toelichting } = await body(c, schemas.invoiceRequest);
+    await requestInvoicePayment(p, user(c), param(c, 'org'), toelichting);
+    return c.body(null, 204);
   });
   v1.post('/organisaties/:org/abonnement/betalen', requireUser, async (c) => {
     const r = await checkoutSubscription(p, user(c), param(c, 'org'));
     return c.json({ betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
   });
-  v1.post('/organisaties/:org/abonnement/opzeggen', requireUser, async (c) => c.json(await cancelSubscription(p, user(c), param(c, 'org'))));
+  v1.post('/organisaties/:org/abonnement/opzeggen', requireUser, async (c) => {
+    const input = await body(c, schemas.cancel);
+    return c.json(await cancelSubscription(p, user(c), param(c, 'org'), input));
+  });
 
   v1.post('/organisaties/:org/audit-opdrachten', requireUser, async (c) => {
     const input = await body(c, schemas.auditOrder);

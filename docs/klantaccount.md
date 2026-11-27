@@ -15,3 +15,15 @@ Eén plek in de klantomgeving: **Account** (`/o/<organisatie>/account`).
 - De link in de uitnodigingsmail (`/uitnodiging#token=…`) werkt nu in de web-app; wie nog niet is ingelogd, logt eerst in en gaat daarna automatisch verder.
 
 API: `GET /api/v1/organisaties/:org/contactpersonen`, `PUT|DELETE /api/v1/organisaties/:org/contactpersonen/:soort`.
+
+## Abonnement en betalen (`/o/<organisatie>/abonnement`)
+
+- **Je pakket**: status, prijs, betaald tot, volgende betaling (bedrag incl./excl. btw, datum, hoe), gebruik van gebruikers en domeinen.
+- **Pakket wijzigen** via een bevestigingspagina (`/abonnement/wijzigen?pakket=…&interval=…`) die vooraf zegt wat het kost en wanneer het ingaat. Afspraak (Erik, 27-11-2026):
+  - tijdens de proef of zonder betaalde periode: meteen, zonder bijbetaling;
+  - upgrade tijdens een betaalde periode: meteen, na een bijbetaling naar rato voor de resterende dagen (`payment.plan_change`; het pakket verandert pas als die betaald is);
+  - downgrade of andere betaaltermijn: gaat in bij de volgende periode (`subscription.pending_plan` / `pending_interval`), terug te draaien tot die datum.
+- **Let op voor de incassobatch (cockpit):** roep `applyScheduledChange(p, q, subscriptionId, periodeStart)` aan voordat je een verlenging klaarzet, anders wordt het oude pakket geïncasseerd.
+- **Opzeggen** (`/abonnement/opzeggen`) met uitleg wat er gebeurt en een reden (`subscription.cancel_reason`, `cancel_feedback`); opzegging intrekken kan tot het einde van de periode.
+- **Betaalwijze**: incasso (standaard) met de machtiging uit de eerste geslaagde betaling (`payment_mandate`, alleen laatste 4 tekens van de rekening), intrekken kan. Op factuur betalen stelt alleen Qbicle in (cockpit); de klant kan het aanvragen en dat komt als notitie (`org_note`, bron `systeem`) bij de klant in de cockpit.
+- Migratie 0014.

@@ -74,7 +74,10 @@
         showError(form, r.json.bericht || 'Er ging iets mis. Probeer het opnieuw.');
         return;
       }
-      if (form.dataset.nextVeld) { location.href = pick(r.json, form.dataset.nextVeld); return; }
+      if (form.dataset.nextVeld) {
+        var dest = pick(r.json, form.dataset.nextVeld);
+        if (dest) { location.href = dest; return; }
+      }
       if (form.dataset.next) { location.href = nextUrl(form.dataset.next, r.json); return; }
       location.reload();
     } catch (x) {

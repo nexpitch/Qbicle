@@ -79,6 +79,13 @@ describe.skipIf(!hasDb)('web-app', () => {
     expect(put.status, await put.clone().text()).toBe(200);
     expect(await (await web.request(`/o/${org}/account`, { headers: { cookie } })).text()).toContain('kees@web.nl');
     expect((await web.request('/uitnodiging')).status).toBe(200);
+
+    // Pakket wijzigen: eerst een voorbeeld met kosten, opzeggen met uitleg.
+    const wijz = await (await web.request(`/o/${org}/abonnement/wijzigen?pakket=business&interval=maand`, { headers: { cookie } })).text();
+    expect(wijz).toContain('Controleer je wijziging');
+    expect((await web.request(`/o/${org}/abonnement/wijzigen?pakket=bestaatniet&interval=maand`, { headers: { cookie } })).status).toBe(302);
+    expect(await (await web.request(`/o/${org}/abonnement/opzeggen`, { headers: { cookie } })).text()).toContain('Wat er gebeurt');
+    expect(abo).toContain('SEPA-machtiging');
     expect((await web.request(`/o/${org}/account`)).status).toBe(302);
 
     // Een ander ziet niets van deze organisatie.

@@ -10,6 +10,7 @@ import {
   type Role,
 } from '@qbicle/platform';
 import { datum, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { AccountNav } from './abonnement-beheer.tsx';
 
 type Ctx = { user: PageUser & { id: string }; org: NavOrg };
 
@@ -47,17 +48,6 @@ export function ontbrekend(d: BillingDetails | null): string[] {
   if (!d.email) m.push('e-mailadres voor facturen');
   if (!d.kvk && d.land === 'NL') m.push('KvK-nummer');
   return m;
-}
-
-function SubNav(props: { orgId: string }) {
-  return (
-    <nav class="subnav" aria-label="Onderdelen van je account">
-      <a href="#bedrijf">Bedrijfsgegevens</a>
-      <a href="#contactpersonen">Contactpersonen</a>
-      <a href="#gebruikers">Gebruikers en rollen</a>
-      <a href={`/o/${props.orgId}/abonnement`}>Abonnement en betalen</a>
-    </nav>
-  );
 }
 
 function Rij(props: { label: string; value: string | null | undefined }) {
@@ -442,7 +432,12 @@ export function AccountPage(props: Ctx & { a: AccountData }) {
         <h1>Account</h1>
         <p class="lead">Je bedrijfsgegevens, wie we bereiken en wie er toegang heeft. Alles op één plek.</p>
       </div>
-      <SubNav orgId={props.org.id} />
+      <AccountNav orgId={props.org.id} active="account" />
+      <nav class="subnav anker" aria-label="Op deze pagina">
+        <a href="#bedrijf">Bedrijfsgegevens</a>
+        <a href="#contactpersonen">Contactpersonen</a>
+        <a href="#gebruikers">Gebruikers en rollen</a>
+      </nav>
       <Bedrijfsgegevens {...props} magNaam={magNaam} magFactuur={magFactuur} />
       <Contactpersonen {...props} magWijzigen={magNaam} />
       <Gebruikers {...props} />
