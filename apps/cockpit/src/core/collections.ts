@@ -1,5 +1,4 @@
 import {
-  applyScheduledChange,
   audit,
   findPlan,
   isNepProvider,
@@ -124,6 +123,20 @@ export async function listItems(q: Queryable, runId: string): Promise<ItemRow[]>
   );
 }
 
+/** Verder vooruit klaarzetten of indienen kan niet (tikfout in de datum, of een periode die nog lang loopt). */
+export const MAX_DAYS_AHEAD = 14;
+
+/** Datum (JJJJ-MM-DD) zoals in Nederland. */
+export function amsterdamDate(d: Date): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(d);
+}
+
+function isRealDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 /**
  * Zet een nieuwe batch klaar met alle verlengingen die op of vóór de incassodatum
  * vervallen. Geeft undefined als er niets te incasseren is.
@@ -133,8 +146,11 @@ export async function prepareRun(
   input: { collectionDate: string; source?: 'medewerker' | 'agent' | 'systeem' },
   actor: Actor,
 ): Promise<{ runId: string; items: number; skippedFactuur: number; skippedMandate: number } | undefined> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.collectionDate) || Number.isNaN(Date.parse(input.collectionDate))) {
-    throw new PlatformError('ongeldige_invoer', 'Kies een geldige incassodatum.');
+  if (!isRealDate(input.collectionDate)) throw new PlatformError('ongeldige_invoer', 'Kies een geldige incassodatum.');
+  const today = amsterdamDate(new Date());
+  const latest = amsterdamDate(new Date(Date.now() + MAX_DAYS_AHEAD * 86_400_000));
+  if (input.collectionDate < today || input.collectionDate > latest) {
+    throw new PlatformError('ongeldige_invoer', `Kies een incassodatum van vandaag tot en met ${MAX_DAYS_AHEAD} dagen vooruit.`);
   }
   const date = new Date(`${input.collectionDate}T23:59:59Z`);
   const btw = p.catalog.btwPercentage;
@@ -148,9 +164,11 @@ export async function prepareRun(
       billing_interval: string;
       monthly_price_cents: number;
       current_period_end: Date;
+      pending_plan: string | null;
+      pending_interval: 'maand' | 'jaar' | null;
     }>(
       q,
-      `SELECT s.id, s.organization_id, s.plan, s.billing_interval, s.monthly_price_cents, s.current_period_end
+      `SELECT s.id, s.organization_id, s.plan, s.billing_interval, s.monthly_price_cents, s.current_period_end, s.pending_plan, s.pending_interval
          FROM subscription s JOIN organization o ON o.id = s.organization_id
         WHERE s.status IN ('actief', 'achterstallig')
           AND NOT s.cancel_at_period_end
@@ -183,12 +201,12 @@ export async function prepareRun(
     );
     let noMandate = 0;
     for (const due1 of due) {
-      // Geplande downgrade of andere betaaltermijn gaat nu in, zodat we het juiste pakket incasseren.
-      const s = (await applyScheduledChange(p, q, due1.id, due1.current_period_end)) ?? {
-        plan: due1.plan,
-        interval: due1.billing_interval as 'maand' | 'jaar',
-        monthlyPriceCents: due1.monthly_price_cents,
-      };
+      // Geplande downgrade of andere betaaltermijn: reken met het nieuwe pakket, maar wijzig nog niets.
+      // De wissel gaat pas in als de betaling binnen is (syncPayment) of de klant zelf betaalt.
+      const pendingPlan = due1.pending_plan && due1.pending_interval ? findPlan(p.catalog, due1.pending_plan) : undefined;
+      const s = pendingPlan
+        ? { plan: pendingPlan.id, interval: due1.pending_interval!, monthlyPriceCents: pendingPlan.maandprijsCenten[due1.pending_interval!] }
+        : { plan: due1.plan, interval: due1.billing_interval as 'maand' | 'jaar', monthlyPriceCents: due1.monthly_price_cents };
       const plan = findPlan(p.catalog, s.plan);
       const label = new Date(due1.current_period_end).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' });
       const description = `${plan?.naam ?? s.plan}, ${s.interval === 'jaar' ? 'jaar vanaf ' : ''}${label}`;
@@ -357,11 +375,12 @@ export async function cancelRun(p: Platform, runId: string, actor: Actor): Promi
  * aanmaken met een idempotentiesleutel per regel, zodat een afgebroken indiening
  * veilig opnieuw kan zonder dubbele incasso's.
  */
-export async function submitRun(p: Platform, runId: string, actor: Actor): Promise<{ submitted: number }> {
+export async function submitRun(p: Platform, runId: string, actor: Actor): Promise<{ submitted: number; excluded: number }> {
   return withTransaction(p.pool, async (q) => {
     const run = await lockRun(q, runId);
     if (run.status !== 'gevalideerd') throw new PlatformError('conflict', 'Valideer de batch eerst. Een batch wordt maar één keer ingediend.');
     if (run.provider !== p.payments.name) throw new PlatformError('conflict', `Deze batch is gemaakt voor ${run.provider}, maar de cockpit draait met ${p.payments.name}.`);
+    const excluded = await recheckItems(p, q, runId, actor);
     const items = await many<{ id: string; organization_id: string; description: string; amount_incl_cents: number }>(
       q,
       `SELECT id, organization_id, description, amount_incl_cents
@@ -392,8 +411,78 @@ export async function submitRun(p: Platform, runId: string, actor: Actor): Promi
     }
     await q.query(`UPDATE collection_run SET status = 'ingediend', submitted_at = now(), submitted_by = $2 WHERE id = $1`, [runId, actor.userId]);
     await audit(q, actor, { organizationId: null, action: 'cockpit.incasso_ingediend', subject: runId, detail: { regels: items.length } });
-    return { submitted: items.length };
+    return { submitted: items.length, excluded };
   });
+}
+
+/**
+ * Tussen klaarzetten en indienen kan de klant zelf betalen, opzeggen, naar factuur
+ * gaan of de machtiging intrekken. Vlak voor indienen controleren we elke regel
+ * opnieuw; wat niet meer klopt, gaat automatisch uit de batch met de reden erbij.
+ */
+async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Actor): Promise<number> {
+  const rows = await many<{
+    id: string;
+    organization_id: string;
+    same_period: boolean;
+    sub_status: string;
+    cancel_at_period_end: boolean;
+    payment_method: string;
+    mandate_revoked: boolean;
+    already_paid: boolean;
+    open_payment: boolean;
+    too_early: boolean;
+  }>(
+    q,
+    `SELECT i.id, i.organization_id,
+            s.current_period_end = i.period_start AS same_period,
+            s.status AS sub_status, s.cancel_at_period_end, o.payment_method,
+            coalesce((SELECT bool_or(m.status = 'ingetrokken') AND NOT bool_or(m.status = 'geldig')
+                        FROM payment_mandate m WHERE m.organization_id = i.organization_id), false) AS mandate_revoked,
+            EXISTS (SELECT 1 FROM payment pm WHERE pm.subscription_id = i.subscription_id AND pm.status = 'betaald'
+                       AND pm.plan_change IS NULL AND pm.period_end > i.period_start) AS already_paid,
+            EXISTS (SELECT 1 FROM payment pm WHERE pm.subscription_id = i.subscription_id AND pm.status = 'open'
+                       AND pm.plan_change IS NULL AND pm.period_end > i.period_start) AS open_payment,
+            i.period_start > now() + make_interval(days => $2) AS too_early
+       FROM collection_item i
+       JOIN subscription s ON s.id = i.subscription_id
+       JOIN organization o ON o.id = i.organization_id
+      WHERE i.run_id = $1 AND i.status = 'klaar'
+      FOR UPDATE OF i`,
+    [runId, MAX_DAYS_AHEAD],
+  );
+  let n = 0;
+  for (const r of rows) {
+    const reason = r.already_paid
+      ? 'De klant heeft deze periode zelf al betaald.'
+      : r.open_payment
+        ? 'De klant is zelf aan het betalen (open betaling).'
+        : r.mandate_revoked
+          ? 'Machtiging ingetrokken door de klant; zie Mislukt voor het betaalverzoek.'
+          : r.cancel_at_period_end || !['actief', 'achterstallig'].includes(r.sub_status)
+            ? 'Het abonnement is opgezegd of gestopt.'
+            : r.payment_method !== 'incasso'
+              ? 'Deze klant betaalt nu op factuur.'
+              : !r.same_period
+                ? 'De periode komt niet meer overeen met het abonnement.'
+                : r.too_early
+                  ? `De periode begint pas over meer dan ${MAX_DAYS_AHEAD} dagen.`
+                  : null;
+    if (!reason) continue;
+    n++;
+    await q.query(
+      `UPDATE collection_item SET status = 'uitgesloten', exclude_reason = $2, failure_reason = $3 WHERE id = $1`,
+      [r.id, reason, r.mandate_revoked && !r.already_paid && !r.open_payment ? 'mandaat_ingetrokken' : null],
+    );
+    if (r.mandate_revoked && !r.already_paid && !r.open_payment) await createFollowupSuggestion(q, p.config.appOrigin, r.id);
+    await audit(q, actor, {
+      organizationId: r.organization_id,
+      action: 'cockpit.incasso_regel_uitgesloten',
+      subject: r.id,
+      detail: { batch: runId, reden: reason, automatisch: true },
+    });
+  }
+  return n;
 }
 
 /**

@@ -193,11 +193,11 @@ describe.skipIf(!hasDb)('cockpit: incassobatch en klantaccount (pakketwissel, ma
     const body = (await res.json()) as { batch: string; regels: number; zonderMachtiging: number };
     expect(body).toMatchObject({ regels: 3, zonderMachtiging: 1 });
 
-    // Geplande downgrade gaat in: het nieuwe pakket wordt geïncasseerd.
+    // Geplande downgrade: er wordt met het nieuwe pakket gerekend, maar er verandert nog niets.
     const [e] = await item(E);
     expect(e.description).toContain('Qbicle MKB');
     expect(e.amount_excl_cents).toBe(h.p.catalog.plans.find((x) => x.id === 'mkb')!.maandprijsCenten.maand);
-    expect((await h.p.pool.query('SELECT plan, pending_plan FROM subscription WHERE organization_id = $1', [E])).rows[0]).toEqual({ plan: 'mkb', pending_plan: null });
+    expect((await h.p.pool.query('SELECT plan, pending_plan FROM subscription WHERE organization_id = $1', [E])).rows[0]).toEqual({ plan: 'business', pending_plan: 'mkb' });
 
     // Extra domeinen boven de limiet als eigen factuurregel.
     const [f] = await item(F);

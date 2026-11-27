@@ -171,9 +171,14 @@ function planOrFail(p: Platform, id: string): Plan {
   return plan;
 }
 
+/** Dagen respijt na het einde van de betaalde periode als een verlenging mislukt. */
+export const GRACE_DAYS = 3;
+
 export function accessState(sub: Subscription | undefined, now = new Date()): AccessState {
   if (!sub || sub.status === 'beeindigd') return 'geen_abonnement';
   if ((sub.status === 'actief' || sub.status === 'opgezegd') && sub.currentPeriodEnd && sub.currentPeriodEnd > now) return 'actief';
+  // Mislukte verlenging: de betaalde periode loopt gewoon door, plus een paar dagen respijt.
+  if (sub.status === 'achterstallig' && sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() + GRACE_DAYS * 86_400_000 > now.getTime()) return 'actief';
   if (sub.status === 'proef' && sub.trialEndsAt && sub.trialEndsAt > now) return 'proef';
   return 'betaling_nodig';
 }
@@ -322,7 +327,8 @@ export async function cancelSubscription(
       [cur.id, reason, feedback],
     );
     await q.query(
-      `UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open'`,
+      // Een incasso die al bij de bank ligt, annuleert de klant hier niet; de uitkomst komt van de bank.
+      `UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = payment.id)`,
       [cur.id],
     );
     if (!paidAndRunning) await q.query(`UPDATE organization SET plan = 'gratis' WHERE id = $1`, [organizationId]);
@@ -424,6 +430,13 @@ export async function checkoutSubscription(
   return withTransaction(p.pool, async (q) => {
     let sub = await currentSubscription(q, organizationId, true);
     if (!sub) throw new PlatformError('conflict', 'Kies eerst een pakket.');
+    // Loopt er al een automatische incasso voor dit abonnement, dan niet nog een keer laten betalen.
+    const running = await one(
+      q,
+      `SELECT 1 FROM payment pm JOIN collection_item ci ON ci.payment_id = pm.id WHERE pm.subscription_id = $1 AND pm.status = 'open'`,
+      [sub.id],
+    );
+    if (running) throw new PlatformError('conflict', 'De automatische incasso voor je abonnement loopt nog. Wacht de uitkomst van de bank af; je krijgt bericht als het niet lukt.');
     {
       // Een geplande downgrade of termijnwissel gaat in bij de periode die nu betaald wordt.
       const now0 = new Date();
@@ -449,7 +462,7 @@ export async function checkoutSubscription(
     const excl = lines.reduce((t, l) => t + l.totaalExclCenten, 0);
     const vat = vatCents(p.catalog, excl);
 
-    await q.query(`UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND plan_change IS NULL`, [sub.id]);
+    await q.query(`UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND plan_change IS NULL AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = payment.id)`, [sub.id]);
     const row = await one<{ id: string }>(
       q,
       `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
@@ -554,16 +567,22 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
           await audit(q, actor, { organizationId: r.organization_id, action: 'abonnement.gewijzigd', subject: r.subscription_id, detail: { naar: plan.id, upgradeBetaald: true } });
         }
       } else if (r.subscription_id) {
+        // Geplande downgrade of termijnwissel gaat pas in nu de nieuwe periode betaald is.
+        if (r.period_start) await applyScheduledChange(p, q, r.subscription_id, r.period_start);
+        // Een incasso die al bij de bank lag toen de klant opzegde, maakt de opzegging niet ongedaan:
+        // de betaalde periode loopt, daarna stopt het abonnement.
+        const viaIncasso = !!(await one(q, 'SELECT 1 FROM collection_item WHERE payment_id = $1', [paymentId]));
         await q.query(
           `UPDATE subscription
-              SET status = 'actief', cancel_at_period_end = false,
+              SET status = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN 'opgezegd' ELSE 'actief' END,
+                  cancel_at_period_end = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN true ELSE false END,
                   -- Verlenging: de lopende periode schuift door. Anders begint hij bij de betaalde periode
                   -- (bij betalen tijdens de proef is dat het einde van de proef).
                   current_period_start = CASE WHEN current_period_start IS NOT NULL AND current_period_end >= $2
                                               THEN current_period_start ELSE $2 END,
                   current_period_end = $3
             WHERE id = $1`,
-          [r.subscription_id, r.period_start, r.period_end],
+          [r.subscription_id, r.period_start, r.period_end, viaIncasso],
         );
         const sub = await one<{ plan: string }>(q, 'SELECT plan FROM subscription WHERE id = $1', [r.subscription_id]);
         await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [r.organization_id, sub!.plan]);

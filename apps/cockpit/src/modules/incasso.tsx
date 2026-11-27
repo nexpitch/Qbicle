@@ -3,6 +3,8 @@ import { isNepProvider } from '@qbicle/platform';
 import { z } from 'zod';
 import {
   adjustItem,
+  amsterdamDate,
+  MAX_DAYS_AHEAD,
   cancelRun,
   excludeItem,
   FAILURE_LABEL,
@@ -52,8 +54,7 @@ const ITEM_STATUS: Record<ItemStatus, [string, StatusKind]> = {
 };
 
 function defaultDate(): string {
-  const d = new Date(Date.now() + 5 * 86_400_000);
-  return d.toISOString().slice(0, 10);
+  return amsterdamDate(new Date(Date.now() + 5 * 86_400_000));
 }
 
 async function tabs(p: { pool: import('@qbicle/platform').Queryable }, active: 'batches' | 'mislukt'): Promise<Array<[string, string, boolean]>> {
@@ -166,7 +167,7 @@ export const incasso: CockpitModule = {
                     <FormError />
                     <label>
                       Incassodatum
-                      <input type="date" name="incassodatum" value={defaultDate()} required />
+                      <input type="date" name="incassodatum" value={defaultDate()} min={amsterdamDate(new Date())} max={amsterdamDate(new Date(Date.now() + MAX_DAYS_AHEAD * 86_400_000))} required />
                     </label>
                     <div>
                       <button class="btn" type="submit">
@@ -435,7 +436,7 @@ export const incasso: CockpitModule = {
     api.post('/incasso/:id/indienen', async (c) => {
       ctx.require(c, 'incasso.indienen');
       const r = await submitRun(p, idParam(c.req.param('id'), 'Deze incassobatch'), c.get('actor'));
-      return c.json({ ingediend: r.submitted });
+      return c.json({ ingediend: r.submitted, automatischUitgesloten: r.excluded });
     });
     api.post('/incasso/:id/annuleren', async (c) => {
       ctx.require(c, 'facturatie.beheren');
