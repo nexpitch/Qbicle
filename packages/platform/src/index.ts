@@ -11,6 +11,7 @@ export * from './context.ts';
 export * from './auth.ts';
 export * from './organizations.ts';
 export * from './members.ts';
+export * from './contacts.ts';
 export * from './partners.ts';
 export * from './domains.ts';
 export * from './scans.ts';

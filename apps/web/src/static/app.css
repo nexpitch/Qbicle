@@ -171,6 +171,76 @@ form:not(:has(#iv-maand:checked)) .bij-maand { display: none; }
 @media (max-width: 600px) { .top nav .hide-sm { display: none; } }
 .top nav form { margin: 0; display: flex; }
 
+/* Account, abonnement en facturen */
+.subnav { display: flex; gap: 6px; flex-wrap: wrap; font-size: .9rem; }
+.subnav a { padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); text-decoration: none; }
+.subnav a:hover, .subnav a[aria-current="page"] { color: var(--fg); border-color: var(--line-strong); }
+.dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: .94rem; }
+.dl dt { color: var(--muted); }
+.dl dd { margin: 0; }
+.leeg { color: var(--muted); font-style: italic; }
+.span-2 { grid-column: 1 / -1; }
+.row.nowrap { flex-wrap: nowrap; }
+.row .grow { flex: 1 1 240px; }
+.contact { border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 10px; align-content: start; background: var(--surface-2); }
+.contact.urgent { border-color: #F0DDBB; }
+.rollen { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
+.rollen b { color: var(--fg); }
+.small-btn { padding: 8px 12px; font-size: .85rem; }
+input[type=tel] { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; font: 400 1rem var(--f-ui); background: #fff; color: var(--fg); }
+.grid.twee { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+
+/* Abonnement */
+.stack.tight { gap: 6px; }
+.narrow-wide { max-width: 760px; }
+.meter { display: grid; gap: 6px; font-size: .9rem; }
+.meter-bar { height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.meter-bar i { display: block; height: 100%; background: var(--accent); }
+.meter-bar i.over { background: var(--st-crit-dot); }
+.st-text-crit { color: var(--st-crit); font-weight: 600; font-size: .86rem; }
+.plan.huidig { border-color: var(--line-strong); background: var(--surface-2); cursor: default; }
+.plan { cursor: default; }
+.keuze { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; text-decoration: none; color: var(--fg); font-weight: 600; font-size: .92rem; background: var(--surface); }
+a.keuze:hover { border-color: var(--petrol); }
+.keuze.huidig { color: var(--muted); background: var(--surface-2); }
+.mandaat { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--surface-2); }
+.uitklap summary { cursor: pointer; color: var(--petrol); font-weight: 600; }
+.uitklap[open] summary { margin-bottom: 12px; }
+.uitleg { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+.vannaar { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 14px; }
+.vannaar div { display: grid; gap: 2px; }
+.vannaar b { font: 800 1.1rem var(--f-display); }
+.pijl { font-size: 1.4rem; color: var(--muted); }
+.redenen { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.redenen legend { font-weight: 600; font-size: .92rem; margin-bottom: 8px; }
+.radio { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+.meter-bar i.w0 { width: 0%; }
+.meter-bar i.w5 { width: 5%; }
+.meter-bar i.w10 { width: 10%; }
+.meter-bar i.w15 { width: 15%; }
+.meter-bar i.w20 { width: 20%; }
+.meter-bar i.w25 { width: 25%; }
+.meter-bar i.w30 { width: 30%; }
+.meter-bar i.w35 { width: 35%; }
+.meter-bar i.w40 { width: 40%; }
+.meter-bar i.w45 { width: 45%; }
+.meter-bar i.w50 { width: 50%; }
+.meter-bar i.w55 { width: 55%; }
+.meter-bar i.w60 { width: 60%; }
+.meter-bar i.w65 { width: 65%; }
+.meter-bar i.w70 { width: 70%; }
+.meter-bar i.w75 { width: 75%; }
+.meter-bar i.w80 { width: 80%; }
+.meter-bar i.w85 { width: 85%; }
+.meter-bar i.w90 { width: 90%; }
+.meter-bar i.w95 { width: 95%; }
+.meter-bar i.w100 { width: 100%; }
+.subnav.anker a { border: 0; background: none; padding: 4px 8px; text-decoration: underline; color: var(--petrol); }
+.filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.filters label { min-width: 160px; }
+input[type=search] { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; font: 400 1rem var(--f-ui); background: #fff; color: var(--fg); }
+.table .nowrap { white-space: nowrap; }
+.melding.warn.row { align-items: center; }
 /* ── Klantdashboard ─────────────────────────────────────────────── */
 .muted { color: var(--muted); }
 .break { overflow-wrap: anywhere; }
