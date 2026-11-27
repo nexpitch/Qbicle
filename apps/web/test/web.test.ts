@@ -86,6 +86,7 @@ describe.skipIf(!hasDb)('web-app', () => {
     expect((await web.request(`/o/${org}/abonnement/wijzigen?pakket=bestaatniet&interval=maand`, { headers: { cookie } })).status).toBe(302);
     expect(await (await web.request(`/o/${org}/abonnement/opzeggen`, { headers: { cookie } })).text()).toContain('Wat er gebeurt');
     expect(abo).toContain('SEPA-machtiging');
+    expect(abo).toContain('Je contract verlengt op');
 
     // Facturen: overzicht, csv en pdf.
     const fact = await (await web.request(`/o/${org}/facturen`, { headers: { cookie } })).text();
