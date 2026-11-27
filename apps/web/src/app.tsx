@@ -6,7 +6,13 @@ import {
   authorize,
   one,
   getBilling,
+  getBillingDetails,
   getInvoice,
+  listContacts,
+  listInvitations,
+  listMembers,
+  previewPlanChange,
+  getBillingHistory,
   getOrganization,
   getPayment,
   listInvoices,
@@ -33,10 +39,13 @@ import {
   resolveAccess,
 } from '@qbicle/platform';
 import { Layout } from './layout.tsx';
+import { invoicePdf } from './pdf.ts';
+import { FacturenPage, facturenCsv } from './pages/facturen.tsx';
+import { AccountPage, UitnodigingPage } from './pages/account.tsx';
 import { AssetPage, AssetsPage, DashboardPage, DomeinenPage, koppelingenSectie, WaarStaatDomeinPage } from './pages/dashboard.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
+import { AbonnementPage, OpzeggenPage, WijzigenPage } from './pages/abonnement-beheer.tsx';
 import {
-  AbonnementPage,
   AuditBestellenPage,
   BetalingPage,
   FactuurPage,
@@ -154,6 +163,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/aanmelden/check-je-mail', (c) => c.html(<CheckMailPage />));
   app.get('/inloggen', (c) => c.html(<InloggenPage />));
   app.get('/inloggen/check-je-mail', (c) => c.html(<CheckMailPage />));
+  app.get('/uitnodiging', (c) => c.html(<UitnodigingPage user={c.get('session')?.user} />));
   app.get('/domein-bevestigen', (c) =>
     c.html(<TokenPage title="Domein bevestigen" api="/api/v1/domeinverificatie/bevestigen" next="/overzicht" />),
   );
@@ -172,7 +182,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     const s = needUser(c);
     if (!s) return undefined;
     const org = await getOrganization(p, s.user.id, c.req.param('org') ?? '');
-    return { s, org: { id: org.id, name: org.name }, user: s.user };
+    return { s, org: { id: org.id, name: org.name }, user: s.user, access: org.access };
   };
 
   app.get('/o/:org/overzicht', async (c) => {
@@ -222,6 +232,36 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     return c.html(<WaarStaatDomeinPage user={ctx.user} org={ctx.org} domainId={c.req.param('dom')} r={r} />);
   });
 
+  app.get('/o/:org/account', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const uid = ctx.s.user.id;
+    const magFacturen = can(ctx.access, 'abonnement:lezen');
+    const [details, contacts, members, invitations, b] = await Promise.all([
+      magFacturen ? getBillingDetails(p, uid, ctx.org.id) : null,
+      listContacts(p, uid, ctx.org.id),
+      listMembers(p, uid, ctx.org.id),
+      can(ctx.access, 'leden:uitnodigen') ? listInvitations(p, uid, ctx.org.id) : null,
+      magFacturen ? getBilling(p, uid, ctx.org.id) : null,
+    ]);
+    const pakket = b?.toegang !== 'geen_abonnement' ? b?.abonnement?.pakket : null;
+    return c.html(
+      <AccountPage
+        user={{ email: ctx.user.email, id: uid }}
+        org={ctx.org}
+        a={{
+          access: ctx.access,
+          details,
+          contacts,
+          members,
+          invitations,
+          maxGebruikers: pakket ? pakket.limieten.gebruikers : null,
+          pakketNaam: pakket ? pakket.naam : null,
+        }}
+      />,
+    );
+  });
+
   app.get('/o/:org/welkom', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
@@ -234,7 +274,61 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     if (!ctx) return c.redirect('/inloggen');
     const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
     const invoices = await listInvoices(p, ctx.s.user.id, ctx.org.id);
-    return c.html(<AbonnementPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} invoices={invoices} />);
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id);
+    return c.html(<AbonnementPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} invoices={invoices} actieNodig={h.actieNodig} />);
+  });
+
+  app.get('/o/:org/abonnement/wijzigen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
+    let w;
+    try {
+      w = await previewPlanChange(p, ctx.s.user.id, ctx.org.id, { plan: c.req.query('pakket') ?? '', interval: c.req.query('interval') ?? '' });
+    } catch (err) {
+      if (err instanceof PlatformError && err.code === 'ongeldige_invoer') return c.redirect(`/o/${ctx.org.id}/abonnement#wijzigen`);
+      throw err;
+    }
+    const proefTot = b.toegang === 'proef' ? (b.abonnement?.trialEndsAt ?? null) : null;
+    return c.html(<WijzigenPage user={ctx.user} org={ctx.org} w={w} magBeheren={b.magBeheren} proefTot={proefTot} />);
+  });
+
+  app.get('/o/:org/abonnement/opzeggen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
+    return c.html(<OpzeggenPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} />);
+  });
+
+  app.get('/o/:org/facturen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const q = { zoek: c.req.query('zoek') ?? '', status: c.req.query('status') ?? '', jaar: /^\d{4}$/.test(c.req.query('jaar') ?? '') ? c.req.query('jaar')! : '' };
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id, q);
+    return c.html(<FacturenPage user={ctx.user} org={ctx.org} h={h} q={q} magBetalen={can(ctx.access, 'abonnement:beheren')} />);
+  });
+
+  app.get('/o/:org/facturen/export.csv', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const jaar = /^\d{4}$/.test(c.req.query('jaar') ?? '') ? c.req.query('jaar')! : '';
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id, { jaar });
+    return c.body(facturenCsv(h), 200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="qbicle-facturen${jaar ? '-' + jaar : ''}.csv"`,
+    });
+  });
+
+  app.get('/o/:org/facturen/:inv/pdf', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const inv = await getInvoice(p, ctx.s.user.id, ctx.org.id, c.req.param('inv'));
+    const pay = await getPayment(p, ctx.s.user.id, inv.paymentId);
+    const pdf = invoicePdf(inv, { status: pay.status === 'betaald' ? 'Betaald' : 'Open', test: pay.provider === 'nep' });
+    return c.body(pdf as Uint8Array<ArrayBuffer>, 200, {
+      'content-type': 'application/pdf',
+      'content-disposition': `attachment; filename="${inv.number}.pdf"`,
+    });
   });
 
   app.get('/o/:org/facturen/:inv', async (c) => {
