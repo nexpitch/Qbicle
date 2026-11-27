@@ -202,6 +202,9 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
                 <option value="webbouwer" selected={i.assignedTo === 'webbouwer'}>
                   Webbouwer
                 </option>
+                <option value="hosting" selected={i.assignedTo === 'hosting'}>
+                  Hostingpartij
+                </option>
               </select>
             </label>
             <label>

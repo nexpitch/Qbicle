@@ -1,7 +1,9 @@
 import type { LinkedVuln, Source } from '@qbicle/score';
 import { buildCpe, compareVersions, type VulnDb } from '@qbicle/devices';
 import type { HttpResponse } from './net.ts';
-import { CONDITIONAL, PRODUCTS, type ProductDef } from './kennis/software.ts';
+import { CONDITIONAL, PRODUCTS, productByKey, type EolCycleDef, type ProductDef } from './kennis/software.ts';
+import { cyclesFor, eolSnapshot, eolSource, newestOverall, type EolCycle } from './kennis/eol.ts';
+import { detectStack, type Categorie, type StackHit, type Zekerheid } from './stack.ts';
 
 /**
  * Herkenning van websitesoftware uit wat de website zelf meestuurt (Server,
@@ -24,7 +26,31 @@ export interface DetectedSoftware {
   /** Distributie die fixes terugzet, als we die herkennen. */
   backportDistro: string | null;
   product: ProductDef | null;
+  categorie: Categorie;
+  productZekerheid: Zekerheid;
+  /** "verborgen" als de website geen versie laat zien (version is dan leeg). */
+  versieZekerheid: Zekerheid | 'verborgen';
+  /** Bron in gewone taal, voor de klant. */
+  bronUitleg: string;
 }
+
+const HEADER_UITLEG: Record<string, string> = {
+  'header:server': 'Server-header',
+  'header:x-powered-by': 'X-Powered-By-header',
+  'header:x-aspnet-version': 'X-AspNet-Version-header',
+  'header:x-generator': 'X-Generator-header',
+  'html:meta-generator': 'generator-tag in de pagina',
+};
+
+const CATEGORIE_VAN: Record<string, Categorie> = {
+  php: 'taal',
+  aspnet: 'taal',
+  openssl: 'tls-bibliotheek',
+  wordpress: 'cms',
+  drupal: 'cms',
+  joomla: 'cms',
+  typo3: 'cms',
+};
 
 const DISTRO = /(ubuntu|debian|deb\d+u|red ?hat|rhel|centos|rocky|almalinux|fedora|suse|amazon linux|\.el\d|el\d+_?\d*|-fips)/i;
 
@@ -82,14 +108,75 @@ export function detectSoftware(res: HttpResponse): DetectedSoftware[] {
 }
 
 function make(rawProduct: string, rawVersion: string, source: string, distro: string | null): DetectedSoftware {
+  const product = PRODUCTS.find((p) => p.match.test(rawProduct)) ?? null;
   return {
     rawProduct,
     rawVersion,
     version: normalizeVersion(rawVersion),
     source,
     backportDistro: distro,
-    product: PRODUCTS.find((p) => p.match.test(rawProduct)) ?? null,
+    product,
+    categorie: (product && CATEGORIE_VAN[product.key]) ?? 'webserver',
+    productZekerheid: 'zeker',
+    versieZekerheid: 'zeker',
+    bronUitleg: HEADER_UITLEG[source] ?? source,
   };
+}
+
+function fromStack(hit: StackHit): DetectedSoftware {
+  return {
+    rawProduct: hit.naam,
+    rawVersion: hit.versie,
+    version: hit.versie,
+    source: `stack:${hit.key}`,
+    backportDistro: null,
+    product: productByKey(hit.key) ?? null,
+    categorie: hit.categorie,
+    productZekerheid: hit.productZekerheid,
+    versieZekerheid: hit.versieZekerheid,
+    bronUitleg: hit.bron,
+  };
+}
+
+/**
+ * Alles wat we van de software zien: versies uit headers en generator-tag (detectSoftware)
+ * plus CMS, plug-ins, bibliotheken en besturingssysteem uit de pagina (detectStack).
+ * Per product blijft de beste waarneming over: met versie boven zonder, zeker boven waarschijnlijk.
+ */
+export function detectAll(res: HttpResponse): DetectedSoftware[] {
+  const header = detectSoftware(res);
+  const stack = detectStack(res).map(fromStack);
+  const rank = (s: DetectedSoftware) =>
+    (s.version ? 4 : 0) + (s.versieZekerheid === 'zeker' ? 2 : 0) + (s.productZekerheid === 'zeker' ? 1 : 0);
+  const best = new Map<string, DetectedSoftware>();
+  for (const s of [...header, ...stack]) {
+    const k = s.product?.key ? `${s.categorie === 'besturingssysteem' ? 'os:' : ''}${s.product.key}` : `${s.categorie}:${s.rawProduct.toLowerCase()}`;
+    const cur = best.get(k);
+    if (!cur || rank(s) > rank(cur)) best.set(k, s);
+  }
+  // Red Hat-achtige distributies (RHEL, CentOS, Rocky, Alma) zetten geen distributietekst in het
+  // PHP-versienummer ("PHP/7.2.24"), Ubuntu en Debian wel ("7.4.3-4ubuntu2.18"). Meldt de server
+  // Red Hat, dan geldt dat dus ook voor PHP en OpenSSL zonder eigen tekst. Bij Ubuntu/Debian
+  // betekent een kaal versienummer juist dat het geen distributiepakket is.
+  const redHat = header.some((h) => h.backportDistro === 'Red Hat-achtige Linux');
+  return [...best.values()].map((s) =>
+    redHat && !s.backportDistro && s.version && s.product?.wie === 'hosting' && s.source.startsWith('header:')
+      ? { ...s, backportDistro: 'Red Hat-achtige Linux' }
+      : s,
+  );
+}
+
+/** Reeksen voor een product: snapshot van endoflife.date als die er is, anders de handmatige startset. */
+export function productCycles(p: ProductDef): { cycles: EolCycle[] | EolCycleDef[]; fromSnapshot: boolean } | null {
+  const snap = p.eolSlug ? eolSnapshot()?.producten[p.eolSlug] : undefined;
+  if (snap?.length) return { cycles: snap, fromSnapshot: true };
+  return p.cycles ? { cycles: p.cycles, fromSnapshot: false } : null;
+}
+
+export function eolSourcesFor(p: ProductDef) {
+  const own = p.eolSources ?? [];
+  if (!p.eolSlug || own.some((s) => s.name === 'endoflife.date')) return own.length ? own : p.eolSlug ? [eolSource(p.eolSlug)] : [];
+  return [...own, eolSource(p.eolSlug)];
 }
 
 export interface EolAssessment {
@@ -100,26 +187,74 @@ export interface EolAssessment {
 
 const SOON_DAYS = 90;
 
+function statusOf(eol: string | boolean, now: Date): { status: EolAssessment['status']; date?: string } {
+  if (eol === true) return { status: 'einde' };
+  if (eol === false) return { status: 'ondersteund' };
+  const t = Date.parse(eol);
+  if (Number.isNaN(t)) return { status: 'ondersteund' };
+  if (t < now.getTime()) return { status: 'einde', date: eol };
+  if (t - now.getTime() < SOON_DAYS * 86400_000) return { status: 'binnenkort', date: eol };
+  return { status: 'ondersteund', date: eol };
+}
+
 export function assessEol(sw: DetectedSoftware, now: Date): EolAssessment | null {
   const p = sw.product;
-  if (!p?.cycles) return null;
-  const candidates = p.cycleOf
-    ? p.cycleOf(sw.version)
-    : (() => {
-        const parts = sw.version.split('.');
-        return [parts.slice(0, 2).join('.')];
-      })();
-  for (const c of candidates) {
-    const hit = p.cycles.find((x) => compareVersions(x.cycle, c) === 0 && x.cycle.split('.').length === c.split('.').length);
-    if (!hit) continue;
-    if (hit.eol === true) return { status: 'einde', cycle: hit.cycle };
-    if (hit.eol === false) return { status: 'ondersteund', cycle: hit.cycle };
-    const t = Date.parse(hit.eol);
-    if (t < now.getTime()) return { status: 'einde', cycle: hit.cycle, date: hit.eol };
-    if (t - now.getTime() < SOON_DAYS * 86400_000) return { status: 'binnenkort', cycle: hit.cycle, date: hit.eol };
-    return { status: 'ondersteund', cycle: hit.cycle, date: hit.eol };
+  if (!p || !sw.version) return null;
+  const src = productCycles(p);
+  if (!src) return null;
+  if (!src.fromSnapshot && p.cycleOf) {
+    for (const c of p.cycleOf(sw.version)) {
+      const hit = src.cycles.find((x) => compareVersions(x.cycle, c) === 0 && x.cycle.split('.').length === c.split('.').length);
+      if (hit) return { cycle: hit.cycle, ...statusOf(hit.eol, now) };
+    }
+    return null;
   }
-  return null;
+  const hits = cyclesFor(src.cycles as EolCycle[], sw.version);
+  if (hits.length === 0) return null;
+  if (hits.length === 1) return { cycle: hits[0]!.cycle, ...statusOf(hits[0]!.eol, now) };
+  // Alleen de hoofdversie bekend (Joomla 3, Drupal 7): einde als alle reeksen voorbij zijn.
+  const st = hits.map((h) => statusOf(h.eol, now));
+  const cycle = sw.version.split('.')[0]!;
+  const last = st.map((x) => x.date).filter((d): d is string => !!d).sort().pop();
+  if (st.every((x) => x.status === 'einde')) return { status: 'einde', cycle, ...(last ? { date: last } : {}) };
+  // De laatste reeks van deze hoofdversie bepaalt wanneer de hele hoofdversie stopt (Drupal 10 -> 10.6).
+  if (st.some((x) => x.status === 'ondersteund' && !x.date)) return { status: 'ondersteund', cycle };
+  return { cycle, ...statusOf(last ?? false, now) };
+}
+
+export type UpdateStatus = 'einde' | 'binnenkort' | 'achter' | 'nieuwere-reeks' | 'actueel' | 'onbekend' | 'beheerd';
+
+export interface Beoordeling {
+  status: UpdateStatus;
+  eol: EolAssessment | null;
+  /** Nieuwste versie in dezelfde reeks (de beveiligingsupdates die er al zijn). */
+  laatsteInReeks?: string;
+  /** Nieuwste versie van het product. */
+  nieuwste?: string;
+}
+
+/** Einde ondersteuning plus: mist deze versie updates die er al zijn? */
+export function beoordeel(sw: DetectedSoftware, now: Date): Beoordeling {
+  const p = sw.product;
+  if (p?.wie === 'leverancier') return { status: 'beheerd', eol: null };
+  if (!p || !sw.version) return { status: 'onbekend', eol: null };
+  const eol = assessEol(sw, now);
+  const src = productCycles(p);
+  const snapCycles = src?.fromSnapshot ? (src.cycles as EolCycle[]) : [];
+  const inCycle = eol ? snapCycles.find((c) => c.cycle === eol.cycle) : undefined;
+  const nieuwste = newestOverall(snapCycles);
+  const exact = sw.version.split('.').length >= 3 || /[a-z]$/i.test(sw.version);
+  const laatsteInReeks = inCycle?.latest && /^\d/.test(inCycle.latest) ? inCycle.latest : undefined;
+  const base = { eol, ...(laatsteInReeks ? { laatsteInReeks } : {}), ...(nieuwste ? { nieuwste } : {}) };
+  if (eol?.status === 'einde') return { status: 'einde', ...base };
+  if (eol?.status === 'binnenkort') return { status: 'binnenkort', ...base };
+  if (!eol) return { status: 'onbekend', ...base };
+  // Alleen met een volledig versienummer kunnen we zeggen dat er updates ontbreken.
+  if (exact && laatsteInReeks && compareVersions(sw.version, laatsteInReeks) < 0) return { status: 'achter', ...base };
+  if (nieuwste && compareVersions(sw.version, nieuwste) < 0 && compareVersions(eol.cycle, nieuwste) < 0 && !nieuwste.startsWith(`${eol.cycle}.`)) {
+    return { status: 'nieuwere-reeks', ...base };
+  }
+  return { status: 'actueel', ...base };
 }
 
 export interface VulnHit {
@@ -133,7 +268,7 @@ export interface VulnHit {
 
 export function vulnsFor(sw: DetectedSoftware, db: VulnDb): VulnHit[] {
   const cpe = sw.product?.cpe;
-  if (!cpe) return [];
+  if (!cpe || !sw.version) return [];
   const hits = db.match([
     {
       assetKey: 'website',

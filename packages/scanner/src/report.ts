@@ -1,4 +1,15 @@
+import { buildWebProfiles } from './profiel.ts';
 import type { ScanReport } from './scan.ts';
+
+const STATUS_NL: Record<string, string> = {
+  einde: 'GEEN UPDATES MEER',
+  binnenkort: 'updates stoppen binnenkort',
+  achter: 'updates beschikbaar',
+  'nieuwere-reeks': 'ondersteund, nieuwere versie beschikbaar',
+  actueel: 'actueel',
+  onbekend: 'niet te beoordelen',
+  beheerd: 'bijgewerkt door leverancier',
+};
 
 const OUTCOME_NL = {
   ok: 'In orde',
@@ -15,7 +26,7 @@ const CERTAINTY_NL = {
   opgegeven: 'Door jou opgegeven',
 } as const;
 
-const FOR_WHO_NL = { zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer' } as const;
+const FOR_WHO_NL = { zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer', hosting: 'Hostingpartij' } as const;
 
 /** Korte samenvatting in gewone taal voor de opdrachtregel. */
 export function formatReport(r: ScanReport): string {
@@ -36,6 +47,15 @@ export function formatReport(r: ScanReport): string {
       lines.push(`${i + 1}. ${a.title}  [${FOR_WHO_NL[a.forWho]}]`);
       lines.push(`   ${a.why}`);
     });
+  }
+  for (const p of buildWebProfiles(r.checks)) {
+    if (!p.onderdelen.length) continue;
+    lines.push('');
+    lines.push(`Software en server van ${new URL(p.website).hostname}${p.kennisStand ? ` (kennis endoflife.date ${p.kennisStand})` : ''}:`);
+    for (const o of p.onderdelen) {
+      const zeker = !o.versie ? 'versie verborgen' : o.versieZekerheid === 'zeker' && o.productZekerheid === 'zeker' ? 'zeker' : 'waarschijnlijk';
+      lines.push(`- ${o.naam}${o.versie ? ` ${o.versie}` : ''} [${zeker}] ${STATUS_NL[o.status] ?? o.status} · ${o.wie}`);
+    }
   }
   lines.push('');
   lines.push('Alle controles:');

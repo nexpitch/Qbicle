@@ -69,6 +69,8 @@ import {
   PARTNER_ACCESS,
   PlatformError,
   removeDomain,
+  renameDomain,
+  domainImpact,
   removeMember,
   renameOrganization,
   requestLoginLink,
@@ -163,7 +165,7 @@ const schemas = {
     note: z.string().max(2000).nullish(),
     reason: z.string().max(2000).nullish(),
     // Een leeg keuzeveld in een formulier is "niemand".
-    assignedTo: z.enum(['zelf', 'it-partner', 'webbouwer', '']).nullish(),
+    assignedTo: z.enum(['zelf', 'it-partner', 'webbouwer', 'hosting', '']).nullish(),
     assigneeName: z.string().max(200).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
@@ -418,9 +420,16 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     c.json(await getDomain(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
   );
   v1.delete('/organisaties/:org/domeinen/:dom', requireUser, async (c) => {
-    await removeDomain(p, user(c), param(c, 'org'), param(c, 'dom'));
-    return c.body(null, 204);
+    const input = await body(c, z.object({ bevestiging: z.string().max(300) }));
+    return c.json(await removeDomain(p, user(c), param(c, 'org'), param(c, 'dom'), input));
   });
+  v1.patch('/organisaties/:org/domeinen/:dom', requireUser, async (c) => {
+    const input = await body(c, z.object({ naam: z.string().min(1).max(300) }));
+    return c.json(await renameDomain(p, user(c), param(c, 'org'), param(c, 'dom'), { name: input.naam }));
+  });
+  v1.get('/organisaties/:org/domeinen/:dom/gevolgen', requireUser, async (c) =>
+    c.json(await domainImpact(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
+  );
   v1.get('/organisaties/:org/domeinen/:dom/dns-beheer', requireUser, async (c) =>
     c.json(await findDnsHost(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
   );

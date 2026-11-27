@@ -14,7 +14,7 @@ CREATE TABLE action_task (
   status           text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'bezig', 'gedaan', 'bevestigd', 'genegeerd')),
   note             text CHECK (char_length(note) <= 2000),
   reason           text CHECK (char_length(reason) <= 2000),
-  assigned_to      text CHECK (assigned_to IN ('zelf', 'it-partner', 'webbouwer')),
+  assigned_to      text CHECK (assigned_to IN ('zelf', 'it-partner', 'webbouwer', 'hosting')),
   assignee_name    text CHECK (char_length(assignee_name) <= 200),
   updated_by       uuid REFERENCES app_user(id) ON DELETE SET NULL,
   updated_at       timestamptz NOT NULL DEFAULT now(),

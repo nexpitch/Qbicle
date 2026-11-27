@@ -24,6 +24,10 @@ export interface Net {
   resolveCaa(name: string): Promise<{ tag: string; value: string; critical: number }[]>;
   /** A- en AAAA-records samen. */
   resolveAddresses(name: string): Promise<string[]>;
+  /** CNAME-doel(en) van een naam; leeg als er geen is. Optioneel (alleen voor de hostingherkenning). */
+  resolveCname?(name: string): Promise<string[]>;
+  /** Naam bij een IP-adres (PTR); leeg als er geen is. Optioneel (alleen voor de hostingherkenning). */
+  reverse?(ip: string): Promise<string[]>;
   /** DNSSEC-status via een validerende resolver; null als dat niet lukte. */
   dnssec(name: string): Promise<DnssecStatus | null>;
   tlsHandshake(host: string, port?: number): Promise<TlsInfo>;
@@ -252,6 +256,8 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
       ]);
       return [...a, ...aaaa];
     },
+    resolveCname: (name) => orEmpty(ask((r) => r.resolveCname(name))),
+    reverse: (ip) => orEmpty(ask((r) => r.reverse(ip))),
     async dnssec(name) {
       try {
         const ds = await doh(name, 'DS');

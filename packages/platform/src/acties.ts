@@ -35,7 +35,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   genegeerd: 'Geaccepteerd risico',
 };
 
-const ASSIGNEES = ['zelf', 'it-partner', 'webbouwer'] as const;
+const ASSIGNEES = ['zelf', 'it-partner', 'webbouwer', 'hosting'] as const;
 
 /** Een geaccepteerd risico beoordeel je na zoveel maanden opnieuw. */
 export const ACCEPT_REVIEW_MONTHS = 6;
@@ -43,6 +43,11 @@ export const ACCEPT_REVIEW_MONTHS = 6;
 /** Bij welke actie hoort een bevinding (zelfde regel als het scoremodel). */
 export function actionKeyFor(findingKey: string): string {
   return (WEIGHTS[findingKey] ?? FALLBACK_WEIGHT).action;
+}
+
+/** Bevindingen met gewicht 0 zijn alleen ter informatie en horen bij geen enkele actie. */
+function countsForAction(findingKey: string): boolean {
+  return (WEIGHTS[findingKey] ?? FALLBACK_WEIGHT).b > 0;
 }
 
 export interface TaskLogEntry {
@@ -255,6 +260,7 @@ async function loadTasks(q: Queryable, organizationId: string): Promise<{ tasks:
   ]);
   const accepted: AcceptedByAction = new Map();
   for (const f of acc) {
+    if (!countsForAction(f.finding_key)) continue;
     const k = actionKeyFor(f.finding_key);
     const x = accepted.get(k) ?? { count: 0, assets: [] };
     x.count++;
@@ -355,7 +361,7 @@ export async function updateTask(p: Platform, actor: UserActor, organizationId: 
     if (statusChanged) await log('status', to === 'genegeerd' ? reason : null, from, to);
     if (note !== (cur?.note ?? null) && note) await log('notitie', note);
     if (assignedTo !== (cur?.assigned_to ?? null) || assigneeName !== (cur?.assignee_name ?? null)) {
-      const wie = assignedTo ? ({ zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer' } as const)[assignedTo] : 'niemand';
+      const wie = assignedTo ? ({ zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer', hosting: 'Hostingpartij' } as const)[assignedTo] : 'niemand';
       await log('toewijzing', assigneeName ? `${wie}: ${assigneeName}` : wie);
     }
     await audit(q, actor, {
@@ -379,7 +385,7 @@ async function setAccepted(q: Queryable, organizationId: string, actionKey: stri
       WHERE a.organization_id = $1 AND f.resolved_at IS NULL AND (f.accepted_at IS ${accept ? '' : 'NOT '}NULL)`,
     [organizationId],
   );
-  const ids = rows.filter((r) => actionKeyFor(r.finding_key) === actionKey).map((r) => r.id);
+  const ids = rows.filter((r) => countsForAction(r.finding_key) && actionKeyFor(r.finding_key) === actionKey).map((r) => r.id);
   if (!ids.length) return 0;
   await q.query(
     accept
@@ -427,6 +433,7 @@ export async function verifyChecklistAfterScan(q: Queryable, organizationId: str
   );
   const per = new Map<string, { open: number; unresolved: number; seenNow: boolean; resolvedNow: boolean }>();
   for (const f of findings) {
+    if (!countsForAction(f.finding_key)) continue;
     const k = actionKeyFor(f.finding_key);
     const x = per.get(k) ?? { open: 0, unresolved: 0, seenNow: false, resolvedNow: false };
     if (f.open) x.open++;
