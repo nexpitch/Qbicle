@@ -13,6 +13,8 @@ COPY packages/devices/package.json packages/devices/
 COPY packages/inventory/package.json packages/inventory/
 COPY packages/platform/package.json packages/platform/
 COPY packages/ops/package.json packages/ops/
+COPY packages/koppelingen/package.json packages/koppelingen/
+COPY packages/worker/package.json packages/worker/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY apps/cockpit/package.json apps/cockpit/

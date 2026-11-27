@@ -4,6 +4,15 @@
 (function () {
   'use strict';
 
+  function store(op, key, value) {
+    try {
+      if (op === 'set') sessionStorage.setItem('qbicle_' + key, value);
+      else if (op === 'remove') sessionStorage.removeItem('qbicle_' + key);
+      else return sessionStorage.getItem('qbicle_' + key);
+    } catch (e) { return null; }
+    return null;
+  }
+
   function pick(obj, path) {
     return path.split('.').reduce(function (o, k) { return o == null ? undefined : o[k]; }, obj);
   }
@@ -65,7 +74,16 @@
         showError(form, r.json.bericht || 'Er ging iets mis. Probeer het opnieuw.');
         return;
       }
-      if (form.dataset.nextVeld) { location.href = pick(r.json, form.dataset.nextVeld); return; }
+      if (form.dataset.toonVeld) {
+        // Toon een waarde uit het antwoord (bijv. een deellink) in plaats van te herladen.
+        var out = document.getElementById(form.dataset.toonIn || '');
+        if (out) { out.value = String(pick(r.json, form.dataset.toonVeld) ?? ''); out.hidden = false; out.focus(); out.select(); }
+        return;
+      }
+      if (form.dataset.nextVeld) {
+        var dest = pick(r.json, form.dataset.nextVeld);
+        if (dest) { location.href = dest; return; }
+      }
       if (form.dataset.next) { location.href = nextUrl(form.dataset.next, r.json); return; }
       location.reload();
     } catch (x) {
@@ -87,6 +105,34 @@
     history.replaceState(null, '', url);
   });
 
+  // Kopieerknoppen: waarde op het klembord, korte melding "Gekopieerd".
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var t = document.createElement('textarea');
+      t.value = text; t.setAttribute('readonly', ''); t.className = 'copy-hidden';
+      document.body.appendChild(t); t.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(t);
+      ok ? resolve() : reject(new Error('kopiëren lukt niet'));
+    });
+  }
+  var live = document.createElement('p');
+  live.className = 'copy-hidden'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+  document.body.appendChild(live);
+  document.addEventListener('click', function (e) {
+    var btn = e.target instanceof Element ? e.target.closest('[data-kopieer]') : null;
+    if (!btn) return;
+    copyText(btn.getAttribute('data-kopieer')).then(function () {
+      btn.classList.add('gekopieerd');
+      live.textContent = 'Gekopieerd';
+      setTimeout(function () { btn.classList.remove('gekopieerd'); live.textContent = ''; }, 1600);
+    }, function () {
+      live.textContent = 'Kopiëren lukte niet. Selecteer de tekst en kopieer hem zelf.';
+    });
+  });
+
   // Links uit e-mails: het token staat achter # en gaat met een POST naar de API.
   var tokenBox = document.querySelector('[data-token-post]');
   if (tokenBox) {
@@ -97,10 +143,22 @@
       status.textContent = 'Deze link is niet compleet. Kopieer de hele link uit de e-mail, of vraag een nieuwe aan.';
     } else {
       send(tokenBox.dataset.tokenPost, 'POST', { token: token }).then(function (r) {
+        // Uitnodiging openen zonder in te loggen: token even bewaren, inloggen, daarna verder.
+        if (r.status === 401 && tokenBox.dataset.bewaarToken) {
+          store('set', tokenBox.dataset.bewaarToken, token);
+          location.href = '/inloggen';
+          return;
+        }
         if (!r.ok) { status.textContent = r.json.bericht || 'Deze link werkt niet meer. Vraag een nieuwe aan.'; return; }
         var reg = r.json.registratie;
-        if (reg && reg.organizationId) {
+        var pending = store('get', 'uitnodiging');
+        if (pending && !tokenBox.dataset.bewaarToken) {
+          store('remove', 'uitnodiging');
+          location.href = '/uitnodiging#token=' + encodeURIComponent(pending);
+        } else if (reg && reg.organizationId) {
           location.href = '/o/' + reg.organizationId + (reg.product === 'audit' ? '/audit/bestellen' : '/welkom');
+        } else if (r.json.organizationId) {
+          location.href = '/o/' + r.json.organizationId + '/overzicht';
         } else {
           location.href = tokenBox.dataset.next || '/overzicht';
         }
