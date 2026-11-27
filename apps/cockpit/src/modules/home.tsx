@@ -9,6 +9,7 @@ const ATTENTION: Record<AttentionItem['kind'], [string, StatusKind]> = {
   betaling_mislukt: ['Betaling mislukt', 'crit'],
   achterstallig: ['Achterstallig', 'warn'],
   proef_loopt_af: ['Proef loopt af', 'info'],
+  btw_verlegd_gestopt: ['Btw verlegd gestopt', 'warn'],
 };
 
 export const home: CockpitModule = {
@@ -68,7 +69,7 @@ export const home: CockpitModule = {
                             <td>
                               <Status kind={ATTENTION[a.kind][1]}>{ATTENTION[a.kind][0]}</Status>
                             </td>
-                            <td class="muted">{a.kind === 'betaling_mislukt' ? a.detail : planName(ctx.cockpit.p.catalog, a.detail)}</td>
+                            <td class="muted">{a.kind === 'betaling_mislukt' || a.kind === 'btw_verlegd_gestopt' ? a.detail : planName(ctx.cockpit.p.catalog, a.detail)}</td>
                             <td class="num">{datum(a.at)}</td>
                           </tr>
                         ))}

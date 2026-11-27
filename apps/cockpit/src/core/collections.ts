@@ -6,6 +6,9 @@ import {
   one,
   periodLines,
   PlatformError,
+  refreshVatCheck,
+  vatAmount,
+  vatTreatment,
   syncPayment,
   withTransaction,
   type Actor,
@@ -98,6 +101,8 @@ export interface ItemRow {
   amount_excl_cents: number;
   vat_cents: number;
   amount_incl_cents: number;
+  vat_code: 'nl_standaard' | 'eu_verlegd';
+  vat_rate: string | null;
   original_excl_cents: number | null;
   adjust_reason: string | null;
   status: ItemStatus;
@@ -154,7 +159,16 @@ export async function prepareRun(
     throw new PlatformError('ongeldige_invoer', `Kies een incassodatum van vandaag tot en met ${MAX_DAYS_AHEAD} dagen vooruit.`);
   }
   const date = new Date(`${input.collectionDate}T23:59:59Z`);
-  const btw = p.catalog.btwPercentage;
+  // Btw verlegd (EU buiten NL): bij elke verlenging het btw-nummer opnieuw bij VIES controleren,
+  // vóór de transactie (netwerk). Ongeldig of VIES in storing = gewoon btw, met melding in de cockpit.
+  const eu = await many<{ organization_id: string }>(
+    p.pool,
+    `SELECT DISTINCT s.organization_id FROM subscription s JOIN organization o ON o.id = s.organization_id
+      WHERE s.status IN ('actief', 'achterstallig', 'opgezegd') AND s.current_period_end IS NOT NULL AND s.current_period_end <= $1
+        AND o.payment_method = 'incasso' AND o.vat_number IS NOT NULL AND o.billing_country <> 'NL'`,
+    [date],
+  );
+  for (const r of eu) await refreshVatCheck(p, r.organization_id, 'verlenging', actor, 1);
   return withTransaction(p.pool, async (q) => {
     // Eén batch tegelijk klaarzetten (voorkomt dubbele regels bij gelijktijdige agents).
     await q.query(`SELECT pg_advisory_xact_lock(hashtext('qbicle-incasso-klaarzetten'))`);
@@ -219,7 +233,8 @@ export async function prepareRun(
         ? await periodLines(p, q, due1.organization_id, plan, s.interval, s.monthlyPriceCents, description)
         : [{ omschrijving: description, aantal: 1, prijsExclCenten: s.monthlyPriceCents * (s.interval === 'jaar' ? 12 : 1), totaalExclCenten: s.monthlyPriceCents * (s.interval === 'jaar' ? 12 : 1) }];
       const excl = lines.reduce((t, l) => t + l.totaalExclCenten, 0);
-      const vat = Math.round((excl * btw) / 100);
+      const vt = await vatTreatment(p, q, due1.organization_id);
+      const vat = vatAmount(vt, excl);
       // Klant heeft de machtiging ingetrokken: niet incasseren, wel meteen een vervolgvoorstel (betaallink).
       const revoked = await one<{ revoked: boolean }>(
         q,
@@ -233,11 +248,11 @@ export async function prepareRun(
         q,
         `INSERT INTO collection_item (run_id, organization_id, subscription_id, description, period_start, period_end,
                                       amount_excl_cents, vat_cents, amount_incl_cents, lines, status, exclude_reason, failure_reason,
-                                      plan, billing_interval)
+                                      plan, billing_interval, vat_code, vat_rate, vat_check_id)
          SELECT $1, s.organization_id, s.id, $3, s.current_period_end,
                 -- Periode met dezelfde termijn als het bedrag (ook bij een geplande termijnwissel).
                 s.current_period_end + CASE WHEN $12 = 'jaar' THEN interval '1 year' ELSE interval '1 month' END,
-                $4, $5, $6, $7, $8, $9, $10, $11, $12
+                $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
            FROM subscription s WHERE s.id = $2
          RETURNING id`,
         [
@@ -253,6 +268,9 @@ export async function prepareRun(
           mandateGone ? 'mandaat_ingetrokken' : null,
           s.plan,
           s.interval,
+          vt.code,
+          vt.rate,
+          vt.checkId,
         ],
       );
       if (mandateGone) await createFollowupSuggestion(q, p.config.appOrigin, item!.id);
@@ -319,9 +337,11 @@ export async function adjustItem(p: Platform, runId: string, itemId: string, exc
   const why = reason.trim();
   if (!Number.isInteger(exclCents) || exclCents < 0 || exclCents > 100_000_00) throw new PlatformError('ongeldige_invoer', 'Ongeldig bedrag.');
   if (!why || why.length > 400) throw new PlatformError('ongeldige_invoer', 'Geef een reden voor de aanpassing.');
-  const vat = Math.round((exclCents * p.catalog.btwPercentage) / 100);
   await withTransaction(p.pool, async (q) => {
     const item = await lockConceptItem(q, runId, itemId);
+    // Zelfde btw als waarmee de regel klaargezet is (bij btw verlegd 0%).
+    const rate = await one<{ vat_rate: string | null }>(q, 'SELECT vat_rate FROM collection_item WHERE id = $1', [itemId]);
+    const vat = Math.round((exclCents * (rate?.vat_rate != null ? Number(rate.vat_rate) : p.catalog.btwPercentage)) / 100);
     if (item.status !== 'klaar') throw new PlatformError('conflict', 'Pas alleen regels aan die meedoen.');
     await q.query(
       `UPDATE collection_item SET amount_excl_cents = $2, vat_cents = $3, amount_incl_cents = $4,
@@ -399,9 +419,9 @@ export async function submitRun(p: Platform, runId: string, actor: Actor): Promi
       const pay = await one<{ id: string }>(
         q,
         `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines)
+                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines, vat_code, vat_rate, vat_check_id)
          SELECT organization_id, subscription_id, 'Incasso: ' || description, period_start, period_end,
-                amount_excl_cents, vat_cents, amount_incl_cents, 'open', $2, $3, lines
+                amount_excl_cents, vat_cents, amount_incl_cents, 'open', $2, $3, lines, vat_code, vat_rate, vat_check_id
            FROM collection_item WHERE id = $1
          RETURNING id`,
         [it.id, p.payments.name, actor.userId],

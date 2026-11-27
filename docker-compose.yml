@@ -61,6 +61,10 @@ services:
       QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+      # Btw verlegd: 'test' = nep-VIES zonder netwerk (000000 = ongeldig, 999999 = storing); leeg = echte VIES van de EU.
+      QBICLE_VIES: ${QBICLE_VIES:-}
+      # Btw-nummer van Qbicle (na oprichting BV); dan geeft VIES een consultatienummer als bewijs.
+      QBICLE_BTW_NUMMER: ${QBICLE_BTW_NUMMER:-}
     entrypoint: ["npx", "--no-install", "tsx", "packages/ops/src/cli.ts"]
 
   # Scan-worker met planner: zet scans van bevestigde domeinen in de wachtrij (eerste scan
@@ -85,6 +89,10 @@ services:
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
       QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+      # Btw verlegd: 'test' = nep-VIES zonder netwerk (000000 = ongeldig, 999999 = storing); leeg = echte VIES van de EU.
+      QBICLE_VIES: ${QBICLE_VIES:-}
+      # Btw-nummer van Qbicle (na oprichting BV); dan geeft VIES een consultatienummer als bewijs.
+      QBICLE_BTW_NUMMER: ${QBICLE_BTW_NUMMER:-}
     restart: unless-stopped
     entrypoint: ["npx", "--no-install", "tsx", "packages/worker/src/cli.ts"]
 
@@ -106,6 +114,10 @@ services:
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
       QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+      # Btw verlegd: 'test' = nep-VIES zonder netwerk (000000 = ongeldig, 999999 = storing); leeg = echte VIES van de EU.
+      QBICLE_VIES: ${QBICLE_VIES:-}
+      # Btw-nummer van Qbicle (na oprichting BV); dan geeft VIES een consultatienummer als bewijs.
+      QBICLE_BTW_NUMMER: ${QBICLE_BTW_NUMMER:-}
     ports:
       - "8080:8080"
     entrypoint: ["npx", "--no-install", "tsx", "apps/api/src/server.ts"]
@@ -139,6 +151,10 @@ services:
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
       QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+      # Btw verlegd: 'test' = nep-VIES zonder netwerk (000000 = ongeldig, 999999 = storing); leeg = echte VIES van de EU.
+      QBICLE_VIES: ${QBICLE_VIES:-}
+      # Btw-nummer van Qbicle (na oprichting BV); dan geeft VIES een consultatienummer als bewijs.
+      QBICLE_BTW_NUMMER: ${QBICLE_BTW_NUMMER:-}
     ports:
       # Andere poort op je computer: QBICLE_WEB_PORT=3300 (scripts/klantomgeving.sh kiest zelf een vrije).
       - "${QBICLE_WEB_PORT:-3000}:3000"
@@ -168,6 +184,10 @@ services:
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
       QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+      # Btw verlegd: 'test' = nep-VIES zonder netwerk (000000 = ongeldig, 999999 = storing); leeg = echte VIES van de EU.
+      QBICLE_VIES: ${QBICLE_VIES:-}
+      # Btw-nummer van Qbicle (na oprichting BV); dan geeft VIES een consultatienummer als bewijs.
+      QBICLE_BTW_NUMMER: ${QBICLE_BTW_NUMMER:-}
     ports:
       - "${QBICLE_COCKPIT_PORT:-3100}:3100"
     entrypoint: ["npx", "--no-install", "tsx", "apps/cockpit/src/server.ts"]

@@ -19,6 +19,7 @@ export * from './scanstatus.ts';
 export * from './catalog.ts';
 export * from './payments.ts';
 export * from './billing.ts';
+export * from './btw.ts';
 export * from './systemen.ts';
 export * from './dashboard.ts';
 export * from './demo.ts';

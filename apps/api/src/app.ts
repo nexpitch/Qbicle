@@ -14,6 +14,7 @@ import {
   startSubscription,
   syncPayment,
   updateBillingDetails,
+  recheckVatNumber,
   listContacts,
   changePlan,
   retryPayment,
@@ -137,6 +138,8 @@ const schemas = {
     organisatie: z.string().max(200),
     pakket: z.string().max(40),
     interval: z.enum(BILLING_INTERVALS).default('jaar'),
+    land: z.string().max(2).nullish(),
+    btwNummer: z.string().max(30).nullish(),
   }),
   subscription: z.object({ pakket: z.string().max(40), interval: z.enum(BILLING_INTERVALS) }),
   cancel: z.object({ reden: z.string().max(40).nullish(), toelichting: z.string().max(1000).nullish() }),
@@ -463,7 +466,11 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
 
   v1.post('/registratie', async (c) => {
     const input = await body(c, schemas.signup);
-    await registerSignup(p, { email: input.email, organizationName: input.organisatie, plan: input.pakket, interval: input.interval }, c.get('actor'));
+    await registerSignup(
+      p,
+      { email: input.email, organizationName: input.organisatie, plan: input.pakket, interval: input.interval, country: input.land ?? null, vatNumber: input.btwNummer ?? null },
+      c.get('actor'),
+    );
     return c.json({ bericht: 'Check je mail: daar staat een link om je account te bevestigen en in te loggen.' }, 202);
   });
 
@@ -508,6 +515,7 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const clean = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v ?? null]));
     return c.json(await updateBillingDetails(p, user(c), param(c, 'org'), clean));
   });
+  v1.post('/organisaties/:org/btw-controle', requireUser, async (c) => c.json(await recheckVatNumber(p, user(c), param(c, 'org'))));
   v1.get('/organisaties/:org/facturen', requireUser, async (c) => c.json(await listInvoices(p, user(c).userId, param(c, 'org'))));
   v1.get('/organisaties/:org/facturen/:inv', requireUser, async (c) =>
     c.json(await getInvoice(p, user(c).userId, param(c, 'org'), param(c, 'inv'))),

@@ -46,6 +46,7 @@ export type AuditAction =
   | 'betaling.status'
   | 'factuur.uitgegeven'
   | 'factuurgegevens.gewijzigd'
+  | 'btw.gecontroleerd'
   | 'contactpersoon.gewijzigd'
   | 'contactpersoon.verwijderd'
   | 'mandaat.afgegeven'

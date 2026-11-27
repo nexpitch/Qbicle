@@ -131,10 +131,10 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
                 <dd>{c.kvk}</dd>
               </>
             ) : null}
-            {c.btwNummer ? (
+            {inv.customerVatNumber ?? c.btwNummer ? (
               <>
                 <dt>Btw-nummer</dt>
-                <dd>{c.btwNummer}</dd>
+                <dd>{inv.customerVatNumber ?? c.btwNummer}</dd>
               </>
             ) : null}
           </dl>
@@ -173,7 +173,7 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
                 <td class="num">{euro(inv.amountExclCents)}</td>
               </tr>
               <tr>
-                <td colspan={2}>Btw {inv.vatRate.toLocaleString('nl-NL')}%</td>
+                <td colspan={2}>{inv.reverseCharge ? 'Btw verlegd (0%)' : `Btw ${inv.vatRate.toLocaleString('nl-NL')}%`}</td>
                 <td class="num">{euro(inv.vatCents)}</td>
               </tr>
               <tr class="totaal">
@@ -183,6 +183,12 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
             </tbody>
           </table>
         </div>
+        {inv.reverseCharge ? (
+          <p class="melding">
+            <b>Btw verlegd</b> (reverse charge, artikel 196 Btw-richtlijn 2006/112/EG). De afnemer voldoet de btw. Btw-nummer afnemer: {inv.customerVatNumber}. Btw-nummer
+            Qbicle: {inv.supplierVatNumber ?? 'volgt'}.
+          </p>
+        ) : null}
         <p class="small">
           Gegevens van Qbicle als leverancier (bedrijfsnaam, adres, KvK en btw-nummer) volgen zodra de BV is opgericht. Tot die tijd is dit een testfactuur.
         </p>
@@ -251,7 +257,7 @@ export function TestBetaalPage(props: Ctx & { pay: Payment }) {
         <p>{pay.description}</p>
         <p class="bedrag">{euro(pay.amountInclCents)}</p>
         <p class="small">
-          {euro(pay.amountExclCents)} + {euro(pay.vatCents)} btw
+          {pay.vatCode === 'eu_verlegd' ? `${euro(pay.amountExclCents)} excl. btw, btw verlegd (0%)` : `${euro(pay.amountExclCents)} + ${euro(pay.vatCents)} btw`}
         </p>
         {pay.status === 'open' ? (
           <form class="stack" data-api={`/api/v1/betalingen/${pay.id}/test-uitkomst`} data-next={`/betaling/${pay.id}`}>
