@@ -25,7 +25,8 @@ wat te doen, CVE's en bronnen) en `/o/<org>/domeinen` (toevoegen en bevestigen v
 
 ## Voorbeelddata
 
-Zolang de scan-worker nog geen resultaten opslaat, is het dashboard leeg. Met `QBICLE_DEMODATA=aan` (staat aan in
+Echte cijfers komen van de scan-worker (zie [scan-worker.md](scan-worker.md)): na het bevestigen van een domein start
+binnen een minuut de eerste scan. Om zonder domein te kijken: met `QBICLE_DEMODATA=aan` (staat aan in
 `docker compose --profile web`, nooit in productie) toont het lege dashboard de knop **Vul met voorbeelddata**.
 Die maakt een voorbeeldbedrijf op `voorbeeldbedrijf.example` met 15 assets en 12 weken geschiedenis.
 Opnieuw vullen vervangt de vorige voorbeelddata.
