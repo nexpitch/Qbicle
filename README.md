@@ -17,6 +17,7 @@ Deze repository bevat de code voor het platform. Het technisch ontwerp is leiden
 | Basis-API (`/api/v1`, JSON) | Werkt, zie [docs/accounts.md](docs/accounts.md) |
 | Cookiecheck (proof of concept): drie browserbezoeken (niets klikken, weigeren, accepteren), trackers en cookies vóór en na toestemming | Werkt tegen lokale testpagina's, zie [docs/compliance.md](docs/compliance.md) |
 | Apparaatherkenning via routers (providermodems via UPnP, UniFi, Meraki, FRITZ!Box, MikroTik, generieke ARP/DHCP/mDNS-route, SNMP achter akkoord), categorieën, CVE/KEV/NCSC, end-of-life, scoremodel | Werkt met fixtures, zie [docs/apparaatherkenning.md](docs/apparaatherkenning.md) |
+| Scan-worker en planner: eerste scan na bevestigen, wekelijks opnieuw, resultaten per asset met geschiedenis voor het dashboard | Werkt, zie [docs/scan-worker.md](docs/scan-worker.md) |
 | Web-app (Next.js) | Volgende fase |
 | CT-logs, RDAP, subdomeinen | Volgende fase |
 | Kwetsbaarheidsbronnen (CVE, NVD, KEV, EPSS, EUVD, NCSC, DTC) | Fase 4 |

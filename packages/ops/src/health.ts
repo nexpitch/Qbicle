@@ -18,6 +18,10 @@ export interface ScanHealth {
   gemiddeldeDuurSeconden24u: number | null;
   /** Percentage mislukt van alle afgeronde scans in de laatste 24 uur. */
   foutPercentage24u: number | null;
+  /** Scan-workers met een hartslag in de laatste 5 minuten (tabel worker_heartbeat). */
+  workersActief: number;
+  /** Minuten sinds de laatste hartslag van een worker (null = nog nooit een worker gezien). */
+  workerLaatstGezienMinuten: number | null;
 }
 
 export async function scanHealth(ctx: Ctx): Promise<ScanHealth> {
@@ -36,6 +40,12 @@ export async function scanHealth(ctx: Ctx): Promise<ScanHealth> {
   );
   const klaar = Number(r?.klaar ?? 0);
   const mislukt = Number(r?.mislukt ?? 0);
+  const w = await one<{ actief: string; laatst: string | null }>(
+    ctx.pool,
+    `SELECT count(*) FILTER (WHERE last_seen > now() - interval '5 minutes') AS actief,
+            extract(epoch FROM now() - max(last_seen)) / 60 AS laatst
+       FROM worker_heartbeat`,
+  );
   return {
     wachtrij: Number(r?.wachtrij ?? 0),
     bezig: Number(r?.bezig ?? 0),
@@ -45,6 +55,8 @@ export async function scanHealth(ctx: Ctx): Promise<ScanHealth> {
     oudsteWachtrijMinuten: r?.oudste == null ? null : Math.round(Number(r.oudste)),
     gemiddeldeDuurSeconden24u: r?.duur == null ? null : Math.round(Number(r.duur)),
     foutPercentage24u: klaar + mislukt === 0 ? null : Math.round((mislukt / (klaar + mislukt)) * 100),
+    workersActief: Number(w?.actief ?? 0),
+    workerLaatstGezienMinuten: w?.laatst == null ? null : Math.round(Number(w.laatst)),
   };
 }
 
@@ -342,7 +354,11 @@ export async function healthSummary(ctx: Ctx): Promise<HealthSummary> {
     redenen.push(why);
   };
   if (scans.vast > 0) raise(1, `${scans.vast} scan(s) hangen`);
-  if ((scans.oudsteWachtrijMinuten ?? 0) > ctx.config.signalen.scanWachtrijTeLangNaMinuten) {
+  if (scans.wachtrij > 0 && scans.workersActief === 0) {
+    raise(2, scans.workerLaatstGezienMinuten === null
+      ? 'Er staan scans klaar, maar er draait geen scan-worker'
+      : `Er staan scans klaar, maar de scan-worker is ${scans.workerLaatstGezienMinuten} minuten stil`);
+  } else if ((scans.oudsteWachtrijMinuten ?? 0) > ctx.config.signalen.scanWachtrijTeLangNaMinuten) {
     raise(2, `Oudste scan wacht al ${scans.oudsteWachtrijMinuten} minuten (draait de worker?)`);
   }
   if ((scans.foutPercentage24u ?? 0) >= 25 && scans.mislukt24u >= 3) raise(2, `${scans.foutPercentage24u}% van de scans mislukt`);
