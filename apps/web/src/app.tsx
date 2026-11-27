@@ -5,6 +5,8 @@ import {
   authenticate,
   authorize,
   one,
+  getSysteem,
+  listSystemen,
   getBilling,
   getInvoice,
   getOrganization,
@@ -34,6 +36,7 @@ import {
   TestBetaalPage,
   WelkomPage,
 } from './pages/abonnement.tsx';
+import { SysteemFormPage, SystemenPage } from './pages/systemen.tsx';
 import { ItStappenplanPage, KoppelingDetailPage, KoppelingenPage } from './pages/koppelingen.tsx';
 
 /**
@@ -198,6 +201,30 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     return c.html(
       <AuditBestellenPage user={ctx.user} org={ctx.org} packages={p.catalog.auditPackages} catalog={p.catalog} magBestellen={Boolean(b?.magBeheren)} />,
     );
+  });
+
+  // Register bedrijfskritische systemen ----------------------------------------------
+  app.get('/o/:org/systemen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    return c.html(<SystemenPage user={ctx.user} org={ctx.org} reg={await listSystemen(p, ctx.s.user.id, ctx.org.id)} />);
+  });
+  app.get('/o/:org/systemen/nieuw', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const reg = await listSystemen(p, ctx.s.user.id, ctx.org.id);
+    if (!reg.magWijzigen || (reg.limiet !== null && reg.systemen.length >= reg.limiet)) return c.redirect(`/o/${ctx.org.id}/systemen`);
+    return c.html(<SysteemFormPage user={ctx.user} org={ctx.org} magWijzigen />);
+  });
+  app.get('/o/:org/systemen/:sys', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const s = await getSysteem(p, ctx.s.user.id, ctx.org.id, c.req.param('sys'));
+    const magWijzigen = await authorize(p.pool, ctx.s.user.id, ctx.org.id, 'domeinen:beheren').then(
+      () => true,
+      () => false,
+    );
+    return c.html(<SysteemFormPage user={ctx.user} org={ctx.org} s={s} magWijzigen={magWijzigen} />);
   });
 
   // Koppelingen (testmodus) ------------------------------------------------------------
