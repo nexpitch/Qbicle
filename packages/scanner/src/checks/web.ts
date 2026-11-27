@@ -206,7 +206,11 @@ export const headersCheck: Check = {
       }
     }
 
-    const csp = h['content-security-policy'];
+    const headerCsp = h['content-security-policy'];
+    // Een CSP mag ook in de pagina staan (<meta http-equiv>); frame-ancestors werkt daar niet.
+    const metaCsp = metaContentSecurityPolicy(final.body);
+    const csp = headerCsp ?? metaCsp;
+    if (metaCsp && !headerCsp) (evidence as Record<string, unknown>).metaCsp = metaCsp;
     if (!csp) {
       findings.push({
         key: 'web.csp_missing',
@@ -216,7 +220,9 @@ export const headersCheck: Check = {
       });
     }
 
-    if ((h['x-content-type-options'] ?? '').toLowerCase().trim() !== 'nosniff') {
+    // Dubbel meegestuurde headers komen samengevoegd binnen ("nosniff, nosniff"): per waarde beoordelen.
+    const xcto = headerValues(h['x-content-type-options']);
+    if (!(xcto.length > 0 && xcto.every((v) => v === 'nosniff'))) {
       findings.push({
         key: 'web.xcto_missing',
         certainty: 'vastgesteld',
@@ -225,23 +231,38 @@ export const headersCheck: Check = {
       });
     }
 
-    const xfo = (h['x-frame-options'] ?? '').toLowerCase();
-    const frameAncestors = /(^|;)\s*frame-ancestors\s/i.test(csp ?? '');
-    if (!frameAncestors && !['deny', 'sameorigin'].includes(xfo.trim())) {
-      findings.push({
-        key: 'web.framing_unprotected',
-        certainty: 'vastgesteld',
-        title: 'De website kan in andermans pagina worden ingesloten',
-        detail: 'Er is geen frame-ancestors of X-Frame-Options ingesteld. Een nepsite kan je pagina dan onzichtbaar insluiten om klikken te misleiden.',
-      });
+    const xfo = headerValues(h['x-frame-options']);
+    const frameAncestors = /(^|[;,])\s*frame-ancestors\s/i.test(headerCsp ?? '');
+    if (!frameAncestors && !(xfo.length > 0 && xfo.every((v) => v === 'deny' || v === 'sameorigin'))) {
+      // Misleiden met klikken loont alleen waar een bezoeker iets invult of ingelogd iets doet.
+      const formulier = sensitiveForm(final.body);
+      if (formulier) (evidence as Record<string, unknown>).formulier = formulier;
+      findings.push(
+        formulier
+          ? {
+              key: 'web.framing_login',
+              certainty: 'vastgesteld',
+              title: 'De pagina met een inlog- of betaalformulier kan in andermans pagina worden ingesloten',
+              detail: `Er is geen frame-ancestors of X-Frame-Options ingesteld, en de pagina heeft een ${formulier === 'betalen' ? 'betaalformulier' : 'inlogformulier'}. Een nepsite kan de pagina dan onzichtbaar insluiten en bezoekers laten klikken of invullen zonder dat ze het merken.`,
+            }
+          : {
+              key: 'web.framing_unprotected',
+              certainty: 'vastgesteld',
+              title: 'De website kan in andermans pagina worden ingesloten',
+              detail: 'Er is geen frame-ancestors of X-Frame-Options ingesteld. Op deze pagina zagen we geen inlog- of betaalformulier, dus het risico is klein; met zo\'n formulier kan een nepsite bezoekers laten klikken of invullen zonder dat ze het merken.',
+            },
+      );
     }
 
-    if (!h['referrer-policy']) {
+    // Zonder Referrer-Policy sturen browsers sinds 2021 alleen het domein mee naar andere sites;
+    // alleen een waarde die meer doorgeeft is een bevinding.
+    const referrer = effectiveReferrerPolicy(h['referrer-policy']);
+    if (referrer === 'unsafe-url' || referrer === 'no-referrer-when-downgrade') {
       findings.push({
-        key: 'web.referrer_missing',
+        key: 'web.referrer_unsafe',
         certainty: 'vastgesteld',
-        title: 'Geen Referrer-Policy ingesteld',
-        detail: 'De website legt niet vast welke adresgegevens naar andere sites mogen worden meegestuurd.',
+        title: 'De website geeft volledige adressen door aan andere websites',
+        detail: `De Referrer-Policy staat op "${referrer}". Andere websites zien dan het volledige adres van de pagina die je bezoeker bekeek, inclusief wat erachter staat (zoals zoekwoorden of een ordernummer). Zonder deze instelling doen browsers dat niet.`,
       });
     }
 
@@ -275,7 +296,11 @@ export const cookiesCheck: Check = {
       return { outcome: 'ok', evidence, message: 'De homepage zet geen cookies bij het eerste bezoek.' };
     }
     const findings: FindingDraft[] = [];
-    const insecure = [...new Set(cookies.filter((c) => !c.secure).map((c) => c.name))];
+    // Secure doet ertoe bij sessie- en inlogcookies. Dwingt de site HSTS af, dan gebruikt de
+    // browser toch al alleen https; zonder HSTS telt elke cookie zonder Secure.
+    const hsts = hstsActive(chain);
+    (evidence as Record<string, unknown>).hsts = hsts;
+    const insecure = [...new Set(cookies.filter((c) => !c.secure && (!hsts || isSessionCookie(c.name))).map((c) => c.name))];
     // Alleen sessie- en inlogcookies horen HttpOnly te hebben; toestemmings- en
     // analysecookies moeten vaak juist door scripts gelezen worden.
     const noHttpOnly = [...new Set(cookies.filter((c) => !c.httpOnly && isSessionCookie(c.name)).map((c) => c.name))];
@@ -284,7 +309,9 @@ export const cookiesCheck: Check = {
         key: 'web.cookie_insecure',
         certainty: 'vastgesteld',
         title: 'Cookies kunnen over een onbeveiligde verbinding worden verstuurd',
-        detail: `Deze cookies missen de Secure-vlag: ${insecure.join(', ')}.`,
+        detail: hsts
+          ? `Deze sessie- of inlogcookies missen de Secure-vlag: ${insecure.join(', ')}. De website dwingt https af (HSTS), maar bij het allereerste bezoek of na het verlopen daarvan kan zo'n cookie alsnog onbeveiligd worden verstuurd.`
+          : `Deze cookies missen de Secure-vlag: ${insecure.join(', ')}. De website dwingt ook geen https af (HSTS), dus de browser kan ze over een onbeveiligde verbinding versturen.`,
       });
     }
     if (noHttpOnly.length) {
@@ -302,8 +329,68 @@ export const cookiesCheck: Check = {
 
 const SESSION_COOKIE = /^(phpsessid|jsessionid|asp\.net_sessionid|aspsessionid\w*|connect\.sid|laravel_session|ci_session|wordpress_logged_in\w*|wordpress_sec\w*|wp-settings\w*)$|sess|(^|[_.-])sid($|[_.-])|auth|token|login/i;
 
+/** CSRF-cookies (XSRF-TOKEN, csrftoken) moeten juist door scripts leesbaar zijn; dat zijn geen inlogcookies. */
+const CSRF_COOKIE = /csrf|xsrf/i;
+
 export function isSessionCookie(name: string): boolean {
-  return SESSION_COOKIE.test(name);
+  return SESSION_COOKIE.test(name) && !CSRF_COOKIE.test(name);
+}
+
+/** HSTS met een max-age boven nul op het eerste https-antwoord van de host. */
+function hstsActive(chain: Chain): boolean {
+  const first = chain.hops.find((h) => new URL(h.url).protocol === 'https:');
+  const v = first?.headers['strict-transport-security'];
+  return Number(v?.match(/max-age\s*=\s*"?(\d+)/i)?.[1] ?? 0) > 0;
+}
+
+const REFERRER_POLICIES = new Set([
+  'no-referrer',
+  'no-referrer-when-downgrade',
+  'origin',
+  'origin-when-cross-origin',
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
+  'unsafe-url',
+]);
+
+/** De Referrer-Policy die de browser gebruikt: de laatste geldige waarde in de lijst. */
+export function effectiveReferrerPolicy(v: string | undefined): string | null {
+  const valid = headerValues(v).filter((x) => REFERRER_POLICIES.has(x));
+  return valid.at(-1) ?? null;
+}
+
+/**
+ * Heeft de pagina een inlog- of betaalformulier? Een wachtwoordveld, of een veld voor
+ * een kaartnummer (autocomplete="cc-number"). Alleen wat in de html staat.
+ */
+export function sensitiveForm(body: string): 'inloggen' | 'betalen' | null {
+  for (const m of body.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (/autocomplete\s*=\s*["']?cc-(number|csc|exp)/i.test(tag)) return 'betalen';
+  }
+  if (/<input\b[^>]*\btype\s*=\s*["']?password\b/i.test(body)) return 'inloggen';
+  return null;
+}
+
+/** Waarden van een (mogelijk dubbel meegestuurde) header, in kleine letters. */
+export function headerValues(v: string | undefined): string[] {
+  return (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** CSP uit een <meta http-equiv="Content-Security-Policy" content="..."> in de pagina. */
+export function metaContentSecurityPolicy(body: string): string | null {
+  for (const m of body.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/http-equiv\s*=\s*["']?content-security-policy["'\s>]/i.test(tag)) continue;
+    const c = tag.match(/content\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const v = (c?.[1] ?? c?.[2] ?? '').trim();
+    if (v) return v;
+  }
+  return null;
 }
 
 export function parseCookie(header: string) {

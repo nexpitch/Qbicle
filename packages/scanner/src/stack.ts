@@ -233,6 +233,9 @@ export function detectStack(res: HttpResponse): StackHit[] {
     ['squarespace', 'Squarespace', /static1\.squarespace\.com/.test(body)],
     ['webflow', 'Webflow', /Webflow/i.test(gen) || /\bdata-wf-site=/.test(body)],
     ['lightspeed', 'Lightspeed eCom', /cdn\.webshopapp\.com/.test(body)],
+    ['jimdo', 'Jimdo', /\.(jimcdn|jimstatic)\.com/.test(body) || (h.server ?? '').toLowerCase() === 'jimdo'],
+    // Alleen de eigen header van WordPress.com: s0.wp.com laden ook zelf gehoste sites met Jetpack.
+    ['wordpress-com', 'WordPress.com', /wordpress\.com/i.test(h['host-header'] ?? '')],
   ];
   for (const [key, naam, hit] of platforms) {
     if (hit) add({ key, naam, categorie: 'platform', versie: '', productZekerheid: 'zeker', versieZekerheid: 'verborgen', bron: `${naam}-kenmerken in de pagina of headers` });

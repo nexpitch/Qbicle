@@ -58,6 +58,13 @@ export interface Source {
   url: string;
 }
 
+/**
+ * Wie kan deze bevinding oplossen. Volgt uit het hostingtype van het asset
+ * (zie packages/scanner/src/eigenaar.ts). "platform": alleen de leverancier van
+ * een websiteplatform (Wix, Shopify ...) kan het veranderen; geen taak voor de klant.
+ */
+export type Owner = 'zelf' | 'it-partner' | 'webbouwer' | 'hosting' | 'platform';
+
 export interface Finding {
   /** Vaste sleutel van het type bevinding, bijvoorbeeld "spf.plus_all". */
   key: string;
@@ -80,6 +87,10 @@ export interface Finding {
    * asset.visibility, zoals in Light.
    */
   z?: number;
+  /** Wie het kan oplossen. Zonder dit veld volgt de eigenaar uit de actie (ACTIONS[..].forWho). */
+  owner?: Owner;
+  /** Naam van het platform of de hostingpartij waar het asset draait, bijvoorbeeld "Wix". */
+  platform?: string;
 }
 
 /**

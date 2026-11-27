@@ -120,6 +120,22 @@ describe.skipIf(!hasDb)('klantdashboard', () => {
     await expect(getAssetDetail(p, vreemde.userId, org, d.assets[0]!.id)).rejects.toMatchObject({ code: 'niet_gevonden' });
   });
 
+  it('bevinding die alleen het platform kan veranderen: geen actie, ter info, één regel per platform', async () => {
+    const d0 = await getDashboard(p, eigenaar.userId, org);
+    const site = d0.assets.find((a) => a.type === 'website')!;
+    await p.pool.query(
+      `INSERT INTO finding (asset_id, check_key, finding_key, fingerprint, certainty, title, detail, first_seen, last_seen, owner, platform)
+       VALUES ($1, 'web.headers', 'web.csp_missing', 'fp-wix-csp', 'vastgesteld', 'Geen Content-Security-Policy', '', now(), now(), 'platform', 'Wix')`,
+      [site.id],
+    );
+    const d = await getDashboard(p, eigenaar.userId, org);
+    expect(d.platforms).toEqual([{ naam: 'Wix', findingCount: 1, assets: [{ id: site.id, label: site.label }] }]);
+    expect(d.urgency).toBe(d0.urgency);
+    const f = (await getAssetDetail(p, eigenaar.userId, org, site.id)).open.find((x) => x.title === 'Geen Content-Security-Policy' && x.platform === 'Wix')!;
+    expect(f).toMatchObject({ level: 'info', action: { forWho: 'platform' } });
+    await p.pool.query(`DELETE FROM finding WHERE fingerprint = 'fp-wix-csp'`);
+  });
+
   it('voorbeelddata staat uit zonder QBICLE_DEMODATA', async () => {
     delete process.env.QBICLE_DEMODATA;
     await expect(seedDemoData(p, eigenaar, org)).rejects.toMatchObject({ code: 'geen_toegang' });

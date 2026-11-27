@@ -20,13 +20,13 @@ const OUTCOME_NL = {
 } as const;
 
 const CERTAINTY_NL = {
-  vastgesteld: 'Technisch vastgesteld',
+  vastgesteld: 'Gemeten',
   mogelijk: 'Mogelijk risico',
   onbekend: 'Onbekend',
   opgegeven: 'Door jou opgegeven',
 } as const;
 
-const FOR_WHO_NL = { zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer', hosting: 'Hostingpartij' } as const;
+const FOR_WHO_NL = { zelf: 'Zelf', 'it-partner': 'IT-partner', webbouwer: 'Webbouwer', hosting: 'Hostingpartij', platform: 'Platform' } as const;
 
 /** Korte samenvatting in gewone taal voor de opdrachtregel. */
 export function formatReport(r: ScanReport): string {
@@ -44,9 +44,14 @@ export function formatReport(r: ScanReport): string {
   } else {
     lines.push(`Belangrijkste acties (${s.topActions.length} van ${s.actionCount}):`);
     s.topActions.forEach((a, i) => {
-      lines.push(`${i + 1}. ${a.title}  [${FOR_WHO_NL[a.forWho]}]`);
+      lines.push(`${i + 1}. ${a.title}  [${FOR_WHO_NL[a.forWho]}${a.platform ? `, via ${a.platform}` : ''}]`);
       lines.push(`   ${a.why}`);
     });
+  }
+  for (const n of s.platformNotes) {
+    lines.push('');
+    lines.push(`Ligt bij ${n.platform} (${n.fingerprints.length} ${n.fingerprints.length === 1 ? 'bevinding' : 'bevindingen'}, telt niet mee):`);
+    lines.push(`   ${n.platform} bepaalt deze instellingen. Dit kun je doen: vraag ${n.platform} hoe zij je website beveiligen en neem dat op bij je leveranciers.`);
   }
   for (const p of buildWebProfiles(r.checks)) {
     if (!p.onderdelen.length) continue;
@@ -62,8 +67,11 @@ export function formatReport(r: ScanReport): string {
   for (const c of r.checks) {
     const where = c.asset.type === 'website' ? ` (${new URL(c.asset.value).hostname})` : '';
     lines.push(`- ${OUTCOME_NL[c.outcome].padEnd(19)} ${c.title}${where}`);
+    const contrib = new Map(s.contributions.map((x) => [x.fingerprint, x]));
     for (const f of c.findings) {
-      lines.push(`    · ${f.title} [${CERTAINTY_NL[f.certainty]}]`);
+      const x = contrib.get(f.fingerprint);
+      const tag = x?.p === 0 ? `, ligt bij ${f.platform ?? 'het platform'}` : x?.info ? ', ter info' : '';
+      lines.push(`    · ${f.title} [${CERTAINTY_NL[f.certainty]}${tag}]`);
       if (f.vulns?.length) lines.push(`      ${f.detail}`);
       for (const src of f.sources ?? []) lines.push(`      Bron: ${src.name} ${src.url}`);
     }

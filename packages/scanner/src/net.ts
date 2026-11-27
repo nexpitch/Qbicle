@@ -31,8 +31,18 @@ export interface Net {
   /** DNSSEC-status via een validerende resolver; null als dat niet lukte. */
   dnssec(name: string): Promise<DnssecStatus | null>;
   tlsHandshake(host: string, port?: number): Promise<TlsInfo>;
+  /**
+   * Accepteert de server nog TLS 1.0 en 1.1? Per versie één gewone verbinding
+   * (geen aanval): true = geaccepteerd, false = geweigerd, null = niet vast te stellen.
+   */
+  tlsLegacy(host: string, port?: number): Promise<LegacyTls>;
   /** Eén HTTP(S)-verzoek, zonder redirects te volgen. */
   httpGet(url: string): Promise<HttpResponse>;
+}
+
+export interface LegacyTls {
+  'TLSv1': boolean | null;
+  'TLSv1.1': boolean | null;
 }
 
 export interface DnssecStatus {
@@ -276,6 +286,35 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
       } catch {
         return null;
       }
+    },
+    async tlsLegacy(host, port = 443) {
+      const tryVersion = (v: 'TLSv1' | 'TLSv1.1') =>
+        new Promise<boolean | null>((resolve) => {
+          const socket = tls.connect({
+            host,
+            port,
+            servername: host,
+            rejectUnauthorized: false,
+            lookup: safeLookup as never,
+            timeout: timeoutMs,
+            minVersion: v,
+            maxVersion: v,
+            // OpenSSL 3 biedt oude versies alleen aan op beveiligingsniveau 0.
+            ciphers: 'DEFAULT@SECLEVEL=0',
+          });
+          const done = (r: boolean | null) => {
+            socket.destroy();
+            resolve(r);
+          };
+          socket.once('secureConnect', () => done(true));
+          socket.once('timeout', () => done(null));
+          socket.once('error', (e: NodeJS.ErrnoException) => {
+            // Een TLS-alert of "geen gedeelde versie/cipher" is een weigering; netwerkfouten zijn onbekend.
+            const msg = `${e.code ?? ''} ${e.message ?? ''}`;
+            done(/ERR_SSL|alert|protocol version|no protocols|handshake failure|wrong version|unsupported protocol|ECONNRESET/i.test(msg) ? false : null);
+          });
+        });
+      return { 'TLSv1': await tryVersion('TLSv1'), 'TLSv1.1': await tryVersion('TLSv1.1') };
     },
     tlsHandshake(host, port = 443) {
       return withRetry(() => new Promise<TlsInfo>((resolve, reject) => {

@@ -4,8 +4,10 @@ import {
   score,
   type Certainty,
   type Finding as ScoreFinding,
+  type Contribution,
   type ForWho,
   type LinkedVuln,
+  type Owner,
   type Outcome,
   type ScoreResult,
   type Source,
@@ -26,7 +28,11 @@ import { authorize, isUuid } from './organizations.ts';
  * geschiedenis van bevindingen (eerst gezien, opgelost, geaccepteerd).
  */
 
-export type Level = 'crit' | 'warn' | 'unk' | 'ok';
+/**
+ * Niveau van een bevinding of asset. "info" = Ter info: zichtbaar, maar geen
+ * aandachtspunt (licht gewicht, of iets dat alleen het platform kan veranderen).
+ */
+export type Level = 'crit' | 'warn' | 'unk' | 'info' | 'ok';
 
 export type AssetGroupKey = 'domeinen' | 'websites' | 'mail' | 'servers' | 'cloud' | 'netwerk' | 'apparaten';
 
@@ -63,6 +69,7 @@ export const FOR_WHO_LABELS: Record<ForWho, string> = {
   'it-partner': 'Voor je IT-partner',
   webbouwer: 'Voor je webbouwer',
   hosting: 'Voor je hostingpartij',
+  platform: 'Ligt bij je platform',
 };
 
 /** Vanaf dit gewicht (na alle factoren) is een bevinding rood. */
@@ -83,6 +90,15 @@ export interface DashboardAction {
   forWho: ForWho;
   weight: number;
   level: Level;
+  findingCount: number;
+  assets: DashboardAssetRef[];
+  /** Gezet als de klant dit via een platform regelt (bijv. certificaat op Wix). */
+  platform?: string;
+}
+
+/** Bevindingen die alleen een platform kan veranderen: geen taak, één regel per platform. */
+export interface DashboardPlatform {
+  naam: string;
   findingCount: number;
   assets: DashboardAssetRef[];
 }
@@ -178,6 +194,7 @@ export interface Dashboard {
   /** Begin van "sinds vorige keer": de periode waarover opgelost en nieuw gaan. */
   since: Date;
   actions: DashboardAction[];
+  platforms: DashboardPlatform[];
   groups: DashboardAssetGroup[];
   assets: DashboardAsset[];
   trend: TrendPoint[];
@@ -213,6 +230,8 @@ interface FindingRow {
   first_seen: Date;
   last_seen: Date;
   resolved_at: Date | null;
+  owner: Owner | null;
+  platform: string | null;
   accepted_at: Date | null;
 }
 
@@ -266,6 +285,8 @@ function toScoreFinding(f: FindingRow, a: AssetRow, vulns: VulnRow[]): ScoreFind
     fingerprint: f.fingerprint,
     vulns: vulnsOf(vulns),
     z: zFor(a),
+    ...(f.owner ? { owner: f.owner } : {}),
+    ...(f.platform ? { platform: f.platform } : {}),
   };
 }
 
@@ -274,8 +295,29 @@ function levelFromWeight(weight: number, kev: boolean): Level {
   return weight > 0 ? 'warn' : 'unk';
 }
 
+/** Niveau van één bevinding uit zijn bijdrage aan de score (zonder herhalingskorting). */
+function levelOf(c: Contribution | undefined, kev: boolean): Level {
+  if (!c) return 'unk';
+  const raw = c.b * c.m * c.z * c.k * c.p;
+  if (kev || raw >= CRIT_WEIGHT) return 'crit';
+  if (c.k === 0) return 'unk';
+  if (c.p === 0 || c.info || raw === 0) return 'info';
+  return 'warn';
+}
+
+/** Doelgroep van een actie: de eigenaar van de bevindingen als die gelijk is, anders die uit het model. */
+function forWhoOf(owners: Owner[], fallback: ForWho): ForWho {
+  const who = owners.map((o) => (o === 'platform' ? 'zelf' : o));
+  return who.length > 0 && who.every((o) => o === who[0]) ? who[0]! : fallback;
+}
+
+/** Bij één bevinding: telt hij niet mee omdat alleen het platform het kan, dan "platform". */
+function ownerLabelOf(c: Contribution): ForWho {
+  return c.owner === 'platform' && c.p > 0 ? 'zelf' : c.owner;
+}
+
 function worst(levels: Level[]): Level {
-  for (const l of ['crit', 'warn', 'unk'] as const) if (levels.includes(l)) return l;
+  for (const l of ['crit', 'warn', 'unk', 'info'] as const) if (levels.includes(l)) return l;
   return 'ok';
 }
 
@@ -299,7 +341,7 @@ async function load(p: Platform, organizationId: string, historySince: Date): Pr
   const findings = await many<FindingRow>(
     p.pool,
     `SELECT f.id, f.asset_id, f.check_key, f.finding_key, f.fingerprint, f.certainty, f.title, f.detail, f.sources,
-            f.first_seen, f.last_seen, f.resolved_at, f.accepted_at
+            f.first_seen, f.last_seen, f.resolved_at, f.accepted_at, f.owner, f.platform
        FROM finding f JOIN asset a ON a.id = f.asset_id
       WHERE a.organization_id = $1 AND (f.resolved_at IS NULL OR f.resolved_at > $2)
       ORDER BY f.first_seen`,
@@ -389,13 +431,12 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
   for (const f of openFindings) {
     const c = contribution.get(f.fingerprint);
     const kev = f.certainty === 'vastgesteld' && (l.vulns.get(f.id) ?? []).some((v) => v.in_kev);
-    const raw = c ? c.b * c.m * c.z * c.k : 0;
-    assetLevels.set(f.asset_id, [...(assetLevels.get(f.asset_id) ?? []), levelFromWeight(raw, kev)]);
+    assetLevels.set(f.asset_id, [...(assetLevels.get(f.asset_id) ?? []), levelOf(c, kev)]);
   }
   const openPerAsset = new Map<string, number>();
   for (const f of openFindings) openPerAsset.set(f.asset_id, (openPerAsset.get(f.asset_id) ?? 0) + 1);
 
-  const order: Record<Level, number> = { crit: 0, warn: 1, unk: 2, ok: 3 };
+  const order: Record<Level, number> = { crit: 0, warn: 1, unk: 2, info: 3, ok: 4 };
   const assets: DashboardAsset[] = activeAssets
     .map((a) => ({
       id: a.id,
@@ -424,12 +465,15 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
   });
 
   // Alle acties (het scoremodel geeft er maximaal drie terug), zwaarste eerst.
-  const grouped = new Map<string, { weight: number; fps: string[] }>();
+  const grouped = new Map<string, { weight: number; fps: string[]; owners: Owner[]; info: boolean; platform?: string }>();
   for (const c of current.contributions) {
     if (c.weight <= 0) continue;
-    const g = grouped.get(c.action) ?? { weight: 0, fps: [] };
+    const g = grouped.get(c.action) ?? { weight: 0, fps: [], owners: [], info: true };
     g.weight += c.weight;
     g.fps.push(c.fingerprint);
+    g.owners.push(c.owner);
+    g.info &&= c.info;
+    if (c.owner === 'platform' && c.platform) g.platform = c.platform;
     grouped.set(c.action, g);
   }
   const actions: DashboardAction[] = [...grouped.entries()]
@@ -452,14 +496,26 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
         key,
         title: def.title,
         why: def.why,
-        forWho: def.forWho,
+        forWho: forWhoOf(g.owners, def.forWho),
         weight: Math.round(g.weight * 10) / 10,
-        level: levelFromWeight(g.weight, kev),
+        // Alleen lichte punten (gewicht 3 of lager): ter info, geen aandachtspunt.
+        level: g.info && !kev && g.weight < CRIT_WEIGHT ? ('info' as const) : levelFromWeight(g.weight, kev),
         findingCount: g.fps.length,
         assets: [...refs.values()],
+        ...(g.platform ? { platform: g.platform } : {}),
       };
     })
     .sort((x, y) => y.weight - x.weight);
+
+  const platforms: DashboardPlatform[] = current.platformNotes.map((n) => {
+    const refs = new Map<string, DashboardAssetRef>();
+    for (const fp of n.fingerprints) {
+      const f = byFingerprint.get(fp);
+      const a = f ? byId.get(f.asset_id) : undefined;
+      if (a) refs.set(a.id, { id: a.id, label: assetLabel(a) });
+    }
+    return { naam: n.platform, findingCount: n.fingerprints.length, assets: [...refs.values()] };
+  });
 
   // Trend: wekelijks punt, teruggerekend uit de geschiedenis van bevindingen.
   const firstKnown = l.assets.reduce<Date | null>((m, a) => (!m || a.first_seen < m ? a.first_seen : m), null);
@@ -580,6 +636,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     counts,
     since,
     actions,
+    platforms,
     groups,
     assets,
     trend,
@@ -627,6 +684,8 @@ export interface AssetFindingDetail {
   certainty: Certainty;
   level: Level;
   action: { key: string; title: string; why: string; forWho: ForWho } | null;
+  /** Platform of hostingpartij waar het asset draait, als de scanner die herkende. */
+  platform: string | null;
   vulns: { cveId: string; cvss: number | null; inKev: boolean; epss: number | null }[];
   sources: Source[];
   firstSeen: Date;
@@ -658,7 +717,7 @@ export async function getAssetDetail(p: Platform, userId: string, organizationId
   const findings = await many<FindingRow>(
     p.pool,
     `SELECT id, asset_id, check_key, finding_key, fingerprint, certainty, title, detail, sources,
-            first_seen, last_seen, resolved_at, accepted_at
+            first_seen, last_seen, resolved_at, accepted_at, owner, platform
        FROM finding WHERE asset_id = $1 ORDER BY resolved_at DESC NULLS FIRST, first_seen DESC LIMIT 200`,
     [a.id],
   );
@@ -689,8 +748,9 @@ export async function getAssetDetail(p: Platform, userId: string, organizationId
       title: f.title,
       detail: f.detail,
       certainty: f.certainty,
-      level: f.resolved_at || f.accepted_at ? 'ok' : levelFromWeight(c ? c.b * c.m * c.z * c.k : 0, kev),
-      action: actionKey && def ? { key: actionKey, title: def.title, why: def.why, forWho: def.forWho } : null,
+      level: f.resolved_at || f.accepted_at ? 'ok' : levelOf(c, kev),
+      action: actionKey && def ? { key: actionKey, title: def.title, why: def.why, forWho: c ? ownerLabelOf(c) : def.forWho } : null,
+      platform: f.platform,
       vulns: vs.map((v) => ({ cveId: v.cve_id, cvss: v.cvss === null ? null : Number(v.cvss), inKev: v.in_kev, epss: v.epss === null ? null : Number(v.epss) })),
       sources: sourcesFor(Array.isArray(f.sources) ? f.sources : [], vs),
       firstSeen: f.first_seen,
@@ -700,7 +760,7 @@ export async function getAssetDetail(p: Platform, userId: string, organizationId
     };
   };
   const open = openRows.map(detail);
-  const order: Record<Level, number> = { crit: 0, warn: 1, unk: 2, ok: 3 };
+  const order: Record<Level, number> = { crit: 0, warn: 1, unk: 2, info: 3, ok: 4 };
   open.sort((x, y) => order[x.level] - order[y.level]);
 
   const attributes = await many<{ key: string; value: unknown; certainty: Certainty; observed_at: Date }>(

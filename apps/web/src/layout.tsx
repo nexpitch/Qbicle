@@ -107,7 +107,7 @@ export function FormError() {
   return <p class="form-fout" role="alert" hidden></p>;
 }
 
-export function Status(props: { kind: 'ok' | 'warn' | 'crit' | 'unk'; children: Child }) {
+export function Status(props: { kind: 'ok' | 'warn' | 'crit' | 'unk' | 'info'; children: Child }) {
   return (
     <span class={`status st-${props.kind}`}>
       <i aria-hidden="true"></i>

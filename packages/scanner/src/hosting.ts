@@ -29,6 +29,8 @@ const PARTIJEN: { re: RegExp; naam: string; soort: HostingSoort }[] = [
   { re: /(^|\.)squarespace\.com$/, naam: 'Squarespace', soort: 'platform' },
   { re: /(^|\.)webflow\.(io|com)$/, naam: 'Webflow', soort: 'platform' },
   { re: /(^|\.)webshopapp\.com$/, naam: 'Lightspeed eCom', soort: 'platform' },
+  { re: /(^|\.)(jimdo\.com|jimdosite\.com|jimdofree\.com)$/, naam: 'Jimdo', soort: 'platform' },
+  { re: /(^|\.)wordpress\.com$/, naam: 'WordPress.com', soort: 'platform' },
   { re: /(^|\.)(wpengine\.com|wpenginepowered\.com)$/, naam: 'WP Engine', soort: 'beheerde-wordpress' },
   { re: /(^|\.)kinsta\.cloud$/, naam: 'Kinsta', soort: 'beheerde-wordpress' },
   { re: /(^|\.)(netlify\.app|netlify\.com)$/, naam: 'Netlify', soort: 'statisch' },
