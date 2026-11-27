@@ -97,8 +97,14 @@ services:
       QBICLE_APP_ORIGIN: ${QBICLE_WEB_ORIGIN:-http://localhost:3000}
       QBICLE_SECURE_COOKIES: "uit"
       PORT: "3000"
+      # Dit is de lokale testopstelling, geen productie (de image zet standaard NODE_ENV=production).
+      NODE_ENV: development
       # Testbetalingen tot Mollie gekoppeld is (wacht op de BV).
       QBICLE_BETAALPROVIDER: nep
+      QBICLE_NEPBETALING: "aan"
+      QBICLE_DEMODATA: "aan"
+      # 'aan' = mail (inloglinks) in het Terminal-venster in plaats van via Brevo.
+      QBICLE_MAIL_CONSOLE: ${QBICLE_MAIL_CONSOLE:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}

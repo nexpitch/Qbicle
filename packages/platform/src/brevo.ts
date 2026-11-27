@@ -108,7 +108,7 @@ export class BrevoMailer implements Mailer {
  *   productie zou de console inloglinks in de logs zetten, dus dan weigeren we te starten.
  */
 export function mailerFromEnv(env: Record<string, string | undefined> = process.env): Mailer {
-  const apiKey = env.BREVO_API_KEY?.trim();
+  const apiKey = env.QBICLE_MAIL_CONSOLE === 'aan' && env.NODE_ENV !== 'production' ? '' : env.BREVO_API_KEY?.trim();
   if (!apiKey) {
     if (env.NODE_ENV === 'production') {
       throw new MailError('BREVO_API_KEY ontbreekt; in productie gaat mail nooit naar de console.');
@@ -120,6 +120,11 @@ export function mailerFromEnv(env: Record<string, string | undefined> = process.
     from: { email: env.QBICLE_MAIL_FROM?.trim() ?? '', name: env.QBICLE_MAIL_FROM_NAME?.trim() || 'Qbicle' },
     sandbox: env.QBICLE_MAIL_SANDBOX === 'aan',
   };
+  // Lokaal: sleutel wel, afzender nog niet ingesteld? Dan niet crashen maar naar de console.
+  if (env.NODE_ENV !== 'production' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(opts.from.email)) {
+    console.warn('QBICLE_MAIL_FROM ontbreekt of is ongeldig: mail gaat voorlopig naar de console in plaats van naar Brevo.');
+    return new ConsoleMailer();
+  }
   const replyTo = env.QBICLE_MAIL_REPLY_TO?.trim();
   if (replyTo) opts.replyTo = replyTo;
   return new BrevoMailer(opts);

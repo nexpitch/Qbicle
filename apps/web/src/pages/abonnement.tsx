@@ -323,29 +323,6 @@ export function BetalingPage(props: Ctx & { pay: Payment; invoice?: Invoice | un
   );
 }
 
-export function OverzichtPage(props: Ctx & { b: BillingOverview | null }) {
-  const { b, org } = props;
-  return (
-    <Layout title="Overzicht" user={props.user} org={org} active="overzicht">
-      <div class="intro">
-        <h1>{org.name}</h1>
-        {b ? <StatusBadge b={b} /> : null}
-      </div>
-      {b?.toegang === 'betaling_nodig' && b.magBeheren ? (
-        <p class="melding warn">
-          Je proef is voorbij. <a href={`/o/${org.id}/abonnement`}>Betaal om je overzicht te houden.</a>
-        </p>
-      ) : null}
-      <section class="card">
-        <h2>Je overzicht komt hier</h2>
-        <p class="small">
-          Hier verschijnen straks je urgentie, al je internetgerichte systemen en een korte actielijst. Dit onderdeel bouwen we in de volgende stap.
-        </p>
-      </section>
-    </Layout>
-  );
-}
-
 export function KiesOrganisatiePage(props: { user: PageUser; orgs: NavOrg[] }) {
   return (
     <Layout title="Kies een organisatie" user={props.user}>
