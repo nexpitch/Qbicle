@@ -502,3 +502,13 @@ pre.bestand { margin: 0; padding: 10px 12px; background: var(--surface); border:
   .dns-data { grid-template-columns: 1fr; gap: 6px; }
   .dns-data [data-label]::before { content: attr(data-label); display: block; color: var(--muted); font: 600 .7rem/1.4 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; }
 }
+
+/* Uitleg duidelijker aanklikbaar; "zelf te doen" en vooruitblik op direct oplossen. */
+.oplos-stappen > summary.oplos-knop { display: inline-flex; align-items: center; gap: 8px; list-style: none; border: 1.5px solid var(--petrol); border-radius: 6px; padding: 8px 12px; }
+.oplos-stappen > summary.oplos-knop::-webkit-details-marker { display: none; }
+.oplos-stappen > summary.oplos-knop::after { content: "▾"; font-size: .9em; }
+.oplos-stappen[open] > summary.oplos-knop::after { content: "▴"; }
+.oplos-stappen > summary.oplos-knop:hover { background: var(--surface-2); }
+.badge.zelf { background: var(--petrol); color: #fff; }
+.binnenkort { border-left: 3px solid var(--petrol); padding: 6px 10px; background: var(--surface-2); border-radius: 0 4px 4px 0; }
+#uitleg { scroll-margin-top: 16px; }

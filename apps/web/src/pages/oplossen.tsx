@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import { INGREPEN, type FindingOplossing, type Ingreep, type OplosGids } from '@qbicle/platform';
+import { INGREPEN, isDnsIngreep, type FindingOplossing, type Ingreep, type OplosGids } from '@qbicle/platform';
 import { Copy } from './dashboard.tsx';
 
 /**
@@ -143,12 +143,14 @@ export function OplosBlok(props: {
   orgId: string;
   assetId: string;
   open?: boolean;
+  domainId?: string | null;
 }) {
   const { f, o } = props;
   const g = o.gids!;
   const heeftWaarden = g.regels.length || g.wijzigingen.length || g.headers.length || g.bestand;
   const h = o.hercontrole;
   const loopt = h && (h.status === 'wachtrij' || h.status === 'bezig');
+  const dns = isDnsIngreep(g.ingreep);
   return (
     <div class="todo oplos" id={`f-${f.id}`}>
       <div class="oplos-kop">
@@ -165,7 +167,7 @@ export function OplosBlok(props: {
       </div>
       <p class="small wie">{g.wieTekst}</p>
       <details class="oplos-stappen" open={props.open}>
-        <summary>Zo los je het op, stap voor stap</summary>
+        <summary class="oplos-knop">Zo los je het op, stap voor stap</summary>
         <div class="stack-sm">
           <p class="small">{INGREPEN[g.ingreep].uitleg}</p>
           {g.inlog ? (
@@ -173,6 +175,11 @@ export function OplosBlok(props: {
               <a class="btn secondary klein" href={g.inlog.url} rel="noopener noreferrer" target="_blank">
                 Inloggen bij {g.inlog.naam} ↗
               </a>
+            </p>
+          ) : dns && props.domainId ? (
+            <p class="small">
+              Weet je niet waar je domein staat?{' '}
+              <a href={`/o/${props.orgId}/domeinen/${props.domainId}/waar`}>Zo zoek je uit bij welke partij je moet inloggen</a>
             </p>
           ) : null}
           <ol class="stappen">
@@ -207,6 +214,12 @@ export function OplosBlok(props: {
             </ul>
           ) : null}
           <p class="small">{g.wachten}</p>
+          {dns ? (
+            <p class="binnenkort small">
+              <b>In ontwikkeling:</b> straks log je hier in bij je DNS-partij en zetten wij deze regel voor je klaar. Je keurt hem dan zelf
+              goed. Tot die tijd volg je de stappen hierboven.
+            </p>
+          ) : null}
         </div>
       </details>
       {h ? (

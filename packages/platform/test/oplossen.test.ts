@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTIONS, WEIGHTS } from '@qbicle/score';
-import { korteNaam, oplosGids, type OplosContext } from '../src/oplossen.ts';
+import { korteNaam, oplosGids, ZELF_TE_DOEN, type OplosContext } from '../src/oplossen.ts';
 
 const base: OplosContext = { naam: 'bakkerij.nl', zone: 'bakkerij.nl', dns: null, mail: null, titel: 'Titel' };
 const transip = { id: 'transip', naam: 'TransIP', inlog: 'https://www.transip.nl/cp/', stappen: ['Log in.', 'Kies je domein.', 'Open DNS.', 'Kies type TXT…'] };
@@ -69,5 +69,9 @@ describe('zo los je het op', () => {
     expect(korteNaam('_dmarc.bakkerij.nl', null)).toBe('_dmarc.bakkerij.nl');
     // Zonder bekende zone geldt het domein van het asset als hoofddomein.
     expect(oplosGids('dmarc.missing', 'dmarc-instellen', { ...base, zone: null })!.regels[0]!.kort).toBe('_dmarc');
+  });
+
+  it('noemt alleen bestaande acties als zelf te doen', () => {
+    for (const k of ZELF_TE_DOEN) expect(ACTIONS[k as keyof typeof ACTIONS], k).toBeDefined();
   });
 });

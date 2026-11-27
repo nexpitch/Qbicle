@@ -230,7 +230,7 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
       getAssetOplossingen(p, ctx.s.user.id, ctx.org.id, c.req.param('asset')),
     ]);
     if (!can(ctx.access, 'scans:starten')) for (const o of opl.perBevinding.values()) o.kanHercontrole = false;
-    return c.html(<AssetPage user={ctx.user} org={ctx.org} a={a} opl={opl} />);
+    return c.html(<AssetPage user={ctx.user} org={ctx.org} a={a} opl={opl} uitleg={c.req.query('uitleg')} />);
   });
 
   app.get('/o/:org/domeinen', async (c) => {

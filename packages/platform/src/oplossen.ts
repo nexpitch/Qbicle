@@ -637,6 +637,26 @@ export function oplosGids(findingKey: string, actionKey: string, ctx: OplosConte
 }
 
 /** Checks die we voor één bevinding opnieuw kunnen draaien (sleutels uit de scanner). */
+/**
+ * Acties die een klant zonder IT-partner zelf kan doen met onze uitleg: een regel in het
+ * DNS-beheer, of een instelling in een app. Voor "Direct aandacht", zodat er niet alleen
+ * "Voor je IT-partner" staat.
+ */
+export const ZELF_TE_DOEN: ReadonlySet<string> = new Set([
+  'spf-instellen',
+  'dmarc-instellen',
+  'dmarc-aanscherpen',
+  'mail-dichtzetten',
+  'caa-instellen',
+  'upnp-uitzetten',
+  'mfa-aanzetten',
+]);
+
+/** Soorten ingreep in het DNS-beheer: daar komt later "direct oplossen via je DNS-partij". */
+export function isDnsIngreep(i: Ingreep): boolean {
+  return i === 'dns-toevoegen' || i === 'dns-aanpassen';
+}
+
 export const HERCONTROLE_CHECKS = [
   'mail.spf',
   'mail.dmarc',

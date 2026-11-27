@@ -159,6 +159,8 @@ export interface AssetOplossingen {
   /** Bevindingen die net door een hercontrole zijn opgelost (voor de melding bovenaan). */
   netOpgelost: { title: string; at: Date }[];
   dnsBeheer: string | null;
+  /** Domein van het asset, voor de link "Waar staat mijn domein?". */
+  domainId: string | null;
 }
 
 type DnsCtx = Pick<OplosContext, 'zone' | 'dns' | 'mail'>;
@@ -200,9 +202,9 @@ export async function getAssetOplossingen(
 ): Promise<AssetOplossingen> {
   await authorize(p.pool, userId, organizationId, 'bevindingen:lezen');
   if (!isUuid(assetId)) throw notFound('Dit asset');
-  const a = await one<{ type: string; value: string; domain_name: string | null; verified: boolean }>(
+  const a = await one<{ type: string; value: string; domain_id: string | null; domain_name: string | null; verified: boolean }>(
     p.pool,
-    `SELECT a.type, a.value, d.name AS domain_name, (d.verified_at IS NOT NULL) AS verified
+    `SELECT a.type, a.value, d.id AS domain_id, d.name AS domain_name, (d.verified_at IS NOT NULL) AS verified
        FROM asset a LEFT JOIN domain d ON d.id = a.domain_id WHERE a.id = $1 AND a.organization_id = $2`,
     [assetId, organizationId],
   );
@@ -241,6 +243,6 @@ export async function getAssetOplossingen(
   const netOpgelost = findings
     .filter((f) => f.resolved_at && laatste.get(f.id)?.uitkomst === 'opgelost')
     .map((f) => ({ title: f.title, at: f.resolved_at! }));
-  return { perBevinding, netOpgelost, dnsBeheer: dns.dns?.naam ?? null };
+  return { perBevinding, netOpgelost, dnsBeheer: dns.dns?.naam ?? null, domainId: a.domain_id };
 }
 
