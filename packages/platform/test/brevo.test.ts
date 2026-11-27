@@ -86,8 +86,10 @@ describe('mailer kiezen uit de omgeving', () => {
     expect(() => mailerFromEnv({ NODE_ENV: 'production' })).toThrow(MailError);
   });
 
-  it('met sleutel: Brevo, en een afzender is verplicht', () => {
-    expect(() => mailerFromEnv({ BREVO_API_KEY: KEY })).toThrow(/QBICLE_MAIL_FROM/);
+  it('met sleutel: Brevo, en een afzender is verplicht (lokaal zonder afzender: console)', () => {
+    expect(() => mailerFromEnv({ BREVO_API_KEY: KEY, NODE_ENV: 'production' })).toThrow(/QBICLE_MAIL_FROM/);
+    expect(mailerFromEnv({ BREVO_API_KEY: KEY })).toBeInstanceOf(ConsoleMailer);
+    expect(mailerFromEnv({ BREVO_API_KEY: KEY, QBICLE_MAIL_FROM: 'noreply@qbicle.nl', QBICLE_MAIL_CONSOLE: 'aan' })).toBeInstanceOf(ConsoleMailer);
     const m = mailerFromEnv({ BREVO_API_KEY: KEY, QBICLE_MAIL_FROM: 'noreply@qbicle.nl', QBICLE_MAIL_SANDBOX: 'aan' });
     expect(m).toBeInstanceOf(BrevoMailer);
     expect(JSON.parse(JSON.stringify(m))).toEqual({ soort: 'brevo', afzender: 'noreply@qbicle.nl', sandbox: true });
