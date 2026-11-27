@@ -27,6 +27,15 @@ const CATEGORIE_LABEL: Record<string, string> = {
   'js-bibliotheek': 'Script in de browser',
 };
 
+const HOSTING_SOORT: Record<string, string> = {
+  platform: 'websiteplatform: de partij werkt alles bij',
+  'beheerde-wordpress': 'hosting speciaal voor WordPress',
+  hosting: 'hostingpartij',
+  cloud: 'eigen server in de cloud: updates regel je zelf',
+  statisch: 'websitelevering',
+  cdn: 'beschermlaag',
+};
+
 const WIE_LABEL: Record<string, string> = { hosting: 'Hostingpartij', webbouwer: 'Webbouwer', leverancier: 'Leverancier' };
 
 const STATUS: Record<Onderdeel['status'], { label: string; kind: Kind }> = {
@@ -57,7 +66,7 @@ function Zekerheid(props: { o: Onderdeel }) {
   return <span class="badge" title={`De website meldt dit zelf (${o.bron}).`}>Zeker</span>;
 }
 
-function Regel(props: { o: Onderdeel }) {
+function Regel(props: { o: Onderdeel; eigenServer?: boolean }) {
   const { o } = props;
   const kind = onderdeelKind(o);
   return (
@@ -73,7 +82,7 @@ function Regel(props: { o: Onderdeel }) {
         </div>
         <p class="small">{o.uitleg}</p>
         <p class="small">
-          {CATEGORIE_LABEL[o.categorie] ?? o.categorie} · {o.status === 'beheerd' || o.status === 'actueel' ? 'Beheer' : 'Bijwerken door'}: {WIE_LABEL[o.wie] ?? o.wie}
+          {CATEGORIE_LABEL[o.categorie] ?? o.categorie} · {o.status === 'beheerd' || o.status === 'actueel' ? 'Beheer' : 'Bijwerken door'}: {o.wie === 'hosting' && props.eigenServer ? 'IT-partner of webbouwer' : (WIE_LABEL[o.wie] ?? o.wie)}
           {o.ondersteundTot && o.status !== 'einde' ? ` · updates tot ${datum(o.ondersteundTot)}` : ''}
         </p>
       </div>
@@ -81,7 +90,7 @@ function Regel(props: { o: Onderdeel }) {
   );
 }
 
-function Groep(props: { titel: string; items: Onderdeel[] }) {
+function Groep(props: { titel: string; items: Onderdeel[]; eigenServer?: boolean }) {
   if (!props.items.length) return null;
   const order: Record<Kind, number> = { crit: 0, warn: 1, unk: 3, ok: 2 };
   const items = [...props.items].sort((a, b) => order[onderdeelKind(a)] - order[onderdeelKind(b)]);
@@ -90,7 +99,7 @@ function Groep(props: { titel: string; items: Onderdeel[] }) {
       <h3>{props.titel}</h3>
       <ul class="list">
         {items.map((o) => (
-          <Regel o={o} />
+          <Regel o={o} eigenServer={props.eigenServer} />
         ))}
       </ul>
     </div>
@@ -117,15 +126,35 @@ export function WebProfielSectie(props: { p: Profiel }) {
           {p.kennisStand ? ` Gegevens over updates: endoflife.date, stand ${datum(p.kennisStand)}.` : ''}
         </p>
       </div>
+      {p.hosting ? (
+        <div class="todo">
+          <p class="kpi-label">
+            {p.hosting.soort === 'cdn' ? 'Beschermlaag' : 'Draait bij'} · {p.hosting.zekerheid === 'zeker' ? 'zeker' : 'waarschijnlijk'}
+          </p>
+          <p>
+            <b>{p.hosting.naam}</b>
+            {p.hosting.achter ? <span class="small"> (achter {p.hosting.achter})</span> : null}
+            <span class="small"> · {HOSTING_SOORT[p.hosting.soort] ?? p.hosting.soort}</span>
+          </p>
+          <p class="small">{p.hosting.uitleg}</p>
+          <p class="small">Gezien aan: {p.hosting.bron}.</p>
+        </div>
+      ) : (
+        <p class="small">We konden niet herkennen bij welke partij de website draait. Vraag het na bij je webbouwer; dan weet je ook wie de server bijwerkt.</p>
+      )}
       {p.onderdelen.length === 0 ? (
         <p class="melding ok">De website laat niet zien welke software hij gebruikt. Dat is goed, maar daardoor kunnen we van buitenaf ook niet zeggen of alles is bijgewerkt. Vraag dat na bij je webbouwer of hostingpartij.</p>
       ) : null}
-      {p.achterCdn ? (
+      {p.achterCdn && p.hosting?.soort !== 'cdn' && !p.hosting?.achter ? (
         <p class="melding">
           Er zit een beschermlaag (CDN) voor je website. Die verbergt vaak de software van de server erachter. Dat is goed, maar het zegt niets over of die server is bijgewerkt.
         </p>
       ) : null}
-      <Groep titel="Server · meestal je hostingpartij" items={server} />
+      <Groep
+        titel={p.hosting?.soort === 'cloud' ? 'Server · bij een eigen server je IT-partner of webbouwer' : 'Server · meestal je hostingpartij'}
+        items={server}
+        eigenServer={p.hosting?.soort === 'cloud'}
+      />
       <Groep titel="Website · meestal je webbouwer" items={site} />
 
       {p.maatregelen.length ? (

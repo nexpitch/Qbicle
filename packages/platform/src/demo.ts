@@ -1,4 +1,4 @@
-import { HEADER_MAATREGELEN, MAATREGEL_TEKST, kennisStand, onderdelenUitAntwoord, type WebProfiel } from '@qbicle/scanner';
+import { HEADER_MAATREGELEN, MAATREGEL_TEKST, detectHosting, kennisStand, onderdelenUitAntwoord, type WebProfiel } from '@qbicle/scanner';
 import type { Actor } from './audit.ts';
 import type { Platform } from './context.ts';
 import { withTransaction } from './db.ts';
@@ -173,9 +173,10 @@ const FINDINGS: DemoFinding[] = [
 const VULNS = [{ cve: 'CVE-2024-21762', cvss: 9.8, kev: true }];
 
 /** Wat de voorbeeldwebsites laten zien, zodat het profiel "Software en server" met de echte herkenning wordt gevuld. */
-const DEMO_SITES: { asset: string; headers: Record<string, string>; setCookies?: string[]; body: string; tls: string; ok: Record<string, boolean | null> }[] = [
+const DEMO_SITES: { asset: string; ptr: string; headers: Record<string, string>; setCookies?: string[]; body: string; tls: string; ok: Record<string, boolean | null> }[] = [
   {
     asset: 'www',
+    ptr: 'web0042.transip.net',
     headers: { server: 'nginx', link: '<https://www.voorbeeldbedrijf.example/wp-json/>; rel="https://api.w.org/"' },
     body: [
       '<link rel="stylesheet" href="/wp-includes/css/dist/block-library/style.min.css?ver=6.8.2">',
@@ -191,6 +192,7 @@ const DEMO_SITES: { asset: string; headers: Record<string, string>; setCookies?:
   },
   {
     asset: 'shop',
+    ptr: 'static.88.198.12.34.clients.your-server.de',
     headers: { server: 'Apache/2.4.58', 'x-powered-by': 'PHP/7.4.33' },
     setCookies: ['PHPSESSID=demo; Secure; HttpOnly'],
     body: '<script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>',
@@ -217,6 +219,7 @@ export function demoWebProfiel(site: (typeof DEMO_SITES)[number], value: string,
     ],
     tls: site.tls,
     achterCdn: false,
+    hosting: detectHosting({ cnames: [], ptrs: [site.ptr] }),
   };
 }
 

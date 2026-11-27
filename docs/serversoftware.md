@@ -23,6 +23,19 @@ verborgen bestanden (geen `readme.html`, `/wp-login.php`, `CHANGELOG.txt`), geen
 | Shopify, Wix, Squarespace, Webflow, Lightspeed | headers en CDN-adressen | leverancier (niets te doen) |
 | Cloudflare, Akamai, CloudFront | Server-header, `cf-ray` | beschermlaag; server erachter onzichtbaar |
 
+## Hostingpartij
+
+Bovenaan de sectie staat waar de website draait, met wat dat voor de klant betekent (wat de partij doet, wat bij
+de klant of webbouwer ligt). Herkenning in `packages/scanner/src/hosting.ts`, alleen via DNS (niveau 0):
+
+- platform uit de website zelf (Shopify, Wix ...): **zeker**;
+- CNAME van de websitenaam (`*.myshopify.com`, `*.wpenginepowered.com`, `*.netlify.app` ...): **waarschijnlijk**;
+- naam bij het IP-adres (PTR: `*.transip.net`, `*.your-server.de`, `*.amazonaws.com` ...): **waarschijnlijk**;
+- achter Cloudflare telt de PTR niet (dat is Cloudflare zelf); dan "beschermlaag, partij erachter niet zichtbaar".
+
+Soorten: websiteplatform, WordPress-hosting, hostingpartij, eigen server in de cloud (dan regelt de IT-partner de
+updates), websitelevering (Netlify, Vercel), beschermlaag. Niet herkend: dat zeggen we, met het advies het na te vragen.
+
 ## Zekerheid
 
 - **Zeker**: de website meldt het zelf (header, generator-tag).

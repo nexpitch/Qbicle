@@ -4,7 +4,10 @@ import { eolSnapshot } from './kennis/eol.ts';
 import { sharedVulnDb } from './kennis/index.ts';
 import type { HttpResponse } from './net.ts';
 import { beoordeel, detectAll, vulnsFor } from './software.ts';
+import type { HostingInfo } from './hosting.ts';
 import type { CheckResult } from './types.ts';
+
+export type { HostingInfo } from './hosting.ts';
 
 export type { ProfielOnderdeel } from './checks/software.ts';
 
@@ -32,6 +35,8 @@ export interface WebProfiel {
   tls: string | null;
   /** Zit er een beschermlaag (CDN) voor de server? Dan zien we de server zelf minder goed. */
   achterCdn: boolean;
+  /** Waar de website draait (platform, hostingpartij, cloud), als we dat herkennen. */
+  hosting?: HostingInfo | null;
 }
 
 /** Teksten per maatregel (ook voor voorbeelddata). */
@@ -97,7 +102,7 @@ export function buildWebProfiles(checks: CheckResult[]): WebProfiel[] {
       });
     }
 
-    if (onderdelen.length === 0 && maatregelen.every((m) => m.ok === null)) continue;
+    if (onderdelen.length === 0 && maatregelen.every((m) => m.ok === null) && !sw?.evidence.hosting) continue;
     out.push({
       versie: 1,
       website: site,
@@ -106,6 +111,7 @@ export function buildWebProfiles(checks: CheckResult[]): WebProfiel[] {
       maatregelen,
       tls: protocol,
       achterCdn: onderdelen.some((o) => o.categorie === 'cdn'),
+      hosting: (sw?.evidence.hosting as HostingInfo | null | undefined) ?? null,
     });
   }
   return out;

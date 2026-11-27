@@ -103,6 +103,7 @@ describe.skipIf(!hasDb)('klantdashboard', () => {
     expect(php.uitleg).toMatch(/geen beveiligingsupdates meer/);
     expect(prof.onderdelen.find((o) => o.key === 'jquery')).toMatchObject({ status: 'einde', wie: 'webbouwer', versieZekerheid: 'waarschijnlijk' });
     expect(prof.maatregelen.find((m) => m.key === 'hsts')).toMatchObject({ ok: false });
+    expect(prof.hosting).toMatchObject({ naam: 'Hetzner', soort: 'cloud', zekerheid: 'waarschijnlijk' });
     // Het profiel is geen los kenmerk in de lijst.
     expect(detail.attributes.some((a) => a.key === 'web.profiel')).toBe(false);
     const www = d.assets.find((a) => a.label === 'www.voorbeeldbedrijf.example' || a.label.startsWith('https://www.'))!;

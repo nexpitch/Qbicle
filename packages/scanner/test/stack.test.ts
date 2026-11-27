@@ -4,6 +4,7 @@ import { cyclesFor, parseEndoflifeMarkdown } from '../src/kennis/eol.ts';
 import { buildWebProfiles } from '../src/profiel.ts';
 import { scanDomain } from '../src/scan.ts';
 import { detectStack } from '../src/stack.ts';
+import { detectHosting } from '../src/hosting.ts';
 import { fakeNet, GOOD_HEADERS, healthyConfig } from './fake-net.ts';
 import { NOW, ctxFor, keysOf, website } from './helpers.ts';
 
@@ -177,5 +178,34 @@ describe('profiel per website', () => {
     expect(p!.onderdelen.map((o) => o.key)).toContain('wordpress');
     expect(Object.fromEntries(p!.maatregelen.map((m) => [m.key, m.ok]))).toMatchObject({ https: true, hsts: true, csp: true, versies: true });
     expect(r.findings.some((f) => f.key === 'web.software_update_achter')).toBe(true);
+  });
+});
+
+describe('hostingpartij', () => {
+  it('platform uit de website zelf is zeker; CNAME of servernaam is waarschijnlijk', () => {
+    expect(detectHosting({ cnames: [], ptrs: [], platform: { naam: 'Shopify', categorie: 'platform' } })).toMatchObject({ naam: 'Shopify', soort: 'platform', zekerheid: 'zeker' });
+    expect(detectHosting({ cnames: ['shops.myshopify.com.'], ptrs: [] })).toMatchObject({ naam: 'Shopify', zekerheid: 'waarschijnlijk' });
+    const t = detectHosting({ cnames: [], ptrs: ['web0042.transip.net'] })!;
+    expect(t).toMatchObject({ naam: 'TransIP', soort: 'hosting', zekerheid: 'waarschijnlijk' });
+    expect(t.uitleg).toMatch(/PHP-versie kies je meestal zelf/);
+    expect(detectHosting({ cnames: [], ptrs: ['static.1.2.3.4.clients.your-server.de'] })).toMatchObject({ naam: 'Hetzner', soort: 'cloud' });
+    expect(detectHosting({ cnames: [], ptrs: ['onbekend.example.net'] })).toBeNull();
+  });
+
+  it('achter Cloudflare: servernaam telt niet (dat is Cloudflare), CNAME wel', () => {
+    const cf = { naam: 'Cloudflare', categorie: 'cdn' as const };
+    expect(detectHosting({ cnames: [], ptrs: ['web1.transip.net'], platform: cf })).toMatchObject({ naam: 'Cloudflare', soort: 'cdn' });
+    expect(detectHosting({ cnames: ['x.wpenginepowered.com'], ptrs: [], platform: cf })).toMatchObject({ naam: 'WP Engine', achter: 'Cloudflare' });
+  });
+
+  it('komt in het profiel via de softwarecheck (alleen DNS, geen extra webverzoeken)', async () => {
+    const cfg = healthyConfig(D);
+    cfg.http![`https://${D}/`] = { headers: { server: 'nginx' } };
+    cfg.addresses = { ...(cfg.addresses ?? {}), [D]: ['203.0.113.10'] };
+    cfg.ptr = { '203.0.113.10': ['web0042.transip.net'] };
+    const net = fakeNet(cfg);
+    const out = await softwareCheck.run(ctxFor(net, D, website(D)));
+    expect(out.evidence!.hosting).toMatchObject({ naam: 'TransIP' });
+    expect(net.requests).toEqual([`get:https://${D}/`]);
   });
 });

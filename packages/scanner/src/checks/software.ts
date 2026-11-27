@@ -15,7 +15,8 @@ import {
   type VulnHit,
 } from '../software.ts';
 import type { Categorie, Zekerheid } from '../stack.ts';
-import type { Check, CheckOutput, FindingDraft } from '../types.ts';
+import { detectHosting, type HostingInfo } from '../hosting.ts';
+import type { Check, CheckContext, CheckOutput, FindingDraft } from '../types.ts';
 import { fetchChain, hostOf, leftDomain, notTheRealPage, type Chain } from './web.ts';
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -262,6 +263,7 @@ export function makeSoftwareCheck(db: () => VulnDb = sharedVulnDb): Check {
       }
 
       const evidence = {
+        hosting: await hostingFor(ctx, host, onderdelen),
         software: software.map((s) => ({
           product: s.product?.name ?? s.rawProduct,
           version: s.version,
@@ -283,6 +285,17 @@ export function makeSoftwareCheck(db: () => VulnDb = sharedVulnDb): Check {
       return { outcome: findings.length ? 'finding' : 'ok', findings, evidence };
     },
   };
+}
+
+/** Hostingpartij uit CNAME en PTR (DNS, niveau 0) plus wat de softwareherkenning al zag. Fouten = niet herkend. */
+async function hostingFor(ctx: CheckContext, host: string, onderdelen: ProfielOnderdeel[]): Promise<HostingInfo | null> {
+  const safe = (p: Promise<string[]> | undefined) => (p ?? Promise.resolve([])).catch(() => [] as string[]);
+  const cnames = await ctx.memo(`cname:${host}`, () => safe(ctx.net.resolveCname?.(host)));
+  const addrs = await ctx.memo(`addr:${host}`, () => safe(ctx.net.resolveAddresses(host)));
+  const v4 = addrs.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a));
+  const ptrs = v4 ? await ctx.memo(`ptr:${v4}`, () => safe(ctx.net.reverse?.(v4))) : [];
+  const pf = onderdelen.find((o) => o.categorie === 'platform') ?? onderdelen.find((o) => o.categorie === 'cdn');
+  return detectHosting({ cnames, ptrs, platform: pf ? { naam: pf.naam, categorie: pf.categorie as 'platform' | 'cdn' } : null });
 }
 
 function dedupe(list: DetectedSoftware[]): DetectedSoftware[] {
