@@ -572,7 +572,21 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
         // Een incasso die al bij de bank lag toen de klant opzegde, maakt de opzegging niet ongedaan:
         // de betaalde periode loopt, daarna stopt het abonnement.
         const viaIncasso = !!(await one(q, 'SELECT 1 FROM collection_item WHERE payment_id = $1', [paymentId]));
-        await q.query(
+        // Beëindigd en intussen een nieuw abonnement afgesloten: het oude niet terugzetten (dat botst),
+        // maar de betaling laten beoordelen door een medewerker.
+        const replaced = await one(
+          q,
+          `SELECT 1 FROM subscription s JOIN subscription old ON old.id = $1
+            WHERE s.organization_id = old.organization_id AND s.id <> old.id AND old.status = 'beeindigd'
+              AND s.status IN ('proef', 'actief', 'achterstallig', 'opgezegd')`,
+          [r.subscription_id],
+        );
+        if (replaced) {
+          await q.query(
+            `INSERT INTO org_note (organization_id, body, source) VALUES ($1, $2, 'systeem')`,
+            [r.organization_id, `Betaling ${paymentId} (${r.description}) is binnengekomen voor een beëindigd abonnement, terwijl er al een nieuw abonnement loopt. Beoordeel of terugbetalen of verrekenen nodig is.`],
+          );
+        } else await q.query(
           `UPDATE subscription
               SET status = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN 'opgezegd' ELSE 'actief' END,
                   cancel_at_period_end = CASE WHEN $4 AND status IN ('opgezegd', 'beeindigd') THEN true ELSE false END,
@@ -584,9 +598,11 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
             WHERE id = $1`,
           [r.subscription_id, r.period_start, r.period_end, viaIncasso],
         );
-        const sub = await one<{ plan: string }>(q, 'SELECT plan FROM subscription WHERE id = $1', [r.subscription_id]);
-        await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [r.organization_id, sub!.plan]);
-        await audit(q, actor, { organizationId: r.organization_id, action: 'abonnement.geactiveerd', subject: r.subscription_id });
+        if (!replaced) {
+          const sub = await one<{ plan: string }>(q, 'SELECT plan FROM subscription WHERE id = $1', [r.subscription_id]);
+          await q.query('UPDATE organization SET plan = $2 WHERE id = $1', [r.organization_id, sub!.plan]);
+          await audit(q, actor, { organizationId: r.organization_id, action: 'abonnement.geactiveerd', subject: r.subscription_id });
+        }
       }
       if (r.audit_order_id) {
         await q.query(`UPDATE audit_order SET status = 'betaald' WHERE id = $1 AND status = 'wacht_op_betaling'`, [r.audit_order_id]);

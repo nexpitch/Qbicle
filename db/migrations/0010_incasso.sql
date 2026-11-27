@@ -46,6 +46,11 @@ CREATE TABLE collection_item (
   adjust_reason     text CHECK (char_length(adjust_reason) <= 400),
   status            text NOT NULL DEFAULT 'klaar' CHECK (status IN ('klaar', 'uitgesloten', 'ingediend', 'betaald', 'mislukt')),
   exclude_reason    text CHECK (char_length(exclude_reason) <= 400),
+  -- Uitgesloten door de controle vlak voor indienen (niet door een medewerker).
+  auto_excluded     boolean NOT NULL DEFAULT false,
+  -- Pakket en termijn waarmee het bedrag is berekend; bij indienen vergeleken met het abonnement.
+  plan              text,
+  billing_interval  text CHECK (billing_interval IN ('maand', 'jaar')),
   payment_id        uuid UNIQUE REFERENCES payment(id) ON DELETE SET NULL,
   -- Reden van mislukken zoals de bank of provider die meldt.
   failure_reason    text CHECK (failure_reason IN ('storno', 'geen_dekking', 'mandaat_ingetrokken', 'rekening_opgeheven', 'onbekend')),

@@ -102,6 +102,7 @@ export interface ItemRow {
   adjust_reason: string | null;
   status: ItemStatus;
   exclude_reason: string | null;
+  auto_excluded: boolean;
   payment_id: string | null;
   failure_reason: FailureReason | null;
   result_at: Date | null;
@@ -228,10 +229,12 @@ export async function prepareRun(
       const item = await one<{ id: string }>(
         q,
         `INSERT INTO collection_item (run_id, organization_id, subscription_id, description, period_start, period_end,
-                                      amount_excl_cents, vat_cents, amount_incl_cents, lines, status, exclude_reason, failure_reason)
+                                      amount_excl_cents, vat_cents, amount_incl_cents, lines, status, exclude_reason, failure_reason,
+                                      plan, billing_interval)
          SELECT $1, s.organization_id, s.id, $3, s.current_period_end,
-                s.current_period_end + CASE WHEN s.billing_interval = 'jaar' THEN interval '1 year' ELSE interval '1 month' END,
-                $4, $5, $6, $7, $8, $9, $10
+                -- Periode met dezelfde termijn als het bedrag (ook bij een geplande termijnwissel).
+                s.current_period_end + CASE WHEN $12 = 'jaar' THEN interval '1 year' ELSE interval '1 month' END,
+                $4, $5, $6, $7, $8, $9, $10, $11, $12
            FROM subscription s WHERE s.id = $2
          RETURNING id`,
         [
@@ -245,6 +248,8 @@ export async function prepareRun(
           mandateGone ? 'uitgesloten' : 'klaar',
           mandateGone ? 'Machtiging ingetrokken door de klant; zie Mislukt voor het betaalverzoek.' : null,
           mandateGone ? 'mandaat_ingetrokken' : null,
+          s.plan,
+          s.interval,
         ],
       );
       if (mandateGone) await createFollowupSuggestion(q, p.config.appOrigin, item!.id);
@@ -409,7 +414,20 @@ export async function submitRun(p: Platform, runId: string, actor: Actor): Promi
       await q.query(`UPDATE collection_item SET status = 'ingediend', payment_id = $2 WHERE id = $1`, [it.id, pay!.id]);
       await audit(q, actor, { organizationId: it.organization_id, action: 'betaling.aangemaakt', subject: pay!.id, detail: { incassobatch: runId } });
     }
-    await q.query(`UPDATE collection_run SET status = 'ingediend', submitted_at = now(), submitted_by = $2 WHERE id = $1`, [runId, actor.userId]);
+    // Een betaalpagina die de klant ooit opende maar niet afrondde, vervalt: de incasso neemt het over.
+    await q.query(
+      `UPDATE payment pm SET status = 'geannuleerd'
+         FROM collection_item i
+        WHERE i.run_id = $1 AND i.status = 'ingediend' AND pm.subscription_id = i.subscription_id
+          AND pm.status = 'open' AND pm.plan_change IS NULL AND pm.id <> i.payment_id
+          AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = pm.id)`,
+      [runId],
+    );
+    // Niets meer over om in te dienen: de batch is meteen klaar.
+    await q.query(
+      `UPDATE collection_run SET status = $3, submitted_at = now(), submitted_by = $2 WHERE id = $1`,
+      [runId, actor.userId, items.length === 0 ? 'afgerond' : 'ingediend'],
+    );
     await audit(q, actor, { organizationId: null, action: 'cockpit.incasso_ingediend', subject: runId, detail: { regels: items.length } });
     return { submitted: items.length, excluded };
   });
@@ -432,6 +450,7 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
     already_paid: boolean;
     open_payment: boolean;
     too_early: boolean;
+    plan_changed: boolean;
   }>(
     q,
     `SELECT i.id, i.organization_id,
@@ -442,8 +461,12 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
             EXISTS (SELECT 1 FROM payment pm WHERE pm.subscription_id = i.subscription_id AND pm.status = 'betaald'
                        AND pm.plan_change IS NULL AND pm.period_end > i.period_start) AS already_paid,
             EXISTS (SELECT 1 FROM payment pm WHERE pm.subscription_id = i.subscription_id AND pm.status = 'open'
-                       AND pm.plan_change IS NULL AND pm.period_end > i.period_start) AS open_payment,
-            i.period_start > now() + make_interval(days => $2) AS too_early
+                       AND pm.plan_change IS NULL AND pm.period_end > i.period_start
+                       AND pm.created_at > now() - interval '1 hour') AS open_payment,
+            i.period_start > now() + make_interval(days => $2) AS too_early,
+            -- Pakket of termijn sinds klaarzetten gewijzigd (downgrade ingetrokken, upgrade, nieuwe wissel)?
+            (i.plan IS NOT NULL AND (i.plan, i.billing_interval) IS DISTINCT FROM
+              (coalesce(s.pending_plan, s.plan), coalesce(s.pending_interval, s.billing_interval))) AS plan_changed
        FROM collection_item i
        JOIN subscription s ON s.id = i.subscription_id
        JOIN organization o ON o.id = i.organization_id
@@ -467,11 +490,13 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
                 ? 'De periode komt niet meer overeen met het abonnement.'
                 : r.too_early
                   ? `De periode begint pas over meer dan ${MAX_DAYS_AHEAD} dagen.`
-                  : null;
+                  : r.plan_changed
+                    ? 'Pakket of betaaltermijn is gewijzigd na klaarzetten; zet een nieuwe batch klaar.'
+                    : null;
     if (!reason) continue;
     n++;
     await q.query(
-      `UPDATE collection_item SET status = 'uitgesloten', exclude_reason = $2, failure_reason = $3 WHERE id = $1`,
+      `UPDATE collection_item SET status = 'uitgesloten', exclude_reason = $2, failure_reason = $3, auto_excluded = true WHERE id = $1`,
       [r.id, reason, r.mandate_revoked && !r.already_paid && !r.open_payment ? 'mandaat_ingetrokken' : null],
     );
     if (r.mandate_revoked && !r.already_paid && !r.open_payment) await createFollowupSuggestion(q, p.config.appOrigin, r.id);

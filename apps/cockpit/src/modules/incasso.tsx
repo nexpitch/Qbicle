@@ -261,6 +261,11 @@ export const incasso: CockpitModule = {
                 <p class="small">
                   {run.included} incasso{run.included === 1 ? '' : "'s"} incl. btw · {run.items - run.included} uitgesloten
                 </p>
+                {items.some((i) => i.auto_excluded) ? (
+                  <p class="small t-warn">
+                    {items.filter((i) => i.auto_excluded).length} regel(s) vielen bij indienen automatisch uit, omdat er bij de klant iets veranderde. De reden staat bij de regel.
+                  </p>
+                ) : null}
                 {run.status === 'concept' && magIndienen ? (
                   <form class="stack" data-api={`/api/incasso/${id}/valideren`} data-bevestig={`Batch valideren: ${run.included} incasso's, ${euro(run.total_incl_cents)}? Daarna is niets meer te wijzigen.`}>
                     <FormError />
