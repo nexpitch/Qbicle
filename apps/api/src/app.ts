@@ -82,7 +82,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
-import { addDomains, demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
+import { addDomains, wijsSuggestieAf, demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
 import { KoppelingFout, KOPPELINGEN, teststandVoor } from '@qbicle/koppelingen';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -404,6 +404,11 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
       ongeldigTekst: ongeldig.join(', '),
       resultaten,
     }, 201);
+  });
+  v1.post('/organisaties/:org/domeinen/suggesties/afwijzen', requireUser, async (c) => {
+    const input = await body(c, z.object({ domein: z.string().min(3).max(300) }));
+    await wijsSuggestieAf(p, user(c), param(c, 'org'), input.domein);
+    return c.json({ ok: true });
   });
   v1.get('/organisaties/:org/domeinen/:dom', requireUser, async (c) =>
     c.json(await getDomain(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),

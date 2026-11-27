@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryMailer, many, one } from '@qbicle/platform';
 import { healthSummary, loadUsageConfig } from '@qbicle/ops';
-import { scanDomain } from '@qbicle/scanner';
+import { scanDomain, type TlsInfo } from '@qbicle/scanner';
 import { createTestPlatform, hasDb, type TestPlatform } from '../../platform/test/support/db.ts';
 import { fakeNet, healthyConfig, type FakeNetConfig } from '../../scanner/test/fake-net.ts';
 import { claimNextScan, drainQueue, planScans, runScanJob, type WorkerContext } from '../src/index.ts';
@@ -68,6 +68,21 @@ describe.skipIf(!hasDb)('scan-worker', () => {
     expect(snap!.urgency).toBeGreaterThan(0);
     // Hartslag voor de cockpit.
     expect(await one(p.pool, `SELECT scans_klaar FROM worker_heartbeat WHERE worker_id = 'test-worker'`)).toEqual({ scans_klaar: 1 });
+  });
+
+  it('bewaart verwante domeinen met bewijs bij het domein ("Hoort dit ook bij jullie?")', async () => {
+    (cfg.tls![D] as TlsInfo).cert!.altNames = [D, `www.${D}`, 'drukkerij-eva.com'];
+    cfg.addresses = { ...cfg.addresses, 'drukkerij-eva.com': ['203.0.114.30'] };
+    cfg.http = { ...cfg.http, 'https://drukkerij-eva.com/': { status: 301, headers: { location: `https://${D}/` } } };
+    await queue();
+    await drainQueue(ctx());
+    const attr = await one<{ value: unknown }>(
+      p.pool,
+      `SELECT aa.value FROM asset_attribute aa JOIN asset a ON a.id = aa.asset_id WHERE a.type = 'domein' AND aa.key = 'domein.verwant'`,
+    );
+    expect(attr!.value).toEqual([
+      { domein: 'drukkerij-eva.com', dienst: 'website', bewijs: [{ soort: 'certificaat', via: D }, { soort: 'verwijst-terug', via: 'drukkerij-eva.com' }] },
+    ]);
   });
 
   it('dezelfde bevinding twee keer is één rij; opgelost als de check hem niet meer ziet; terug is een nieuwe rij', async () => {

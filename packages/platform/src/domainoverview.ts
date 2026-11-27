@@ -1,4 +1,5 @@
-import type { Actor } from './audit.ts';
+import { hoofddomein, type VerwantBewijs, type VerwantDomein } from '@qbicle/scanner';
+import { audit, type Actor } from './audit.ts';
 import { planLimits } from './billing.ts';
 import type { Platform } from './context.ts';
 import { many } from './db.ts';
@@ -62,18 +63,83 @@ export interface DomainOverview {
   extraDomeinCenten: number;
   gebruikt: number;
   summaries: Map<string, DomainSummary>;
-  /** Domeinen die we bij de assets zien maar nog niet in de lijst staan. */
-  suggesties: string[];
+  /** Andere domeinen die aantoonbaar bij de klant horen en nog niet in de lijst staan. */
+  suggesties: DomeinSuggestie[];
 }
 
-/** Laatste twee labels, of drie bij bekende tweedelige achtervoegsels (co.uk). */
+export interface DomeinSuggestie {
+  domein: string;
+  /** Waarom we denken dat het van de klant is, in gewone taal. */
+  redenen: string[];
+  /** Wat er draait: "Er draait een website" of "Er is een mailserver ingesteld". */
+  dienst: string;
+}
+
+const MAX_SUGGESTIES = 10;
+
+export function bewijsTekst(b: VerwantBewijs, domein: string): string {
+  switch (b.soort) {
+    case 'certificaat':
+      return `Staat op hetzelfde beveiligingscertificaat als ${b.via}.`;
+    case 'doorverwijzing':
+      return `${b.via} verwijst bezoekers door naar ${domein}.`;
+    case 'verwijst-terug':
+      return `${b.via} verwijst door naar jullie website.`;
+  }
+}
+
+/**
+ * Suggesties uit wat de scanner bij bevestigde domeinen vond (zie
+ * @qbicle/scanner verwant.ts voor het bewijs). Hier vallen nog af: alles met
+ * hetzelfde hoofddomein als een domein dat al in de lijst staat (ook
+ * www.x.nl tegenover x.nl), wat de klant eerder afwees, en dubbelen.
+ */
+export function kiesSuggesties(
+  domains: Pick<Domain, 'name' | 'verified'>[],
+  gevonden: { bronDomein: string; verwant: VerwantDomein[] }[],
+  afgewezen: Iterable<string>,
+): DomeinSuggestie[] {
+  const bekend = new Set(domains.map((d) => hoofddomein(d.name) ?? d.name));
+  const bevestigd = new Set(domains.filter((d) => d.verified).map((d) => d.name));
+  const nee = new Set([...afgewezen].map((d) => d.toLowerCase()));
+  const per = new Map<string, { redenen: Set<string>; website: boolean }>();
+  for (const g of gevonden) {
+    if (!bevestigd.has(g.bronDomein)) continue;
+    for (const v of g.verwant) {
+      const d = hoofddomein(v.domein);
+      if (!d || bekend.has(d) || nee.has(d) || !v.bewijs?.length) continue;
+      const s = per.get(d) ?? { redenen: new Set<string>(), website: false };
+      for (const b of v.bewijs) s.redenen.add(bewijsTekst(b, d));
+      s.website ||= v.dienst === 'website';
+      per.set(d, s);
+    }
+  }
+  return [...per.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(0, MAX_SUGGESTIES)
+    .map(([domein, s]) => ({
+      domein,
+      redenen: [...s.redenen],
+      dienst: s.website ? 'Er draait een website.' : 'Er is een mailserver ingesteld.',
+    }));
+}
+
+/** "Niet van ons": niet meer voorstellen. */
+export async function wijsSuggestieAf(p: Platform, actor: UserActor, organizationId: string, domein: string): Promise<void> {
+  await authorize(p.pool, actor.userId, organizationId, 'domeinen:beheren');
+  const d = hoofddomein(domein);
+  if (!d) throw new PlatformError('ongeldige_invoer', 'Dit lijkt geen geldige domeinnaam.');
+  await p.pool.query(
+    `INSERT INTO domein_suggestie_afgewezen (organization_id, domein, afgewezen_door) VALUES ($1, $2, $3)
+     ON CONFLICT (organization_id, domein) DO NOTHING`,
+    [organizationId, d, actor.userId],
+  );
+  await audit(p.pool, actor, { organizationId, action: 'domein.suggestie_afgewezen', detail: { domein: d } });
+}
+
+/** Het hoofddomein volgens de Public Suffix List (www.x.nl → x.nl, shop.x.co.uk → x.co.uk). */
 export function registrableDomain(host: string): string | null {
-  const h = host.toLowerCase().replace(/^https?:\/\//, '').split(/[/:?#]/)[0]!.replace(/\.$/, '');
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h)) return null;
-  const labels = h.split('.');
-  const twoPart = /^(co|com|org|net|gov|ac)\.[a-z]{2}$/.test(labels.slice(-2).join('.'));
-  const n = twoPart ? 3 : 2;
-  return labels.length >= n ? labels.slice(-n).join('.') : null;
+  return hoofddomein(host);
 }
 
 export async function domainOverview(p: Platform, userId: string, organizationId: string, domains: Domain[]): Promise<DomainOverview> {
@@ -91,18 +157,20 @@ export async function domainOverview(p: Platform, userId: string, organizationId
   );
   const summaries = new Map(rows.map((r) => [r.domain_id, { domainId: r.domain_id, assets: r.assets, openFindings: r.open_findings, lastScanAt: r.last_scan_at }]));
 
-  // Suggesties: domeinen die in assets voorkomen (websites, mail, certificaten) maar niet als domein bestaan.
-  const known = new Set(domains.map((d) => d.name));
-  const values = await many<{ value: string }>(
+  // Suggesties: alleen wat de scanner met bewijs vond bij een bevestigd domein.
+  const gevonden = await many<{ bron: string; value: VerwantDomein[] }>(
     p.pool,
-    `SELECT DISTINCT value FROM asset WHERE organization_id = $1 AND status = 'actief'
-        AND type IN ('domein', 'subdomein', 'website', 'certificaat', 'host')`,
+    `SELECT d.name AS bron, aa.value FROM asset_attribute aa
+       JOIN asset a ON a.id = aa.asset_id AND a.type = 'domein'
+       JOIN domain d ON d.id = a.domain_id
+      WHERE a.organization_id = $1 AND aa.key = 'domein.verwant'`,
     [organizationId],
   );
-  const suggesties = new Set<string>();
-  for (const { value } of values) {
-    const r = registrableDomain(value);
-    if (r && !known.has(r) && ![...known].some((k) => r.endsWith(`.${k}`))) suggesties.add(r);
-  }
-  return { limiet: limits.domeinen, plan: limits.plan, extra: Math.max(0, domains.length - limits.domeinen), extraDomeinCenten: p.catalog.extraDomeinCenten, gebruikt: domains.length, summaries, suggesties: [...suggesties].sort().slice(0, 10) };
+  const afgewezen = await many<{ domein: string }>(p.pool, 'SELECT domein FROM domein_suggestie_afgewezen WHERE organization_id = $1', [organizationId]);
+  const suggesties = kiesSuggesties(
+    domains,
+    gevonden.map((g) => ({ bronDomein: g.bron, verwant: Array.isArray(g.value) ? g.value : [] })),
+    afgewezen.map((a) => a.domein),
+  );
+  return { limiet: limits.domeinen, plan: limits.plan, extra: Math.max(0, domains.length - limits.domeinen), extraDomeinCenten: p.catalog.extraDomeinCenten, gebruikt: domains.length, summaries, suggesties };
 }

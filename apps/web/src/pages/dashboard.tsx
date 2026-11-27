@@ -1047,17 +1047,33 @@ export function DomeinenPage(
       {props.magBeheren && ov.suggesties.length ? (
         <section class="card">
           <h2>Hoort dit ook bij jullie?</h2>
-          <p class="small">Deze domeinen zagen we bij je websites, servers of certificaten. Voeg ze toe als ze van jullie zijn.</p>
-          <div class="row">
+          <p class="small">
+            Deze domeinen kwamen we tegen bij jullie bevestigde domeinen, en er draait iets op. Zijn ze van jullie, voeg ze dan toe; je bevestigt daarna zelf met domeinbewijs dat ze van jullie zijn.
+          </p>
+          <ul class="list suggesties">
             {ov.suggesties.map((sug) => (
-              <form data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}`}>
-                <input type="hidden" name="domeinen" value={sug} />
-                <button class="btn secondary" type="submit">
-                  + {sug}
-                </button>
-              </form>
+              <li class="stack-sm">
+                <strong>{sug.domein}</strong>
+                <span class="small">
+                  {sug.redenen.join(' ')} {sug.dienst}
+                </span>
+                <div class="row">
+                  <form data-api={`${api}/lijst`} data-next={`/o/${org.id}/domeinen?toegevoegd={aantal}&bestaat={bestaatAl}`}>
+                    <input type="hidden" name="domeinen" value={sug.domein} />
+                    <button class="btn secondary" type="submit">
+                      + Toevoegen
+                    </button>
+                  </form>
+                  <form data-api={`${api}/suggesties/afwijzen`} data-next={`/o/${org.id}/domeinen`}>
+                    <input type="hidden" name="domein" value={sug.domein} />
+                    <button class="linkbtn" type="submit">
+                      Niet van ons
+                    </button>
+                  </form>
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
       ) : null}
       {props.magBeheren ? (

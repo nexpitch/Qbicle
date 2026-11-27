@@ -14,6 +14,7 @@ import {
   versionDisclosureCheck,
 } from './checks/web.ts';
 import { normalizeDomain, organizationalDomain } from './domain.ts';
+import { vindVerwanteDomeinen, type VerwantDomein } from './verwant.ts';
 import { fingerprint } from './fingerprint.ts';
 import { isPublicIp } from './ip.ts';
 import { SCANNER_VERSION, type Net } from './net.ts';
@@ -64,6 +65,12 @@ export interface ScanReport {
   checks: CheckResult[];
   findings: Finding[];
   score: ScoreResult;
+  /**
+   * Andere domeinen die aantoonbaar bij de klant horen en waar iets aan hangt
+   * ("Hoort dit ook bij jullie?"). Ontbreekt als we het niet hebben nagelopen
+   * (niveau 0 of geen website); dan blijft de vorige stand staan.
+   */
+  verwanteDomeinen?: VerwantDomein[];
 }
 
 export class OptOutError extends Error {}
@@ -224,6 +231,9 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     ),
   );
   const findings = results.flatMap((r) => r.findings);
+  const verwanteDomeinen = maxLevel >= 1 && webAssets.length > 0 && !bogus
+    ? await vindVerwanteDomeinen(opts.net, domain, results).catch(() => undefined)
+    : undefined;
 
   return {
     scannerVersion: SCANNER_VERSION,
@@ -236,6 +246,7 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     checks: results,
     findings,
     score: score({ findings, outcomes: results.map((r) => r.outcome) }),
+    ...(verwanteDomeinen ? { verwanteDomeinen } : {}),
   };
 }
 

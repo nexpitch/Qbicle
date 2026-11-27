@@ -35,6 +35,7 @@ export type AuditAction =
   | 'domein.verificatie_vervallen'
   | 'domein.verwijderd'
   | 'domein.gewijzigd'
+  | 'domein.suggestie_afgewezen'
   | 'scan.aangevraagd'
   | 'registratie.aangevraagd'
   | 'registratie.afgerond'
