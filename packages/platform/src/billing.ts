@@ -666,7 +666,7 @@ export async function syncPayment(p: Platform, paymentId: string, actor: Actor =
           `UPDATE subscription
               SET status = CASE WHEN status = 'opgezegd' OR ($4 AND status = 'beeindigd') THEN 'opgezegd' ELSE 'actief' END,
                   -- Opgezegd binnen de opzegtermijn: deze verlenging is de laatste als hij tot ends_at loopt.
-                  cancel_at_period_end = CASE WHEN status = 'opgezegd' THEN (ends_at IS NULL OR ends_at <= $3)
+                  cancel_at_period_end = CASE WHEN status = 'opgezegd' THEN (ends_at IS NULL OR date_trunc('milliseconds', ends_at) <= $3)
                                               WHEN $4 AND status = 'beeindigd' THEN true ELSE false END,
                   -- Verlenging: de lopende periode schuift door. Anders begint hij bij de betaalde periode
                   -- (bij betalen tijdens de proef is dat het einde van de proef).
