@@ -1,12 +1,16 @@
 import type { CockpitModule } from '../module.ts';
 import { abonnementen } from './abonnementen.tsx';
+import { agents } from './agents.tsx';
 import { audit } from './audit.tsx';
 import { facturen } from './facturen.tsx';
+import { gebruik } from './gebruik.tsx';
 import { gebruikers } from './gebruikers.tsx';
+import { gezondheid } from './gezondheid.tsx';
 import { home } from './home.tsx';
 import { klanten } from './klanten.tsx';
 import { medewerkers } from './medewerkers.tsx';
 import { placeholder } from './placeholder.tsx';
+import { support } from './support.tsx';
 
 /**
  * Alle onderdelen van de cockpit. Een nieuw onderdeel: maak src/modules/<naam>.tsx
@@ -28,19 +32,11 @@ export const MODULES: CockpitModule[] = [
   ]),
   facturen,
 
-  // Techniek en support (worden gebouwd in de thread voor gebruik, support en agents)
-  placeholder({ key: 'gebruik', label: 'Gebruik', href: '/gebruik', icon: 'gebruik', group: 'techniek', order: 10 }, [
-    'Gebruik per klant: scans, assets, tokens en kosten',
-  ]),
-  placeholder({ key: 'gezondheid', label: 'Gezondheid', href: '/gezondheid', icon: 'gezondheid', group: 'techniek', order: 20 }, [
-    'Status van scanners, wachtrijen, mail en betaalprovider',
-  ]),
-  placeholder({ key: 'support', label: 'Support', href: '/support', icon: 'support', group: 'techniek', order: 30, permission: 'cockpit.lezen' }, [
-    'Supportvragen van klanten, met voorstel voor antwoord door een agent',
-  ]),
-  placeholder({ key: 'agents', label: 'Agents', href: '/agents', icon: 'agent', group: 'techniek', order: 40 }, [
-    'Wat de agents doen en voorstellen die op goedkeuring wachten',
-  ]),
+  // Techniek en support (packages/ops)
+  gebruik,
+  gezondheid,
+  support,
+  agents,
 
   // Beheer
   audit,

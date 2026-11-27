@@ -1,0 +1,15 @@
+{
+  "name": "@qbicle/ops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cockpit, technische en support-kant: gebruiksmeting, gezondheid, support-tickets en agents",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@qbicle/platform": "*",
+    "pg": "^8.23.1"
+  }
+}

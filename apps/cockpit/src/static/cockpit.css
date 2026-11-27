@@ -195,3 +195,38 @@ input.code { font: 700 1.4rem var(--f-mono); letter-spacing: .3em; text-align: c
 .betaalwijze .row { align-items: flex-end; }
 .betaalwijze label:not(.radio) { min-width: 180px; }
 .grow { flex: 1; }
+
+/* Gebruik, gezondheid, support en agents (packages/ops) */
+.chart { margin: 0; display: grid; gap: 6px; }
+.chart svg { width: 100%; height: 160px; display: block; }
+.chart-axis { stroke: var(--line-strong); stroke-width: 1; }
+.chart-bar { fill: var(--petrol); }
+.chart-bar:hover { fill: var(--accent); }
+.chart-label { fill: var(--muted); font: 500 11px var(--f-ui); }
+.meter { width: 100%; height: 8px; display: block; }
+.meter-bg { fill: var(--surface-2); stroke: var(--line); stroke-width: .5; }
+.meter-fill.m-ok { fill: var(--st-ok-dot); } .meter-fill.m-warn { fill: var(--st-warn-dot); } .meter-fill.m-crit { fill: var(--st-crit-dot); }
+.limits { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.limit { display: grid; gap: 6px; }
+.limit-head { display: flex; justify-content: space-between; gap: 8px; font-size: .86rem; }
+.banner { display: flex; gap: 12px; align-items: center; padding: 14px 18px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.banner.b-ok { border-color: #BFE3D2; background: var(--st-ok-bg); }
+.banner.b-warn { border-color: #EED6B0; background: var(--st-warn-bg); }
+.banner.b-crit { border-color: #EBC3C8; background: var(--st-crit-bg); }
+.banner ul { margin: 0; padding-left: 1.1em; font-size: .9rem; }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.msg { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; background: var(--surface); }
+.msg.intern { background: #FFFBF2; border-color: #EED6B0; }
+.msg.van-klant { background: var(--surface-2); }
+.msg-head { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; color: var(--muted); flex-wrap: wrap; }
+.msg-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.proposal { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; display: grid; gap: 10px; background: var(--surface); }
+.proposal.imp-financieel { border-left: 4px solid var(--st-crit-dot); }
+.proposal.imp-klant { border-left: 4px solid var(--st-warn-dot); }
+.proposal.imp-geen { border-left: 4px solid var(--st-unk-dot); }
+.proposal-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.payload { margin: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: .8rem/1.45 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: .88rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+textarea { min-height: 110px; resize: vertical; }

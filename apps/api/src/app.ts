@@ -54,6 +54,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
+import { recordUsage } from '@qbicle/ops';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { secureHeaders } from 'hono/secure-headers';
@@ -218,6 +219,17 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
   app.notFound((c) => c.json({ fout: 'niet_gevonden', bericht: 'Onbekend adres.' }, 404));
 
   const v1 = new Hono<Env>();
+
+  // Gebruiksmeting: geslaagde API-aanroepen per klant, per dag en per route (cockpit).
+  // Alleen na een geslaagd antwoord, zodat niemand de teller van een andere klant kan ophogen.
+  v1.use('/organisaties/:org/*', async (c, next) => {
+    await next();
+    const org = c.req.param('org');
+    if (c.res.status < 400 && org && id.safeParse(org).success) {
+      const feature = `${c.req.method} ${c.req.routePath.replace(/^\/api\/v1/, '')}`.slice(0, 80);
+      recordUsage(p.pool, { organizationId: org, metric: 'api', feature }).catch((err) => console.error('Meting mislukt:', err));
+    }
+  });
 
   v1.get('/gezond', (c) => c.json({ ok: true }));
 
