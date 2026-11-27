@@ -1,3 +1,4 @@
+import { HEADER_MAATREGELEN, MAATREGEL_TEKST, kennisStand, onderdelenUitAntwoord, type WebProfiel } from '@qbicle/scanner';
 import type { Actor } from './audit.ts';
 import type { Platform } from './context.ts';
 import { withTransaction } from './db.ts';
@@ -118,7 +119,13 @@ const FINDINGS: DemoFinding[] = [
     title: 'De webshop opent ook zonder beveiligde verbinding', detail: `http://webshop.${D} stuurt niet door naar https.`,
   },
   {
-    asset: 'shop', check: 'software', key: 'web.software_einde_ondersteuning', certainty: 'vastgesteld', days: 84,
+    asset: 'www', check: 'web.software', key: 'web.software_update_achter', certainty: 'mogelijk', days: 21,
+    title: 'WordPress 6.8.2 mist beschikbare updates',
+    detail: `De website meldt WordPress 6.8.2 (waarschijnlijk) (versienummer achter de WordPress-bestanden). Reeks 6.8 wordt nog ondersteund, maar de nieuwste versie daarin is 6.8.13. Die updates bevatten vaak beveiligingsfixes.`,
+    sources: [{ name: 'endoflife.date', url: 'https://endoflife.date/wordpress' }],
+  },
+  {
+    asset: 'shop', check: 'software', key: 'web.server_einde_ondersteuning', certainty: 'vastgesteld', days: 84,
     title: 'De webshop draait op PHP 7.4, dat geen updates meer krijgt',
     detail: `De server van webshop.${D} meldt X-Powered-By: PHP/7.4.33. PHP 7.4 krijgt sinds 28 november 2022 geen beveiligingsupdates meer.`,
     sources: [
@@ -165,6 +172,54 @@ const FINDINGS: DemoFinding[] = [
 
 const VULNS = [{ cve: 'CVE-2024-21762', cvss: 9.8, kev: true }];
 
+/** Wat de voorbeeldwebsites laten zien, zodat het profiel "Software en server" met de echte herkenning wordt gevuld. */
+const DEMO_SITES: { asset: string; headers: Record<string, string>; setCookies?: string[]; body: string; tls: string; ok: Record<string, boolean | null> }[] = [
+  {
+    asset: 'www',
+    headers: { server: 'nginx', link: '<https://www.voorbeeldbedrijf.example/wp-json/>; rel="https://api.w.org/"' },
+    body: [
+      '<link rel="stylesheet" href="/wp-includes/css/dist/block-library/style.min.css?ver=6.8.2">',
+      '<script src="/wp-includes/js/wp-emoji-release.min.js?ver=6.8.2"></script>',
+      '<script src="/wp-includes/js/jquery/jquery.min.js?ver=3.7.1"></script>',
+      '<link rel="stylesheet" href="/wp-content/plugins/woocommerce/assets/css/woocommerce.css?ver=9.8.5">',
+      '<script src="/wp-content/plugins/contact-form-7/includes/js/index.js?ver=6.0.6"></script>',
+      '<link rel="stylesheet" href="/wp-content/plugins/elementor/assets/css/frontend.min.css?ver=6.8.2">',
+      '<link rel="stylesheet" href="/wp-content/themes/astra/style.css?ver=4.11.1">',
+    ].join('\n'),
+    tls: 'TLSv1.3',
+    ok: { https: true, hsts: true, csp: false, framing: true, xcto: true, referrer: true, versies: true, cookies: true, securitytxt: false },
+  },
+  {
+    asset: 'shop',
+    headers: { server: 'Apache/2.4.58', 'x-powered-by': 'PHP/7.4.33' },
+    setCookies: ['PHPSESSID=demo; Secure; HttpOnly'],
+    body: '<script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>',
+    tls: 'TLSv1.2',
+    ok: { https: true, hsts: false, csp: false, framing: false, xcto: false, referrer: false, versies: false, cookies: true, securitytxt: false },
+  },
+];
+
+const MAATREGEL_LABELS: Record<string, { label: string; uitleg: string }> = {
+  ...MAATREGEL_TEKST,
+  ...Object.fromEntries(HEADER_MAATREGELEN.map((m) => [m.key, { label: m.label, uitleg: m.uitleg }])),
+};
+
+export function demoWebProfiel(site: (typeof DEMO_SITES)[number], value: string, now: Date): WebProfiel {
+  const onderdelen = onderdelenUitAntwoord({ url: `${value}/`, status: 200, headers: site.headers, setCookies: site.setCookies ?? [], body: site.body }, now);
+  return {
+    versie: 1,
+    website: value,
+    kennisStand: kennisStand(),
+    onderdelen,
+    maatregelen: [
+      ...Object.entries(site.ok).map(([key, ok]) => ({ key, ...MAATREGEL_LABELS[key]!, ok })),
+      { key: 'tls', label: `${MAATREGEL_TEKST.tls!.label} (${site.tls.replace('TLSv', 'TLS ')})`, uitleg: MAATREGEL_TEKST.tls!.uitleg, ok: true },
+    ],
+    tls: site.tls,
+    achterCdn: false,
+  };
+}
+
 export async function seedDemoData(p: Platform, actor: Actor & { userId: string }, organizationId: string, now = new Date()): Promise<{ assets: number; findings: number }> {
   if (!demoDataAllowed()) throw new PlatformError('geen_toegang', 'Voorbeelddata staat hier uit.');
   await authorize(p.pool, actor.userId, organizationId, 'org:wijzigen');
@@ -194,6 +249,14 @@ export async function seedDemoData(p: Platform, actor: Actor & { userId: string 
     await q.query(`INSERT INTO component (asset_id, kind, vendor, product, version, eol_date) VALUES ($1, 'os', 'Synology', 'DSM', '6.2.4', $2)`, [nas, '2024-10-01']);
     await q.query(`INSERT INTO component (asset_id, kind, vendor, product, version) VALUES ($1, 'firmware', 'TP-Link', 'Deco X20 firmware', '1.1.6')`, [ids.get('deco')!]);
     await q.query(`INSERT INTO component (asset_id, kind, vendor, product, version, eol_date) VALUES ($1, 'software', 'PHP Group', 'PHP', '7.4.33', '2022-11-28')`, [ids.get('shop')!]);
+
+    for (const site of DEMO_SITES) {
+      const a = ASSETS.find((x) => x.key === site.asset)!;
+      await q.query(
+        `INSERT INTO asset_attribute (asset_id, key, value, observed_at, certainty) VALUES ($1, 'web.profiel', $2, $3, 'vastgesteld')`,
+        [ids.get(site.asset)!, JSON.stringify(demoWebProfiel(site, a.value, now)), ago(1)],
+      );
+    }
 
     for (const v of VULNS) {
       await q.query(`INSERT INTO vuln (cve_id, cvss, in_kev) VALUES ($1, $2, $3) ON CONFLICT (cve_id) DO NOTHING`, [v.cve, v.cvss, v.kev]);
