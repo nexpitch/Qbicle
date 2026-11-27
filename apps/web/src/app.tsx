@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import {
   can,
   demoDataAllowed,
+  domainImpact,
   domainScanInfo,
   getScan,
   domainOverview,
@@ -47,7 +48,7 @@ import { Layout } from './layout.tsx';
 import { invoicePdf } from './pdf.ts';
 import { FacturenPage, facturenCsv } from './pages/facturen.tsx';
 import { AccountPage, UitnodigingPage } from './pages/account.tsx';
-import { AssetPage, AssetsPage, DashboardPage, DomeinenPage, koppelingenSectie, systemenSectie, WaarStaatDomeinPage } from './pages/dashboard.tsx';
+import { AssetPage, AssetsPage, DashboardPage, DomeinBeherenPage, DomeinenPage, koppelingenSectie, systemenSectie, WaarStaatDomeinPage } from './pages/dashboard.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import { AbonnementPage, OpzeggenPage, WijzigenPage } from './pages/abonnement-beheer.tsx';
 import {
@@ -201,18 +202,24 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
       resolveAccess(p.pool, ctx.s.user.id, ctx.org.id),
     ]);
     const demo = demoDataAllowed() && Boolean(access && can(access, 'org:wijzigen'));
+    const standen = koppelingen.lijst(ctx.org.id);
+    const gekoppeld = standen.filter((k) => k.status === 'actief' || k.status === 'let_op').map((k) => k.id);
     const extra = [
-      koppelingenSectie(koppelingen.lijst(ctx.org.id), await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
+      koppelingenSectie(standen, await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
       systemenSectie(await listSystemen(p, ctx.s.user.id, ctx.org.id), `/o/${ctx.org.id}`),
     ];
-    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} />);
+    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} gekoppeld={gekoppeld} />);
   });
 
   app.get('/o/:org/assets', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
     const d = await getDashboard(p, ctx.s.user.id, ctx.org.id);
-    return c.html(<AssetsPage user={ctx.user} org={ctx.org} d={d} soort={c.req.query('soort')} />);
+    const gekoppeld = koppelingen
+      .lijst(ctx.org.id)
+      .filter((k) => k.status === 'actief' || k.status === 'let_op')
+      .map((k) => k.id);
+    return c.html(<AssetsPage user={ctx.user} org={ctx.org} d={d} soort={c.req.query('soort')} gekoppeld={gekoppeld} />);
   });
 
   app.get('/o/:org/assets/:asset', async (c) => {
@@ -248,10 +255,21 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
         magScannen={magScannen}
         scans={scans}
         sent={q.mail === 'verstuurd'}
+        verwijderd={q.verwijderd?.slice(0, 300)}
         overview={overview}
         added={added}
       />,
     );
+  });
+
+  app.get('/o/:org/domeinen/:dom/beheren', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const access = await resolveAccess(p.pool, ctx.s.user.id, ctx.org.id);
+    if (!access || !can(access, 'domeinen:beheren')) return c.redirect(`/o/${ctx.org.id}/domeinen`);
+    const [impact, domains] = await Promise.all([domainImpact(p, ctx.s.user.id, ctx.org.id, c.req.param('dom')), listDomains(p, ctx.s.user.id, ctx.org.id)]);
+    const overview = await domainOverview(p, ctx.s.user.id, ctx.org.id, domains);
+    return c.html(<DomeinBeherenPage user={ctx.user} org={ctx.org} impact={impact} overview={overview} />);
   });
 
   app.get('/o/:org/domeinen/:dom/waar', async (c) => {

@@ -1,6 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { scanDomain } from '../src/scan.ts';
 import { NOW } from '../test/helpers.ts';
 import { SCENARIOS, type Scenario } from './scenarios.ts';
+
+// De meetset rekent met een vaste datum (NOW) en dus ook met een vaste kennis-snapshot.
+process.env.QBICLE_EOL_FILE ??= fileURLToPath(new URL('../test/fixtures/eol-snapshot.json', import.meta.url));
 
 export interface ScenarioResult {
   id: string;

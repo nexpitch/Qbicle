@@ -1,5 +1,6 @@
 import type { Asset } from '@qbicle/score';
 import type { Net } from '../src/net.ts';
+import { organizationalDomain } from '../src/domain.ts';
 import type { Check, CheckContext } from '../src/types.ts';
 
 export const NOW = new Date('2026-11-26T12:00:00Z');
@@ -8,6 +9,7 @@ export function ctxFor(net: Net, domain = 'voorbeeld.nl', asset?: Asset): CheckC
   const cache = new Map<string, Promise<unknown>>();
   return {
     domain,
+    orgDomain: organizationalDomain(domain),
     asset: asset ?? { type: 'domein', value: domain, source: 'opgegeven', visibility: 'primair' },
     net,
     now: NOW,

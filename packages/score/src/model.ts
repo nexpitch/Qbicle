@@ -9,7 +9,7 @@
  * de versie, zodat oude rapporten niet veranderen.
  */
 
-export const MODEL_VERSION = 'light-2026.11-v0.4';
+export const MODEL_VERSION = 'light-2026.11-v0.5';
 
 /**
  * v0.2, na de eerste testset (22 domeinen, 26-11-2026):
@@ -41,6 +41,16 @@ export const COVERAGE_WARN_PCT = 80;
  *   hygiënepunten heeft, hoort niet in Hoge urgentie (neverssl.com kwam op 54). Met 18 blijft "alleen SPF en DMARC ontbreken" net in Aandacht nodig (26).
  */
 
+/**
+ * v0.5, software en server (27-11-2026):
+ * - server-software (PHP, webserver, OpenSSL, besturingssysteem) krijgt eigen sleutels
+ *   (web.server_*) en een eigen actie voor de hostingpartij (server-bijwerken);
+ *   CMS en webwinkel blijven web.software_* voor de webbouwer;
+ * - nieuw: ontbrekende updates binnen een ondersteunde reeks (*_update_achter) en
+ *   bibliotheken in de browser zonder updates (web.bibliotheek_einde, lichter);
+ * - einde-ondersteuning en laatste versies komen uit een snapshot van endoflife.date.
+ */
+
 /** Bevindingen die samen één probleem zijn: een certificaat dat browsers weigeren. */
 export const CERT_BROKEN_KEYS = new Set([
   'cert.expired',
@@ -62,7 +72,7 @@ export const ACTION_CAP: Record<string, number> = {
 /** Deler in de afvlakking 100 × (1 − e^(−som/DIVISOR)). */
 export const DIVISOR = 60;
 
-export type ForWho = 'zelf' | 'it-partner' | 'webbouwer';
+export type ForWho = 'zelf' | 'it-partner' | 'webbouwer' | 'hosting';
 
 export interface ActionDef {
   title: string;
@@ -99,7 +109,7 @@ export const ACTIONS: Record<string, ActionDef> = {
   },
   'dmarc-instellen': {
     title: 'Zet DMARC aan, zodat anderen niet uit jouw naam kunnen mailen',
-    why: 'DMARC vertelt ontvangers wat ze moeten doen met nepmail uit jouw naam. Nu staat het niet aan.',
+    why: 'DMARC vertelt ontvangers wat ze moeten doen met nepmail uit jouw naam. Nu staat het niet aan. Begin met meekijken (p=none) en zet het stap voor stap strenger, dan loopt je eigen mail geen risico.',
     forWho: 'it-partner',
   },
   'dmarc-aanscherpen': {
@@ -132,9 +142,14 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'Je website draait software met bekende lekken of zonder beveiligingsupdates. Aanvallers zoeken daar gericht naar.',
     forWho: 'webbouwer',
   },
+  'server-bijwerken': {
+    title: 'Laat je hostingpartij de server en PHP bijwerken naar een ondersteunde versie',
+    why: 'De server van je website draait software zonder beveiligingsupdates, met ontbrekende updates of met bekende lekken. Dat zit onder je website en is meestal werk van de hostingpartij.',
+    forWho: 'hosting',
+  },
   'mail-dichtzetten': {
-    title: 'Zet je domein dicht voor nepmail (SPF en DMARC op "weigeren")',
-    why: 'Je mailt niet vanaf dit domein, maar anderen kunnen het wel als afzender misbruiken. Twee DNS-regels voorkomen dat.',
+    title: 'Mail je niet vanaf dit domein? Zet het dan dicht voor nepmail',
+    why: 'We zien geen tekenen dat er vanaf dit domein gemaild wordt, maar anderen kunnen het wel als afzender misbruiken. Verstuur je er echt geen mail mee (ook geen nieuwsbrief of factuurmail), dan voorkomen twee DNS-regels dat. Twijfel je, begin dan met DMARC op meekijken.',
     forWho: 'it-partner',
   },
   'dnssec-aanzetten': {
@@ -256,6 +271,14 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'web.software_einde_binnenkort': { b: 3, action: 'software-bijwerken', voorlopig: true },
   // Alleen ter informatie: telt niet mee en levert geen actie op.
   'web.software_einde_distro': { b: 0, action: 'software-bijwerken', voorlopig: true },
+  'web.software_update_achter': { b: 5, action: 'software-bijwerken', voorlopig: true },
+  'web.bibliotheek_einde': { b: 5, action: 'software-bijwerken', voorlopig: true },
+  // Zelfde gewichten voor de server, maar de actie gaat naar de hostingpartij.
+  'web.server_kwetsbaar': { b: 25, action: 'server-bijwerken', voorlopig: true },
+  'web.server_einde_ondersteuning': { b: 15, action: 'server-bijwerken', voorlopig: true },
+  'web.server_einde_binnenkort': { b: 3, action: 'server-bijwerken', voorlopig: true },
+  'web.server_einde_distro': { b: 0, action: 'server-bijwerken', voorlopig: true },
+  'web.server_update_achter': { b: 1, action: 'server-bijwerken', voorlopig: true },
   'web.securitytxt_missing': { b: 3, action: 'securitytxt-plaatsen' },
   'web.securitytxt_expired': { b: 2, action: 'securitytxt-plaatsen', voorlopig: true },
 

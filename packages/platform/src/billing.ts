@@ -5,18 +5,18 @@ import {
   findAuditPackage,
   findPlan,
   periodAmountCents,
-  vatCents,
   type BillingInterval,
   type Limits,
   type Plan,
 } from './catalog.ts';
-import type { Platform } from './context.ts';
+import type { Platform, SupplierDetails } from './context.ts';
 import { many, one, withTransaction, type Queryable } from './db.ts';
 import { notFound, PlatformError } from './errors.ts';
 import { authorize, cleanName, createOrganization, isUuid } from './organizations.ts';
 import { isNepProvider, type ProviderStatus } from './payments.ts';
 import { can } from './roles.ts';
 import { normalizeDomain } from '@qbicle/scanner';
+import { checkVatNumber, normalizeVatNumber, refreshVatCheck, validateVatFormat, vatAmount, vatStatus, vatTreatment, type VatCode, type VatStatus, type VatTreatment } from './btw.ts';
 
 /**
  * Abonnementen, betalingen en facturen.
@@ -74,6 +74,9 @@ export interface Payment {
   amountExclCents: number;
   vatCents: number;
   amountInclCents: number;
+  /** Btw-code en tarief waarmee gerekend is (los bewaard voor Mollie/boekhouding). */
+  vatCode: VatCode;
+  vatRate: number;
   status: ProviderStatus;
   provider: string;
   checkoutUrl: string | null;
@@ -148,9 +151,13 @@ interface PayRow {
   paid_at: Date | null;
   plan_change: PlanChangeTarget | null;
   lines: InvoiceLine[] | null;
+  vat_code: VatCode;
+  vat_rate: string | null;
+  vat_check_id: string | null;
 }
 const PAY_COLS = `id, organization_id, subscription_id, audit_order_id, description, period_start, period_end,
-  amount_excl_cents, vat_cents, amount_incl_cents, status, provider, provider_payment_id, checkout_url, created_at, paid_at, plan_change, lines`;
+  amount_excl_cents, vat_cents, amount_incl_cents, status, provider, provider_payment_id, checkout_url, created_at, paid_at, plan_change, lines,
+  vat_code, vat_rate, vat_check_id`;
 const toPay = (r: PayRow): Payment => ({
   id: r.id,
   description: r.description,
@@ -159,6 +166,8 @@ const toPay = (r: PayRow): Payment => ({
   amountExclCents: r.amount_excl_cents,
   vatCents: r.vat_cents,
   amountInclCents: r.amount_incl_cents,
+  vatCode: r.vat_code,
+  vatRate: r.vat_rate === null ? (r.vat_cents === 0 && r.amount_excl_cents > 0 ? 0 : Math.round((r.vat_cents * 100) / Math.max(1, r.amount_excl_cents))) : Number(r.vat_rate),
   status: r.status,
   provider: r.provider,
   checkoutUrl: r.status === 'open' ? r.checkout_url : null,
@@ -265,20 +274,21 @@ export async function planLimits(p: Platform, organizationId: string): Promise<L
  */
 export async function registerSignup(
   p: Platform,
-  input: { email: string; organizationName: string; plan: string; interval?: string },
+  input: { email: string; organizationName: string; plan: string; interval?: string; country?: string | null; vatNumber?: string | null },
   actor: Actor,
 ): Promise<void> {
   const email = normalizeEmail(input.email);
   const orgName = cleanName(input.organizationName);
+  const { land, btw } = cleanCountryAndVat(input.country, input.vatNumber);
   const isAudit = Boolean(findAuditPackage(p.catalog, input.plan));
   if (!isAudit) planOrFail(p, input.plan);
   const interval = isAudit ? 'maand' : parseInterval(input.interval ?? 'jaar');
   // Eerst de inloglink (met de limieten per adres en IP), daarna pas opslaan.
   await requestLoginLink(p, email, actor);
   await p.pool.query(
-    `INSERT INTO signup (email, org_name, plan, billing_interval, expires_at)
-     VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5))`,
-    [email, orgName, input.plan, interval, p.config.signupHours],
+    `INSERT INTO signup (email, org_name, plan, billing_interval, expires_at, country, vat_number)
+     VALUES ($1, $2, $3, $4, now() + make_interval(hours => $5), $6, $7)`,
+    [email, orgName, input.plan, interval, p.config.signupHours, land, btw],
   );
   await audit(p.pool, actor, { organizationId: null, action: 'registratie.aangevraagd', subject: email, detail: { pakket: input.plan, interval } });
 }
@@ -292,17 +302,22 @@ export async function completeSignup(
   p: Platform,
   actor: UserActor & { email: string },
 ): Promise<{ organizationId: string; plan: string; product: 'mkb' | 'corporate' | 'audit' } | undefined> {
-  const s = await one<{ id: string; org_name: string; plan: string; billing_interval: BillingInterval }>(
+  const s = await one<{ id: string; org_name: string; plan: string; billing_interval: BillingInterval; country: string | null; vat_number: string | null }>(
     p.pool,
     `UPDATE signup SET completed_at = now()
       WHERE id = (SELECT id FROM signup WHERE email = $1 AND completed_at IS NULL AND expires_at > now()
                    ORDER BY created_at DESC LIMIT 1)
-      RETURNING id, org_name, plan, billing_interval`,
+      RETURNING id, org_name, plan, billing_interval, country, vat_number`,
     [actor.email],
   );
   if (!s) return undefined;
   const org = await createOrganization(p, actor, { name: s.org_name, kind: 'klant' });
   await p.pool.query('UPDATE signup SET organization_id = $2 WHERE id = $1', [s.id, org.id]);
+  if (s.country) {
+    await p.pool.query('UPDATE organization SET billing_country = $2, vat_number = $3 WHERE id = $1', [org.id, s.country, s.vat_number]);
+    // Btw-nummer uit een ander EU-land: meteen bij VIES controleren. Lukt dat niet, dan gewoon btw tot het wel lukt.
+    if (s.vat_number) await checkVatNumber(p, org.id, 'registratie', actor);
+  }
   const plan = findPlan(p.catalog, s.plan);
   if (plan) await startSubscription(p, actor, org.id, { plan: plan.id, interval: s.billing_interval });
   await audit(p.pool, actor, { organizationId: org.id, action: 'registratie.afgerond', subject: org.id, detail: { pakket: s.plan } });
@@ -432,6 +447,8 @@ export interface BillingOverview {
   /** Wat er gebeurt als je nu opzegt. */
   opzeggen: { eindigtOp: Date; nogEenBetaling: boolean } | null;
   opzegtermijnMaanden: number;
+  /** Btw voor deze klant: gewoon tarief, of verlegd (0%) na een geldige VIES-controle. */
+  btw: { verlegd: boolean; percentage: number; uitleg: string };
 }
 
 export async function getBilling(p: Platform, userId: string, organizationId: string): Promise<BillingOverview> {
@@ -446,6 +463,8 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
   const until = state === 'proef' ? sub!.trialEndsAt : state === 'actief' ? sub!.currentPeriodEnd : null;
   const open = pays.find((x) => x.status === 'open' && x.subscription_id && x.subscription_id === sub?.id);
   const pendingPlan = sub?.pendingPlan ? findPlan(p.catalog, sub.pendingPlan) ?? null : null;
+  const vt = await vatTreatment(p, p.pool, organizationId);
+  const vs = await vatStatus(p, p.pool, organizationId);
   let volgende: BillingOverview['volgendeBetaling'] = null;
   if (sub && (state === 'proef' || (state === 'actief' && needsRenewal(sub)))) {
     const datum = state === 'proef' ? sub.trialEndsAt! : sub.currentPeriodEnd!;
@@ -455,7 +474,7 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
     const extra = pk ? extraDomainsFor(pk, (await usageCounts(p.pool, organizationId)).domeinen) : 0;
     const extraExcl = extra * p.catalog.extraDomeinCenten * (iv === 'jaar' ? 12 : 1);
     const excl = periodAmountCents(monthly, iv) + extraExcl;
-    volgende = { datum, exclCents: excl, inclCents: excl + vatCents(p.catalog, excl), pakket: pk, interval: iv, extraDomeinen: extra, extraDomeinenExclCents: extraExcl };
+    volgende = { datum, exclCents: excl, inclCents: excl + vatAmount(vt, excl), pakket: pk, interval: iv, extraDomeinen: extra, extraDomeinenExclCents: extraExcl };
   }
   const notice = p.catalog.opzegtermijnMaanden;
   const running = sub && state === 'actief' && sub.status !== 'opgezegd' && sub.currentPeriodEnd && !sub.cancelAtPeriodEnd;
@@ -473,6 +492,7 @@ export async function getBilling(p: Platform, userId: string, organizationId: st
     eindigtOp,
     opzeggen,
     opzegtermijnMaanden: notice,
+    btw: { verlegd: vt.reverseCharge, percentage: vt.rate, uitleg: vs.uitleg },
     gepland: sub?.pendingPlan && sub.pendingInterval ? { pakket: pendingPlan, interval: sub.pendingInterval, per: sub.currentPeriodEnd } : null,
     volgendeBetaling: volgende,
     betaalwijze: await paymentMethodInfo(p.pool, organizationId),
@@ -500,6 +520,11 @@ async function createProviderPayment(p: Platform, q: Queryable, paymentId: strin
   return r.checkoutUrl;
 }
 
+/** Kolommen vat_code, vat_rate, vat_check_id voor een nieuwe betaling. */
+export function vatCols(vt: VatTreatment): [VatCode, number, string | null] {
+  return [vt.code, vt.rate, vt.checkId];
+}
+
 function nlDate(d: Date): string {
   return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' });
 }
@@ -514,6 +539,8 @@ export async function checkoutSubscription(
   organizationId: string,
 ): Promise<{ payment: Payment; checkoutUrl: string }> {
   await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
+  // Btw verleggen alleen op een recente VIES-controle; zo nodig eerst opnieuw vragen (buiten de transactie).
+  await refreshVatCheck(p, organizationId, 'betaling', actor);
   return withTransaction(p.pool, async (q) => {
     let sub = await currentSubscription(q, organizationId, true);
     if (!sub) throw new PlatformError('conflict', 'Kies eerst een pakket.');
@@ -550,15 +577,16 @@ export async function checkoutSubscription(
     const description = `${plan.naam}, ${sub.interval === 'jaar' ? 'jaar' : 'maand'} ${nlDate(start)} t/m ${nlDate(new Date(end.getTime() - 86_400_000))}`;
     const lines = await periodLines(p, q, organizationId, plan, sub.interval, monthly, description);
     const excl = lines.reduce((t, l) => t + l.totaalExclCenten, 0);
-    const vat = vatCents(p.catalog, excl);
+    const vt = await vatTreatment(p, q, organizationId);
+    const vat = vatAmount(vt, excl);
 
     await q.query(`UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND plan_change IS NULL AND NOT EXISTS (SELECT 1 FROM collection_item ci WHERE ci.payment_id = payment.id)`, [sub.id]);
     const row = await one<{ id: string }>(
       q,
       `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11) RETURNING id`,
-      [organizationId, sub.id, description.slice(0, 200), start, end, excl, vat, excl + vat, p.payments.name, actor.userId, lines.length > 1 ? JSON.stringify(lines) : null],
+                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines, vat_code, vat_rate, vat_check_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9, $10, $11, $12, $13, $14) RETURNING id`,
+      [organizationId, sub.id, description.slice(0, 200), start, end, excl, vat, excl + vat, p.payments.name, actor.userId, lines.length > 1 ? JSON.stringify(lines) : null, ...vatCols(vt)],
     );
     const checkoutUrl = await createProviderPayment(p, q, row!.id, excl + vat, description);
     await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row!.id, detail: { bedrag: excl + vat, abonnement: sub.id } });
@@ -588,6 +616,7 @@ export async function createAuditOrder(
   }))];
   if (domains.length === 0) throw new PlatformError('ongeldige_invoer', 'Geef minstens één domein van de doelonderneming.');
   if (domains.length > pkg.maxDomeinen) throw new PlatformError('ongeldige_invoer', `${pkg.naam} gaat over maximaal ${pkg.maxDomeinen} domeinen.`);
+  await refreshVatCheck(p, organizationId, 'betaling', actor);
 
   return withTransaction(p.pool, async (q) => {
     const order = await one<{ id: string }>(
@@ -597,13 +626,15 @@ export async function createAuditOrder(
       [organizationId, pkg.id, pkg.prijsCenten, target, domains, actor.userId],
     );
     const excl = pkg.prijsCenten;
-    const vat = vatCents(p.catalog, excl);
+    const vt = await vatTreatment(p, q, organizationId);
+    const vat = vatAmount(vt, excl);
     const description = `${pkg.naam}: ${target}`.slice(0, 200);
     const row = await one<{ id: string }>(
       q,
-      `INSERT INTO payment (organization_id, audit_order_id, description, amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, 'open', $7, $8) RETURNING id`,
-      [organizationId, order!.id, description, excl, vat, excl + vat, p.payments.name, actor.userId],
+      `INSERT INTO payment (organization_id, audit_order_id, description, amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by,
+                            vat_code, vat_rate, vat_check_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'open', $7, $8, $9, $10, $11) RETURNING id`,
+      [organizationId, order!.id, description, excl, vat, excl + vat, p.payments.name, actor.userId, ...vatCols(vt)],
     );
     const checkoutUrl = await createProviderPayment(p, q, row!.id, excl + vat, description);
     await audit(q, actor, { organizationId, action: 'audit_opdracht.aangemaakt', subject: order!.id, detail: { pakket: pkg.id, domeinen: domains.length } });
@@ -743,6 +774,13 @@ export interface Invoice {
   vatCents: number;
   amountInclCents: number;
   paymentId: string;
+  vatCode: VatCode;
+  /** Btw verlegd naar de klant (EU buiten NL, geldig btw-nummer volgens VIES). */
+  reverseCharge: boolean;
+  customerVatNumber: string | null;
+  supplierVatNumber: string | null;
+  /** Momentopname van de leverancier (Nexpitch BV, handelsnaam Qbicle) bij uitgifte. */
+  supplier: SupplierDetails | null;
 }
 
 async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor): Promise<void> {
@@ -757,12 +795,32 @@ async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor
   const lines: InvoiceLine[] = pay.lines?.length
     ? pay.lines
     : [{ omschrijving: pay.description, aantal: 1, prijsExclCenten: pay.amount_excl_cents, totaalExclCenten: pay.amount_excl_cents }];
+  // De btw komt van de betaling (wat de klant betaald heeft), nooit opnieuw berekend.
+  const reverse = pay.vat_code === 'eu_verlegd';
+  const rate = pay.vat_rate !== null ? Number(pay.vat_rate) : p.catalog.btwPercentage;
   await q.query(
-    `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, test)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [pay.organization_id, pay.id, number, JSON.stringify(details), JSON.stringify(lines), pay.amount_excl_cents, p.catalog.btwPercentage, pay.vat_cents, pay.amount_incl_cents, test],
+    `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, test,
+                          vat_code, reverse_charge, customer_vat_number, supplier_vat_number, vat_check_id, supplier)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+    [
+      pay.organization_id, pay.id, number, JSON.stringify(details), JSON.stringify(lines), pay.amount_excl_cents, rate, pay.vat_cents, pay.amount_incl_cents, test,
+      pay.vat_code, reverse, details.btwNummer, p.config.supplier.btwNummer, reverse ? pay.vat_check_id : null, JSON.stringify(p.config.supplier),
+    ],
   );
   await audit(q, actor, { organizationId: pay.organization_id, action: 'factuur.uitgegeven', subject: number });
+}
+
+/** Regels over de leverancier op een factuur (scherm en pdf). */
+export function supplierLines(s: SupplierDetails): { regels: string[]; ontbreekt: string[] } {
+  const regels = [
+    s.handelsnaam && s.handelsnaam !== s.naam ? `${s.handelsnaam} is een handelsnaam van ${s.naam}` : s.naam,
+    s.adres ?? '',
+    s.postcodePlaats ?? '',
+    s.kvk ? `KvK ${s.kvk}` : '',
+    s.btwNummer ? `Btw ${s.btwNummer}` : '',
+  ].filter(Boolean);
+  const ontbreekt = [!s.adres ? 'adres' : '', !s.kvk ? 'KvK-nummer' : '', !s.btwNummer ? 'btw-nummer' : ''].filter(Boolean);
+  return { regels, ontbreekt };
 }
 
 interface InvRow {
@@ -776,6 +834,11 @@ interface InvRow {
   vat_cents: number;
   amount_incl_cents: number;
   payment_id: string;
+  vat_code: VatCode;
+  reverse_charge: boolean;
+  customer_vat_number: string | null;
+  supplier_vat_number: string | null;
+  supplier: SupplierDetails | null;
 }
 const toInv = (r: InvRow): Invoice => ({
   id: r.id,
@@ -788,8 +851,14 @@ const toInv = (r: InvRow): Invoice => ({
   vatCents: r.vat_cents,
   amountInclCents: r.amount_incl_cents,
   paymentId: r.payment_id,
+  vatCode: r.vat_code,
+  reverseCharge: r.reverse_charge,
+  customerVatNumber: r.customer_vat_number,
+  supplierVatNumber: r.supplier_vat_number,
+  supplier: r.supplier,
 });
-const INV_COLS = 'id, number, issued_at, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, payment_id';
+const INV_COLS = `id, number, issued_at, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, payment_id,
+  vat_code, reverse_charge, customer_vat_number, supplier_vat_number, supplier`;
 
 export async function listInvoices(p: Platform, userId: string, organizationId: string): Promise<Invoice[]> {
   await authorize(p.pool, userId, organizationId, 'abonnement:lezen');
@@ -854,9 +923,35 @@ async function billingDetailsRow(q: Queryable, organizationId: string): Promise<
   };
 }
 
-export async function getBillingDetails(p: Platform, userId: string, organizationId: string): Promise<BillingDetails & { organisatie: string }> {
+export type BillingDetailsView = BillingDetails & { organisatie: string; btw: VatStatus };
+
+export async function getBillingDetails(p: Platform, userId: string, organizationId: string): Promise<BillingDetailsView> {
   await authorize(p.pool, userId, organizationId, 'abonnement:lezen');
-  return billingDetailsRow(p.pool, organizationId);
+  return { ...(await billingDetailsRow(p.pool, organizationId)), btw: await vatStatus(p, p.pool, organizationId) };
+}
+
+/** Btw-nummer nu (opnieuw) laten controleren bij VIES, bijvoorbeeld na een storing. */
+export async function recheckVatNumber(p: Platform, actor: UserActor, organizationId: string): Promise<VatStatus> {
+  await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
+  const d = await billingDetailsRow(p.pool, organizationId);
+  if (!d.btwNummer) throw new PlatformError('ongeldige_invoer', 'Vul eerst je btw-nummer in.');
+  const recent = await one(p.pool, `SELECT 1 FROM vat_check WHERE organization_id = $1 AND checked_at > now() - interval '1 minute'`, [organizationId]);
+  if (recent) throw new PlatformError('conflict', 'We hebben je btw-nummer net gecontroleerd. Probeer het over een minuut opnieuw.');
+  await checkVatNumber(p, organizationId, 'klant', actor);
+  return vatStatus(p, p.pool, organizationId);
+}
+
+/** Land en btw-nummer controleren en netjes maken (ook bij registreren). */
+export function cleanCountryAndVat(landIn: string | null | undefined, btwIn: string | null | undefined): { land: string; btw: string | null } {
+  const land = (opt(landIn, 2, 'Land') ?? 'NL').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(land)) throw new PlatformError('ongeldige_invoer', 'Geef het land als landcode, bijvoorbeeld NL of BE.');
+  const raw = opt(btwIn, 30, 'Btw-nummer');
+  const btw = raw ? normalizeVatNumber(raw) : null;
+  if (btw) {
+    if (btw.length > 20) throw new PlatformError('ongeldige_invoer', 'Dit btw-nummer is te lang.');
+    validateVatFormat(land, btw);
+  }
+  return { land, btw };
 }
 
 const opt = (v: string | null | undefined, max: number, label: string): string | null => {
@@ -872,15 +967,13 @@ export async function updateBillingDetails(
   actor: UserActor,
   organizationId: string,
   input: Partial<BillingDetails>,
-): Promise<BillingDetails & { organisatie: string }> {
+): Promise<BillingDetailsView> {
   await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
   const email = input.email ? normalizeEmail(input.email) : null;
   const kvk = opt(input.kvk, 20, 'KvK-nummer')?.replace(/\D/g, '') ?? null;
   if (kvk && !/^\d{8}$/.test(kvk)) throw new PlatformError('ongeldige_invoer', 'Een KvK-nummer heeft 8 cijfers.');
-  const land = (opt(input.land, 2, 'Land') ?? 'NL').toUpperCase();
-  if (!/^[A-Z]{2}$/.test(land)) throw new PlatformError('ongeldige_invoer', 'Geef het land als landcode, bijvoorbeeld NL of BE.');
-  const btw = opt(input.btwNummer, 30, 'Btw-nummer')?.replace(/[\s.]/g, '').toUpperCase() ?? null;
-  if (btw && !/^[A-Z]{2}[0-9A-Z]{2,13}$/.test(btw)) throw new PlatformError('ongeldige_invoer', 'Dit btw-nummer klopt niet. Voorbeeld: NL123456789B01.');
+  const { land, btw } = cleanCountryAndVat(input.land, input.btwNummer);
+  const before = await billingDetailsRow(p.pool, organizationId);
   await p.pool.query(
     `UPDATE organization SET billing_name = $2, billing_email = $3, billing_address = $4, billing_postcode = $5,
             billing_city = $6, billing_country = $7, kvk_number = $8, vat_number = $9, billing_reference = $10
@@ -899,7 +992,9 @@ export async function updateBillingDetails(
     ],
   );
   await audit(p.pool, actor, { organizationId, action: 'factuurgegevens.gewijzigd', subject: organizationId });
-  return billingDetailsRow(p.pool, organizationId);
+  // Nieuw of ander btw-nummer of land: meteen bij VIES controleren (alleen EU buiten NL).
+  if (btw && (btw !== before.btwNummer || land !== before.land)) await checkVatNumber(p, organizationId, 'klant', actor);
+  return getBillingDetails(p, actor.userId, organizationId);
 }
 
 // Pakket wijzigen -----------------------------------------------------------------------
@@ -928,6 +1023,8 @@ export interface PlanChangePreview {
   volgendeBetaling: { datum: Date | null; interval: BillingInterval; exclCents: number; inclCents: number };
   /** Bijvoorbeeld: meer gebruikers dan het nieuwe pakket toestaat. */
   waarschuwingen: string[];
+  /** Btw-tarief in de bedragen incl. btw (0 bij btw verlegd). */
+  btwPercentage: number;
 }
 
 const DAY = 86_400_000;
@@ -952,6 +1049,7 @@ function computeChange(
   plan: Plan,
   interval: BillingInterval,
   usage: { gebruikers: number; domeinen: number },
+  vt: Pick<VatTreatment, 'rate'>,
   now = new Date(),
 ): PlanChangePreview {
   const naar = { plan, interval, maandprijsCenten: plan.maandprijsCenten[interval] };
@@ -967,10 +1065,10 @@ function computeChange(
   }
   const amount = (monthly: number, iv: BillingInterval) => {
     const excl = periodAmountCents(monthly, iv) + extra * p.catalog.extraDomeinCenten * (iv === 'jaar' ? 12 : 1);
-    return { exclCents: excl, inclCents: excl + vatCents(p.catalog, excl) };
+    return { exclCents: excl, inclCents: excl + vatAmount(vt, excl) };
   };
   const state = accessState(sub, now);
-  const base = { naar, waarschuwingen, bijbetalingExclCents: 0, bijbetalingInclCents: 0, restDagen: 0 };
+  const base = { naar, waarschuwingen, bijbetalingExclCents: 0, bijbetalingInclCents: 0, restDagen: 0, btwPercentage: vt.rate };
 
   if (!sub || state === 'geen_abonnement') {
     return { ...base, soort: 'nieuw', van: null, ingang: 'direct', ingangsdatum: now, volgendeBetaling: { datum: now, interval, ...amount(naar.maandprijsCenten, interval) } };
@@ -1002,7 +1100,7 @@ function computeChange(
       ingang: excl > 0 ? 'na_bijbetaling' : 'direct',
       ingangsdatum: now,
       bijbetalingExclCents: excl,
-      bijbetalingInclCents: excl + vatCents(p.catalog, excl),
+      bijbetalingInclCents: excl + vatAmount(vt, excl),
       restDagen: Math.ceil(rest / DAY),
       volgendeBetaling: { datum: end, interval, ...amount(naar.maandprijsCenten, interval) },
     };
@@ -1028,7 +1126,7 @@ export async function previewPlanChange(
   const plan = planOrFail(p, input.plan);
   const interval = parseInterval(input.interval);
   const sub = await currentSubscription(p.pool, organizationId);
-  return computeChange(p, sub, plan, interval, await usageCounts(p.pool, organizationId));
+  return computeChange(p, sub, plan, interval, await usageCounts(p.pool, organizationId), await vatTreatment(p, p.pool, organizationId));
 }
 
 /**
@@ -1048,13 +1146,16 @@ export async function changePlan(
   const first = await currentSubscription(p.pool, organizationId);
   if (!first || accessState(first) === 'geen_abonnement') {
     const subscription = await startSubscription(p, actor, organizationId, { plan: plan.id, interval });
-    return { preview: computeChange(p, undefined, plan, interval, await usageCounts(p.pool, organizationId)), subscription };
+    return { preview: computeChange(p, undefined, plan, interval, await usageCounts(p.pool, organizationId), await vatTreatment(p, p.pool, organizationId)), subscription };
   }
+  // Een upgrade kan een bijbetaling worden: btw-nummer zo nodig eerst opnieuw bij VIES controleren.
+  await refreshVatCheck(p, organizationId, 'betaling', actor);
 
   return withTransaction(p.pool, async (q) => {
     await q.query('SELECT 1 FROM organization WHERE id = $1 FOR UPDATE', [organizationId]);
     const sub = (await currentSubscription(q, organizationId, true))!;
-    const preview = computeChange(p, sub, plan, interval, await usageCounts(q, organizationId));
+    const vt = await vatTreatment(p, q, organizationId);
+    const preview = computeChange(p, sub, plan, interval, await usageCounts(q, organizationId), vt);
     const reactivate = `cancel_at_period_end = false, ends_at = NULL, canceled_at = NULL, cancel_reason = NULL, cancel_feedback = NULL,
                         status = CASE WHEN status = 'opgezegd' THEN 'actief' ELSE status END`;
 
@@ -1085,16 +1186,16 @@ export async function changePlan(
     if (preview.soort === 'upgrade') {
       const target: PlanChangeTarget = { plan: plan.id, interval: sub.interval, ...(interval !== sub.interval ? { pendingInterval: interval } : {}) };
       const excl = preview.bijbetalingExclCents;
-      const vat = vatCents(p.catalog, excl);
+      const vat = vatAmount(vt, excl);
       const lastDay = new Date(sub.currentPeriodEnd!.getTime() - DAY);
       const description = `Upgrade naar ${plan.naam}, naar rato t/m ${nlDate(lastDay)}`.slice(0, 200);
       await q.query(`UPDATE payment SET status = 'geannuleerd' WHERE subscription_id = $1 AND status = 'open' AND plan_change IS NOT NULL`, [sub.id]);
       const row = await one<{ id: string }>(
         q,
         `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change)
-         VALUES ($1, $2, $3, now(), $4, $5, $6, $7, 'open', $8, $9, $10) RETURNING id`,
-        [organizationId, sub.id, description, sub.currentPeriodEnd, excl, vat, excl + vat, p.payments.name, actor.userId, JSON.stringify(target)],
+                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change, vat_code, vat_rate, vat_check_id)
+         VALUES ($1, $2, $3, now(), $4, $5, $6, $7, 'open', $8, $9, $10, $11, $12, $13) RETURNING id`,
+        [organizationId, sub.id, description, sub.currentPeriodEnd, excl, vat, excl + vat, p.payments.name, actor.userId, JSON.stringify(target), ...vatCols(vt)],
       );
       const checkoutUrl = await createProviderPayment(p, q, row!.id, excl + vat, description);
       await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row!.id, detail: { bedrag: excl + vat, upgrade: plan.id } });
@@ -1372,6 +1473,7 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
   const history = await getBillingHistory(p, actor.userId, organizationId);
   const row = history.actieNodig.find((r) => r.payment.id === paymentId);
   if (!row) throw new PlatformError('conflict', 'Deze betaling kun je niet opnieuw doen. Hij is al betaald of vervangen.');
+  await refreshVatCheck(p, organizationId, 'betaling', actor);
   return withTransaction(p.pool, async (q) => {
     const old = await one<PayRow>(q, `SELECT ${PAY_COLS} FROM payment WHERE id = $1 AND organization_id = $2 FOR UPDATE`, [paymentId, organizationId]);
     if (!old) throw notFound('Deze betaling');
@@ -1379,11 +1481,15 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
       const sub = await one<{ status: string }>(q, 'SELECT status FROM subscription WHERE id = $1', [old.subscription_id]);
       if (!sub || sub.status === 'beeindigd') throw new PlatformError('conflict', 'Dit abonnement is beëindigd. Kies opnieuw een pakket.');
     }
+    // Zelfde bedrag excl. btw; de btw volgt de huidige VIES-stand (verlegd kan intussen gestopt of begonnen zijn).
+    const vt = await vatTreatment(p, q, organizationId);
+    const vat = vatAmount(vt, old.amount_excl_cents);
     const row2 = await one<{ id: string }>(
       q,
       `INSERT INTO payment (organization_id, subscription_id, audit_order_id, description, period_start, period_end,
-                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change, lines)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12, $13) RETURNING id`,
+                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change, lines,
+                            vat_code, vat_rate, vat_check_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
       [
         organizationId,
         old.subscription_id,
@@ -1392,16 +1498,17 @@ export async function retryPayment(p: Platform, actor: UserActor, organizationId
         old.period_start,
         old.period_end,
         old.amount_excl_cents,
-        old.vat_cents,
-        old.amount_incl_cents,
+        vat,
+        old.amount_excl_cents + vat,
         p.payments.name,
         actor.userId,
         old.plan_change ? JSON.stringify(old.plan_change) : null,
         old.lines ? JSON.stringify(old.lines) : null,
+        ...vatCols(vt),
       ],
     );
-    const checkoutUrl = await createProviderPayment(p, q, row2!.id, old.amount_incl_cents, old.description);
-    await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row2!.id, detail: { bedrag: old.amount_incl_cents, opnieuwVoor: paymentId } });
+    const checkoutUrl = await createProviderPayment(p, q, row2!.id, old.amount_excl_cents + vat, old.description);
+    await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row2!.id, detail: { bedrag: old.amount_excl_cents + vat, opnieuwVoor: paymentId } });
     const pay = await one<PayRow>(q, `SELECT ${PAY_COLS} FROM payment WHERE id = $1`, [row2!.id]);
     return { payment: toPay(pay!), checkoutUrl };
   });

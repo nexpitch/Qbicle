@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { many, one } from '@qbicle/platform';
-import type { ScanReport } from '@qbicle/scanner';
+import { buildWebProfiles, type ScanReport } from '@qbicle/scanner';
 import type { Finding } from '@qbicle/score';
 
 /**
@@ -164,6 +164,20 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
     .map((c) => c.id);
   if (toResolve.length) {
     await client.query('UPDATE finding SET resolved_at = $2, resolved_scan_id = $3 WHERE id = ANY($1::uuid[])', [toResolve, now, job.id]);
+  }
+
+  // Software- en serverprofiel per website (wat draait er, krijgt het updates, welke maatregelen).
+  // Alleen als de softwarecheck deze keer echt keek; anders blijft het vorige profiel staan.
+  for (const prof of buildWebProfiles(report.checks)) {
+    const assetId = assetIds.get(assetKey('website', prof.website));
+    const sw = report.checks.find((c) => c.checkKey === 'web.software' && c.asset.value === prof.website);
+    if (!assetId || !sw || !['ok', 'finding', 'not_applicable'].includes(sw.outcome)) continue;
+    await client.query(
+      `INSERT INTO asset_attribute (asset_id, key, value, observed_at, certainty)
+       VALUES ($1, 'web.profiel', $2, $3, 'vastgesteld')
+       ON CONFLICT (asset_id, key) DO UPDATE SET value = EXCLUDED.value, observed_at = EXCLUDED.observed_at, certainty = EXCLUDED.certainty`,
+      [assetId, JSON.stringify(prof), now],
+    );
   }
 
   // 4. Score en afronden -----------------------------------------------------------

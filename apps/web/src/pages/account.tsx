@@ -4,6 +4,8 @@ import {
   CONTACT_LABELS,
   type Access,
   type BillingDetails,
+  type BillingDetailsView,
+  type VatStatus,
   type Contact,
   type Invitation,
   type Member,
@@ -11,6 +13,7 @@ import {
 } from '@qbicle/platform';
 import { datum, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { AccountNav } from './abonnement-beheer.tsx';
+import { LANDEN } from '../landen.ts';
 
 type Ctx = { user: PageUser & { id: string }; org: NavOrg };
 
@@ -20,17 +23,9 @@ export const ROLE_UITLEG: Record<Role, { naam: string; uitleg: string }> = {
   lezer: { naam: 'Lezer', uitleg: 'Kan alles bekijken, maar niets wijzigen. Handig voor directie of een adviseur.' },
 };
 
-const LANDEN: [string, string][] = [
-  ['NL', 'Nederland'],
-  ['BE', 'België'],
-  ['DE', 'Duitsland'],
-  ['LU', 'Luxemburg'],
-  ['FR', 'Frankrijk'],
-];
-
 export interface AccountData {
   access: Access;
-  details: (BillingDetails & { organisatie: string }) | null;
+  details: BillingDetailsView | null;
   contacts: Contact[];
   members: Member[];
   invitations: Invitation[] | null;
@@ -56,6 +51,33 @@ function Rij(props: { label: string; value: string | null | undefined }) {
       <dt>{props.label}</dt>
       <dd>{props.value ? props.value : <span class="leeg">Nog niet ingevuld</span>}</dd>
     </>
+  );
+}
+
+/** Btw verlegd: uitslag van de VIES-controle, met opnieuw proberen. */
+function BtwStatus(props: { orgId: string; btw: VatStatus; heeftNummer: boolean; magControleren: boolean }) {
+  const { btw } = props;
+  if (!btw.vanToepassing) return null;
+  const c = btw.laatsteControle;
+  return (
+    <div class="stack" id="btw">
+      <h3>Btw verlegd</h3>
+      <p class={`melding${btw.verlegd ? ' ok' : ' warn'}`}>{btw.uitleg}</p>
+      {c ? (
+        <p class="small">
+          Laatste controle bij VIES: {c.status === 'geldig' ? 'geldig' : c.status === 'ongeldig' ? 'ongeldig' : 'niet gelukt (storing)'} op {datum(c.checkedAt)}
+          {c.requestIdentifier ? `, consultatienummer ${c.requestIdentifier}` : ''}.
+        </p>
+      ) : null}
+      {props.heeftNummer && props.magControleren && !btw.verlegd ? (
+        <form data-api={`/api/v1/organisaties/${props.orgId}/btw-controle`}>
+          <FormError />
+          <button class="btn secondary" type="submit">
+            Opnieuw controleren bij VIES
+          </button>
+        </form>
+      ) : null}
+    </div>
   );
 }
 
@@ -117,7 +139,7 @@ function Bedrijfsgegevens(props: Ctx & { a: AccountData; magNaam: boolean; magFa
             </label>
             <label>
               Btw-nummer
-              <span class="hint">Voorbeeld: NL123456789B01. Nodig voor btw verlegd buiten Nederland.</span>
+              <span class="hint">Voorbeeld: NL123456789B01. In een ander EU-land? Met een geldig nummer verleggen we de btw (0%).</span>
               <input type="text" name="btwNummer" maxlength={30} value={d.btwNummer ?? ''} />
             </label>
             <label class="span-2">
@@ -160,7 +182,9 @@ function Bedrijfsgegevens(props: Ctx & { a: AccountData; magNaam: boolean; magFa
             <span class="small">Wijzigingen gelden voor nieuwe facturen. Eerdere facturen blijven zoals ze zijn.</span>
           </div>
         </form>
-      ) : d ? (
+      ) : null}
+      {d ? <BtwStatus orgId={org.id} btw={d.btw} heeftNummer={Boolean(d.btwNummer)} magControleren={props.magFactuur} /> : null}
+      {d && !props.magFactuur ? (
         <>
           <h3>Gegevens op je factuur</h3>
           <dl class="dl">

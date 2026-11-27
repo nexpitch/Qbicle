@@ -1,6 +1,7 @@
 /** @jsxImportSource hono/jsx */
 import type { AuditPackage, Catalog, Plan } from '@qbicle/platform';
 import { euroKort, FormError, Layout, type PageUser } from '../layout.tsx';
+import { LANDEN } from '../landen.ts';
 
 type ProductKey = 'mkb' | 'corporate' | 'audit';
 
@@ -156,11 +157,24 @@ export function AanmeldenPage(props: { catalog: Catalog; product: ProductKey; pl
             Naam van je bedrijf
             <input type="text" name="organisatie" autocomplete="organization" required maxlength={120} />
           </label>
+          <label>
+            Land van vestiging
+            <select name="land">
+              {LANDEN.map(([code, naam]) => (
+                <option value={code}>{naam}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Btw-nummer <span class="hint">(optioneel)</span>
+            <span class="hint">Gevestigd in een ander EU-land? Met een geldig btw-nummer verleggen we de btw en betaal je 0%. We controleren het nummer bij VIES van de EU.</span>
+            <input type="text" name="btwNummer" maxlength={30} placeholder="Bijvoorbeeld BE0123456789" />
+          </label>
           <button class="btn wide" type="submit">
             Stuur mij de bevestigingslink
           </button>
           <p class="small">
-            Prijzen exclusief {catalog.btwPercentage}% btw. Heb je al een account? <a href="/inloggen">Log in</a>.
+            Prijzen exclusief {catalog.btwPercentage}% btw (0% bij btw verlegd binnen de EU). Heb je al een account? <a href="/inloggen">Log in</a>.
           </p>
         </div>
       </form>

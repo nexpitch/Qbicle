@@ -10,19 +10,20 @@ import type {
   DashboardAsset,
   DnsHostResult,
   Domain,
+  DomainImpact,
   DomainOverview,
   DomainScanInfo,
   Level,
   SysteemRegister,
   TrendPoint,
 } from '@qbicle/platform';
-import { ASSET_GROUPS, FOR_WHO_LABELS, TXT_LABEL } from '@qbicle/platform';
+import { ASSET_GROUPS, dekkingVoor, FOR_WHO_LABELS, TXT_LABEL, type Dekking, type DekkingOverzicht } from '@qbicle/platform';
 import type { Child } from 'hono/jsx';
 import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
-import { KoppelingStatusBadge } from './koppelingen.tsx';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
 import { OplosBlok } from './oplossen.tsx';
+import { WebProfielSectie } from './webprofiel.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -84,16 +85,24 @@ export interface DashSection {
   label: string;
   uitleg: string;
   count: number;
-  /** null: nog niets om te beoordelen (grijze stip, "nog niet gekoppeld" e.d.). */
+  /** null: nog niets om te beoordelen (grijs, "nog niet gekoppeld" e.d.). */
   level: Level | null;
-  /** Korte status rechts in de kop, bijvoorbeeld "2 met aandacht" of "Nog niet gekoppeld". */
+  /** Korte status op de tegel, bijvoorbeeld "2 met aandacht" of "Nog niet gekoppeld". */
   status: string;
-  body: Child;
+  /** Detailpagina van dit onderdeel (klik op de tegel). */
+  href: string;
+  /** Eén duidelijke knop: Bekijk, Koppel of Voeg toe. */
+  knop: { label: string; href: string };
+  /** Eén regel uitleg onder het aantal. */
+  toelichting: string;
+  /** Wat het getal telt ("systemen", "koppelingen"). */
+  eenheid: [string, string];
 }
 
-export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean; extra?: DashSection[] }) {
+export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean; extra?: DashSection[]; gekoppeld?: string[] }) {
   const { d, org, b } = props;
   const base = `/o/${org.id}`;
+  const dek = dekkingVoor(d, props.gekoppeld ?? [], base);
   return (
     <Layout title="Overzicht" user={props.user} org={org} active="overzicht">
       <div class="dash-head">
@@ -102,7 +111,7 @@ export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | 
           <h1>{org.name}</h1>
           <p class="small">
             {d.lastScanAt ? `Laatst bijgewerkt ${wanneer(d.lastScanAt)}` : 'Nog geen scan afgerond'}
-            {d.coverage ? ` · ${d.coverage.pct}% gecontroleerd` : ''}
+            {` · ${dek.volledig} van ${dek.totaal} onderdelen gecontroleerd`}
             {` · ${scanPlanText(d)}`}
           </p>
         </div>
@@ -115,18 +124,18 @@ export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | 
         </p>
       ) : null}
 
-      <NextStepCard d={d} />
+      <NextStepCard d={d} dek={dek} base={base} />
 
       {d.hasData ? (
         <>
-          <Kpis d={d} base={base} />
+          <Kpis d={d} base={base} dek={dek} />
           <AandachtCard d={d} base={base} />
         </>
       ) : (
         <EmptyState base={base} demo={props.demo} meldingen={d.meldingen} />
       )}
 
-      <AllesCard d={d} base={base} extra={props.extra ?? []} />
+      <AllesCard d={d} base={base} extra={props.extra ?? []} dek={dek} />
 
       {d.hasData ? (
         <div class="dash-cols">
@@ -152,8 +161,18 @@ function scanPlanText(d: Dashboard): string {
   return `Volgende controle ${p.volgende && p.volgende.getTime() > Date.now() ? wanneer(p.volgende) : 'binnenkort'}`;
 }
 
-function NextStepCard(props: { d: Dashboard }) {
-  const s = props.d.nextStep;
+function NextStepCard(props: { d: Dashboard; dek: DekkingOverzicht; base: string }) {
+  let s = props.d.nextStep;
+  // Niets gevonden is geen "alles in orde" zolang we maar een deel bekeken hebben.
+  if (s.title === 'Alles in orde' && props.dek.onvolledig) {
+    const eerste = props.dek.onderdelen.find((o) => o.dekking !== 'volledig' && o.actie);
+    s = {
+      title: 'Maak je beeld compleet',
+      text: `In wat we bekeken vonden we niets dat je nu moet oppakken. Maar we controleerden pas ${props.dek.volledig} van de ${props.dek.totaal} onderdelen volledig. ${eerste ? `${eerste.nietGekeken ?? ''}` : ''}`.trim(),
+      href: eerste?.actie?.href ?? `${props.base}/koppelingen`,
+      label: eerste?.actie?.label ?? 'Naar koppelingen',
+    };
+  }
   return (
     <section class="card next-step" aria-labelledby="volgende-stap">
       <p class="eyebrow">Volgende stap</p>
@@ -182,9 +201,13 @@ function Delta(props: { now: number; before: number | null }) {
   );
 }
 
-function Kpis(props: { d: Dashboard; base: string }) {
-  const { d } = props;
-  const lvl = bandLevel(d.band.key);
+function Kpis(props: { d: Dashboard; base: string; dek: DekkingOverzicht }) {
+  const { d, dek } = props;
+  const band = bandLevel(d.band.key);
+  // Een lage score bij een onvolledig beeld is geen geruststelling.
+  const geruststellend = band === 'ok' || band === 'unk';
+  const lvl: Level = geruststellend && dek.onvolledig ? 'unk' : band;
+  const bandLabel = geruststellend && dek.onvolledig ? 'Nog onvolledig beeld' : d.band.label;
   return (
     <section class="kpis" aria-label="Kerncijfers">
       <div class={`kpi kpi-main lvl-${lvl}`}>
@@ -193,8 +216,9 @@ function Kpis(props: { d: Dashboard; base: string }) {
           {d.urgency}
           <span class="kpi-unit">/100</span>
         </p>
-        <Status kind={lvl}>{d.band.label}</Status>
+        <Status kind={lvl}>{bandLabel}</Status>
         <Delta now={d.urgency} before={d.urgencyBefore} />
+        <p class="small">Op basis van wat we konden bekijken</p>
       </div>
       <a class="kpi" href="#acties">
         <p class="kpi-label">Open acties</p>
@@ -203,10 +227,15 @@ function Kpis(props: { d: Dashboard; base: string }) {
           {d.counts.actionsZelf ? `${d.counts.actionsZelf} kun je zelf doen` : 'Vooral voor je IT-partner of webbouwer'}
         </p>
       </a>
-      <a class="kpi" href={`${props.base}/assets`}>
-        <p class="kpi-label">Assets in beeld</p>
-        <p class="kpi-value">{d.counts.assets}</p>
-        <p class="small">{d.counts.assetsNew ? `${d.counts.assetsNew} nieuw deze maand` : 'Geen nieuwe deze maand'}</p>
+      <a class="kpi" href="#alles-kop">
+        <p class="kpi-label">Gecontroleerd</p>
+        <p class="kpi-value">
+          {dek.volledig}
+          <span class="kpi-unit"> van {dek.totaal}</span>
+        </p>
+        <p class="small">
+          onderdelen{dek.deels ? ` · ${dek.deels} gedeeltelijk` : ''} · {d.counts.assets} assets
+        </p>
       </a>
       <a class="kpi" href="#veranderd">
         <p class="kpi-label">Opgelost</p>
@@ -484,76 +513,129 @@ function AssetTable(props: { assets: DashboardAsset[]; base: string }) {
   );
 }
 
-/** Eén uitklapbare sectie: kop met stip, naam, teller en status; inhoud ingeklapt. */
-function Section(props: { id: string; label: string; uitleg: string; count: number; level: Level | null; status: string; children: Child }) {
+const DEKKING_STATUS: Record<Dekking, string> = { niet: 'Niet gecontroleerd', deels: 'Gedeeltelijk', volledig: 'Geen problemen gevonden' };
+
+/** Eenvoudige lijn-iconen per onderdeel (SVG-attributen, geen inline stijl). */
+function TileIcon(props: { name: string }) {
+  const paths: Record<string, string> = {
+    domeinen: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3',
+    websites: 'M3 5h18v14H3zM3 9h18M6 7h.01M8.5 7h.01',
+    mail: 'M3 6h18v12H3zM3 7l9 6l9-6',
+    servers: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
+    cloud: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.2A4.5 4.5 0 0 0 7 18',
+    netwerk: 'M4 15h16v5H4zM8 17.5h.01M12 15V9M8.5 8.5a5 5 0 0 1 7 0M6 6a8.5 8.5 0 0 1 12 0',
+    apparaten: 'M5 5h14v10H5zM3 19h18M10 15v4M14 15v4',
+    koppelingen: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
+    systemen: 'M12 3l9 5l-9 5l-9-5zM3 13l9 5l9-5M3 17.5l9 5l9-5',
+  };
   return (
-    <details class="sect" id={`sectie-${props.id}`}>
-      <summary>
-        <span class={`dot ${props.level ? `lvl-${props.level}` : 'lvl-none'}`} aria-hidden="true"></span>
-        <span class="sect-name">
-          <b>{props.label}</b>
-          <span class="small">{props.uitleg}</span>
-        </span>
-        <span class="sect-count" aria-label={`${props.count} stuks`}>
-          {props.count}
-        </span>
-        <span class="sect-status">{props.level ? <Status kind={props.level}>{props.status}</Status> : <span class="small">{props.status}</span>}</span>
-      </summary>
-      <div class="sect-body">{props.children}</div>
-    </details>
+    <svg class="tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d={paths[props.name] ?? paths.systemen!} />
+    </svg>
   );
 }
 
-const NIET_VAN_BUITEN: Record<string, string> = {
-  netwerk: 'Routers, firewalls en wifi zien we via een koppeling met je router (Business-pakket).',
-  apparaten: 'Apparaten in je netwerk zien we via een koppeling met je router (Business-pakket).',
-  cloud: 'Clouddiensten zien we deels van buiten. Met een koppeling met Microsoft 365 of AWS zien we de instellingen erachter.',
-};
+interface TileProps {
+  id: string;
+  label: string;
+  href: string;
+  level: Level | null;
+  status: string;
+  aantal: string;
+  toelichting: string;
+  nietGekeken?: string | null;
+  knop: { label: string; href: string; primair?: boolean };
+}
 
-function AllesCard(props: { d: Dashboard; base: string; extra: DashSection[] }) {
-  const { d, base } = props;
-  const plan = scanPlanText(d);
-  const total = d.counts.assets + props.extra.reduce((n, x) => n + x.count, 0);
+/** Een tegel per onderdeel: icoon, naam, eerlijke status, aantal, één knop. De hele tegel opent het detail. */
+function Tile(p: TileProps) {
+  return (
+    <article class={`tile${p.level ? ` lvl-${p.level}` : ' lvl-none'}`} id={`tegel-${p.id}`}>
+      <div class="tile-top">
+        <span class="tile-ico">
+          <TileIcon name={p.id} />
+        </span>
+        {p.level ? <Status kind={p.level}>{p.status}</Status> : <span class="tile-niet">{p.status}</span>}
+      </div>
+      <h3>
+        <a class="tile-link" href={p.href}>
+          {p.label}
+        </a>
+      </h3>
+      <p class="tile-num">{p.aantal}</p>
+      <p class="small">{p.toelichting}</p>
+      {p.nietGekeken ? <p class="small tile-mist">{p.nietGekeken}</p> : null}
+      <a class={`btn ${p.knop.primair ? '' : 'secondary '}tile-btn`} href={p.knop.href}>
+        {p.knop.label}
+      </a>
+    </article>
+  );
+}
+
+const meervoud = (n: number, een: string, meer: string) => `${n} ${n === 1 ? een : meer}`;
+
+function AllesCard(props: { d: Dashboard; base: string; extra: DashSection[]; dek: DekkingOverzicht }) {
+  const { d, base, dek } = props;
+  const pct = (n: number) => `${Math.round((n / dek.totaal) * 100)}`;
   return (
     <section class="card" aria-labelledby="alles-kop">
       <div class="row between">
         <h2 id="alles-kop">Alles in beeld</h2>
-        {d.counts.assets ? <a href={`${base}/assets`}>Alle {d.counts.assets} assets</a> : <span class="small">{total ? `${total} gevonden` : 'Nog niets gevonden'}</span>}
+        {d.counts.assets ? <a href={`${base}/assets`}>Alle {d.counts.assets} assets</a> : null}
       </div>
-      <p class="small">Niet alleen je website: alles wat aan internet hangt en waar een incident kan beginnen. Klik een onderdeel open.</p>
-      <div class="sects">
+      <div class="dekking" role="group" aria-label="Hoeveel we gecontroleerd hebben">
+        <p>
+          We hebben <b>{dek.volledig} van de {dek.totaal}</b> onderdelen volledig gecontroleerd
+          {dek.deels ? `, ${dek.deels} gedeeltelijk` : ''}
+          {dek.niet ? ` en ${dek.niet} nog niet` : ''}.
+          {dek.onvolledig ? ' Je beeld is nog niet compleet: "niet gecontroleerd" betekent niet dat het in orde is.' : ''}
+        </p>
+        <svg class="dekking-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+          <rect class="db-niet" x="0" y="0" width="100" height="8" />
+          <rect class="db-deels" x="0" y="0" width={pct(dek.volledig + dek.deels)} height="8" />
+          <rect class="db-vol" x="0" y="0" width={pct(dek.volledig)} height="8" />
+        </svg>
+        <p class="small dekking-legenda">
+          <span class="lg lg-vol"></span>volledig <span class="lg lg-deels"></span>gedeeltelijk <span class="lg lg-niet"></span>nog niet
+        </p>
+      </div>
+      <div class="tiles">
         {d.groups.map((g) => {
-          const list = d.assets.filter((a) => a.group === g.key);
-          const status =
-            g.count === 0 ? (g.key === 'netwerk' || g.key === 'apparaten' ? 'Nog niet gekoppeld' : d.lastScanAt ? 'Niets gevonden' : 'Nog niet gescand') : g.withIssues ? `${g.withIssues} met aandacht` : g.level === 'unk' ? 'Deels onbekend' : 'In orde';
+          const o = dek.onderdelen.find((x) => x.key === g.key)!;
+          const bevindingen = d.assets.filter((a) => a.group === g.key).reduce((n, a) => n + a.openFindings, 0);
+          const detail = `${base}/assets?soort=${g.key}`;
+          let level: Level | null;
+          let status: string;
+          if (g.withIssues) {
+            level = g.level;
+            status = 'Aandacht nodig';
+          } else if (o.dekking === 'volledig') {
+            level = g.level === 'unk' ? 'unk' : 'ok';
+            status = g.level === 'unk' ? 'Deels onbekend' : DEKKING_STATUS.volledig;
+          } else {
+            level = o.dekking === 'deels' ? 'unk' : null;
+            status = DEKKING_STATUS[o.dekking];
+          }
+          const knop =
+            g.withIssues || !o.actie
+              ? { label: 'Bekijk', href: detail }
+              : { label: o.actie.label, href: o.actie.href, primair: o.dekking === 'niet' && !g.count };
           return (
-            <Section id={g.key} label={g.label} uitleg={g.uitleg} count={g.count} level={g.count ? (g.withIssues ? g.level : g.level === 'unk' ? 'unk' : 'ok') : null} status={status}>
-              {list.length ? (
-                <>
-                  <AssetTable assets={list.slice(0, 10)} base={base} />
-                  {list.length > 10 ? (
-                    <a class="small" href={`${base}/assets?soort=${g.key}`}>
-                      Alle {list.length} bekijken
-                    </a>
-                  ) : null}
-                </>
-              ) : (
-                <div class="stack-xs">
-                  <p class="small">{d.lastScanAt ? 'Bij de laatste scan niets van deze soort gevonden.' : `Nog niet gescand. ${plan}.`}</p>
-                  {NIET_VAN_BUITEN[g.key] ? (
-                    <p class="small">
-                      {NIET_VAN_BUITEN[g.key]} <a href={`${base}/koppelingen`}>Naar koppelingen</a>
-                    </p>
-                  ) : null}
-                </div>
-              )}
-            </Section>
+            <Tile
+              id={g.key}
+              label={g.label}
+              href={detail}
+              level={level}
+              status={status}
+              aantal={`${meervoud(g.count, 'asset', 'assets')} · ${meervoud(bevindingen, 'bevinding', 'bevindingen')}`}
+              toelichting={o.gekeken}
+              nietGekeken={g.withIssues ? null : o.nietGekeken}
+              knop={knop}
+            />
           );
         })}
         {props.extra.map((x) => (
-          <Section id={x.key} label={x.label} uitleg={x.uitleg} count={x.count} level={x.level} status={x.status}>
-            {x.body}
-          </Section>
+          <Tile id={x.key} label={x.label} href={x.href} level={x.level} status={x.status} aantal={meervoud(x.count, x.eenheid[0], x.eenheid[1])} toelichting={x.toelichting} knop={x.knop} />
         ))}
       </div>
     </section>
@@ -591,10 +673,11 @@ function EmptyState(props: { base: string; demo: boolean; meldingen: Dashboard['
 
 // Alle assets -------------------------------------------------------------------------------
 
-export function AssetsPage(props: Ctx & { d: Dashboard; soort: string | undefined }) {
+export function AssetsPage(props: Ctx & { d: Dashboard; soort: string | undefined; gekoppeld?: string[] }) {
   const { d, org } = props;
   const base = `/o/${org.id}`;
   const group = ASSET_GROUPS.find((g) => g.key === props.soort);
+  const o = group ? dekkingVoor(d, props.gekoppeld ?? [], base).onderdelen.find((x) => x.key === group.key) : undefined;
   const list = group ? d.assets.filter((a) => a.group === group.key) : d.assets;
   return (
     <Layout title="Assets" user={props.user} org={org} active="assets">
@@ -615,18 +698,26 @@ export function AssetsPage(props: Ctx & { d: Dashboard; soort: string | undefine
           </a>
         ))}
       </nav>
+      {o ? (
+        <section class={`card dekking-kaart dk-${o.dekking}`} aria-labelledby="dekking-kop">
+          <div class="row between">
+            <h2 id="dekking-kop">Wat we gecontroleerd hebben</h2>
+            <span class="tile-niet">{{ niet: 'Niet gecontroleerd', deels: 'Gedeeltelijk gecontroleerd', volledig: 'Volledig gecontroleerd' }[o.dekking]}</span>
+          </div>
+          <p>{o.gekeken}</p>
+          {o.nietGekeken ? <p class="muted">{o.nietGekeken}</p> : null}
+          {o.actie ? (
+            <a class="btn" href={o.actie.href}>
+              {o.actie.label}
+            </a>
+          ) : null}
+        </section>
+      ) : null}
       <section class="card">
         {list.length ? (
           <AssetTable assets={list} base={base} />
         ) : (
-          <p class="small">
-            Hier hebben we nog niets van in beeld.{' '}
-            {group && (group.key === 'netwerk' || group.key === 'apparaten')
-              ? 'Koppel je router of netwerk om ook apparaten te zien.'
-              : group?.key === 'cloud'
-                ? 'Koppel Microsoft 365 (alleen lezen) om clouddiensten en accounts te zien.'
-                : 'Voeg een domein toe om te beginnen.'}
-          </p>
+          <p class="small">{o && o.dekking === 'niet' ? 'Nog niet gecontroleerd, dus hier staat nog niets.' : 'Hier hebben we nog niets van in beeld.'}</p>
         )}
       </section>
     </Layout>
@@ -719,6 +810,7 @@ export function AssetPage(props: Ctx & { a: AssetDetail; opl?: AssetOplossingen 
               <p class="melding ok">Op dit asset staat niets open.</p>
             )}
           </section>
+          {a.webProfiel ? <WebProfielSectie p={a.webProfiel} /> : null}
           {a.closed.length ? (
             <section class="card" aria-labelledby="opgelost-kop">
               <h2 id="opgelost-kop">Eerder opgelost</h2>
@@ -838,6 +930,7 @@ export function DomeinenPage(
     domains: Domain[];
     magBeheren: boolean;
     sent?: boolean;
+    verwijderd?: string;
     overview: DomainOverview;
     added?: { aantal: number; bestaatAl: number; ongeldig: string };
     scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> };
@@ -859,6 +952,7 @@ export function DomeinenPage(
           Vanuit je domein vinden we je websites, mail en servers. We scannen alleen domeinen waarvan je hebt bevestigd dat ze van jullie zijn.
         </p>
       </div>
+      {props.verwijderd ? <p class="melding ok">{props.verwijderd} is verwijderd en wordt niet meer gescand.</p> : null}
       {props.sent ? <p class="melding ok">De bevestigingslink is verstuurd. Open de mail en klik op de link.</p> : null}
       {props.added ? (
         <p class={`melding ${props.added.ongeldig ? 'warn' : 'ok'}`}>
@@ -881,7 +975,14 @@ export function DomeinenPage(
         <section class="card">
           <div class="row between">
             <h2 class="break">{d.name}</h2>
-            {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
+            <div class="row">
+              {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
+              {props.magBeheren ? (
+                <a class="small" href={`/o/${org.id}/domeinen/${d.id}/beheren`}>
+                  Wijzigen of verwijderen
+                </a>
+              ) : null}
+            </div>
           </div>
           {d.verified ? (
             <>
@@ -1099,37 +1200,103 @@ export function koppelingenSectie(standen: KoppelingStand[], plan: string | null
     uitleg: 'Microsoft 365, cloud en router: de instellingen achter je systemen',
     count: inGebruik.length,
     level,
-    status: !inGebruik.length ? 'Nog niet gekoppeld' : aandacht ? `${aandacht} met aandacht` : 'In orde',
-    body: inGebruik.length ? (
-      <div class="stack-sm">
-        <ul class="list">
-          {inGebruik.map((s) => {
-            const k = KOPPELINGEN.find((x) => x.id === s.id);
-            if (!k) return null;
-            const open = s.bevindingen.filter((b) => b.urgentie !== 'ok').length;
-            return (
-              <li class="list-item">
-                <span class={`dot lvl-${worst(s)}`} aria-hidden="true"></span>
-                <div class="stack-xs">
-                  <a href={`${base}/koppelingen/${k.id}`}>{k.naam}</a>
-                  <span class="small">{s.melding ?? (open ? `${open} ${open === 1 ? 'punt' : 'punten'} om op te pakken` : 'Geen bijzonderheden')}</span>
-                </div>
-                <KoppelingStatusBadge k={k} s={byId.get(k.id)} plan={plan} />
-              </li>
-            );
-          })}
-        </ul>
-        <a class="small" href={`${base}/koppelingen`}>
-          Alle koppelingen
-        </a>
-      </div>
-    ) : (
-      <p class="small">
-        Van buiten zien we wat iedereen op internet ziet. Met een alleen-lezen koppeling kijken we ook naar MFA, beheerders en openbare opslag.{' '}
-        <a href={`${base}/koppelingen`}>Koppeling kiezen</a>
-      </p>
-    ),
+    status: !inGebruik.length ? 'Nog niet gekoppeld' : aandacht ? 'Aandacht nodig' : 'Geen problemen gevonden',
+    href: `${base}/koppelingen`,
+    knop: inGebruik.length ? { label: 'Bekijk', href: `${base}/koppelingen` } : { label: 'Koppeling kiezen', href: `${base}/koppelingen` },
+    toelichting: inGebruik.length
+      ? inGebruik
+          .map((s) => KOPPELINGEN.find((x) => x.id === s.id)?.naam)
+          .filter(Boolean)
+          .join(', ')
+      : 'Alleen-lezen koppelingen laten ons ook MFA, beheerders en openbare opslag zien.',
+    eenheid: ['koppeling', 'koppelingen'],
   };
+}
+
+// Domein wijzigen of verwijderen --------------------------------------------------------------
+
+export function DomeinBeherenPage(props: Ctx & { impact: DomainImpact; overview: DomainOverview }) {
+  const { org, impact: im, overview: ov } = props;
+  const d = im.domain;
+  const api = `/api/v1/organisaties/${org.id}/domeinen/${d.id}`;
+  const back = `/o/${org.id}/domeinen`;
+  const extraNa = Math.max(0, ov.gebruikt - 1 - ov.limiet);
+  return (
+    <Layout title={`${d.name} beheren`} user={props.user} org={org} active="domeinen">
+      <div class="intro">
+        <p class="small">
+          <a href={`/o/${org.id}/overzicht`}>Overzicht</a> / <a href={back}>Domeinen</a> / {d.name}
+        </p>
+        <h1 class="break">{d.name}</h1>
+        <p class="small">
+          Toegevoegd op {datumTijd(d.createdAt)} · {d.verified ? `bevestigd op ${datumTijd(d.verifiedAt)}` : 'nog niet bevestigd'}
+          {im.lastScanAt ? ` · laatste scan ${datumTijd(im.lastScanAt)}` : ''}
+        </p>
+      </div>
+
+      <section class="card stack-sm" aria-labelledby="naam-kop">
+        <h2 id="naam-kop">Naam aanpassen</h2>
+        <p class="small">
+          Voor een tikfout of een verkeerde extensie. Een andere naam is een ander domein: {d.verified ? 'je moet hem opnieuw bevestigen, en ' : ''}
+          {im.assets ? `de ${im.assets} assets van ${d.name} gaan naar het archief.` : 'je krijgt een nieuwe code voor de DNS-regel.'}
+        </p>
+        <form class="stack" data-api={api} data-method="PATCH" data-next={back}>
+          <FormError />
+          <label>
+            Domeinnaam
+            <input type="text" name="naam" value={d.name} required autocomplete="off" spellcheck={false} />
+          </label>
+          <div>
+            <button class="btn secondary" type="submit">
+              Naam opslaan
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card stack-sm danger-zone" aria-labelledby="weg-kop">
+        <h2 id="weg-kop">Domein verwijderen</h2>
+        <p class="melding crit" role="note">
+          <b>Let op, dit kun je niet ongedaan maken.</b> Wat er gebeurt als je {d.name} verwijdert:
+        </p>
+        <ul class="gevolgen">
+          <li>We scannen {d.name} en de subdomeinen niet meer. Je krijgt er ook geen meldingen meer over.</li>
+          <li>
+            {im.scans ? `De scangeschiedenis (${im.scans} ${im.scans === 1 ? 'scan' : 'scans'}) wordt gewist.` : 'Er is nog geen scangeschiedenis.'}
+          </li>
+          <li>
+            {im.assets
+              ? `${im.assets} ${im.assets === 1 ? 'asset gaat' : 'assets gaan'} naar het archief${im.openFindings ? `, met ${im.openFindings} open ${im.openFindings === 1 ? 'bevinding' : 'bevindingen'}` : ''}. Ze tellen niet meer mee in je overzicht en urgentie.`
+              : 'Er hangen nog geen assets aan dit domein.'}
+          </li>
+          <li>
+            {ov.extra > 0
+              ? `Je hebt nu ${ov.extra} extra ${ov.extra === 1 ? 'domein' : 'domeinen'} boven je pakket. Daarna ${extraNa}: dat scheelt ${euroKort(ov.extraDomeinCenten)} per maand vanaf de volgende verlenging.`
+              : 'Je abonnement en prijs veranderen niet.'}
+          </li>
+          {d.verified ? <li>Voeg je het later weer toe, dan moet je het opnieuw bevestigen.</li> : null}
+          <li>In het logboek staat wie het domein heeft verwijderd en wanneer.</li>
+        </ul>
+        <form class="stack" data-api={api} data-method="DELETE" data-next={`${back}?verwijderd=${encodeURIComponent(d.name)}`}>
+          <FormError />
+          <label>
+            <span>
+              Typ <b class="break">{d.name}</b> om te bevestigen
+            </span>
+            <input type="text" name="bevestiging" required autocomplete="off" spellcheck={false} placeholder={d.name} />
+          </label>
+          <div>
+            <button class="btn danger" type="submit">
+              {d.name} definitief verwijderen
+            </button>
+          </div>
+        </form>
+      </section>
+      <p>
+        <a href={back}>Terug naar domeinen</a>
+      </p>
+    </Layout>
+  );
 }
 
 /** Sectie "Systemen" in Alles in beeld: register van bedrijfskritische systemen. */
@@ -1145,33 +1312,12 @@ export function systemenSectie(reg: SysteemRegister, base: string): DashSection 
     uitleg: 'Software waar je bedrijf op draait: ERP, CRM, boekhouding, webshop',
     count: reg.systemen.length,
     level,
-    status: !reg.systemen.length ? 'Nog niets vastgelegd' : aandacht ? `${aandacht} met aandacht` : 'In orde',
-    body: reg.systemen.length ? (
-      <div class="stack-sm">
-        <ul class="list">
-          {reg.systemen.map((s) => {
-            const eerste = s.beoordeling.acties[0];
-            return (
-              <li class="list-item">
-                <span class={`dot lvl-${worst(s)}`} aria-hidden="true"></span>
-                <div class="stack-xs">
-                  <a href={`${base}/systemen/${s.id}`}>{s.naam}</a>
-                  <span class="small">{eerste ? eerste.tekst : 'Geen bijzonderheden'}</span>
-                </div>
-                <span class="small">Impact {s.beoordeling.impact}</span>
-              </li>
-            );
-          })}
-        </ul>
-        <a class="small" href={`${base}/systemen`}>
-          Alle systemen
-        </a>
-      </div>
-    ) : (
-      <p class="small">
-        Leg vast welke software onmisbaar is, wie de eigenaar is en wat er gebeurt bij uitval. Dan zie je hier wat er nog mist.{' '}
-        <a href={`${base}/systemen/nieuw`}>Systeem toevoegen</a>
-      </p>
-    ),
+    status: !reg.systemen.length ? 'Nog niets vastgelegd' : aandacht ? 'Aandacht nodig' : 'Geen problemen gevonden',
+    href: `${base}/systemen`,
+    knop: reg.systemen.length ? { label: 'Bekijk', href: `${base}/systemen` } : { label: 'Systeem toevoegen', href: `${base}/systemen/nieuw` },
+    toelichting: reg.systemen.length
+      ? reg.systemen.map((s) => s.naam).slice(0, 4).join(', ') + (reg.systemen.length > 4 ? ' en meer' : '')
+      : 'Leg vast welke software onmisbaar is, wie de eigenaar is en wat er gebeurt bij uitval.',
+    eenheid: ['systeem', 'systemen'],
   };
 }

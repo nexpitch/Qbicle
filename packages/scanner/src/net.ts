@@ -24,6 +24,10 @@ export interface Net {
   resolveCaa(name: string): Promise<{ tag: string; value: string; critical: number }[]>;
   /** A- en AAAA-records samen. */
   resolveAddresses(name: string): Promise<string[]>;
+  /** CNAME van precies deze naam (leeg als de naam geen doorverwijzing is). */
+  resolveCname(name: string): Promise<string[]>;
+  /** Naam bij een IP-adres (PTR); leeg als er geen is. Optioneel (alleen voor de hostingherkenning). */
+  reverse?(ip: string): Promise<string[]>;
   /** DNSSEC-status via een validerende resolver; null als dat niet lukte. */
   dnssec(name: string): Promise<DnssecStatus | null>;
   tlsHandshake(host: string, port?: number): Promise<TlsInfo>;
@@ -252,15 +256,22 @@ export function createNodeNet(opts: NodeNetOptions = {}): Net {
       ]);
       return [...a, ...aaaa];
     },
+    resolveCname: (name) => orEmpty(ask((r) => r.resolveCname(name))),
+    reverse: (ip) => orEmpty(ask((r) => r.reverse(ip))),
     async dnssec(name) {
       try {
         const ds = await doh(name, 'DS');
+        // Alleen NOERROR of NXDOMAIN is een echt antwoord; een storing (SERVFAIL e.d.) is "onbekend", niet "staat uit".
+        if (ds.Status !== 0 && ds.Status !== 3) return null;
         const hasDs = ds.Status === 0 && (ds.Answer ?? []).some((a) => a.type === 43);
         const soa = await doh(name, 'SOA', { do: '1' });
         if (soa.Status === 2) {
           const unchecked = await doh(name, 'SOA', { do: '1', cd: '1' });
-          return { hasDs, validated: false, bogus: unchecked.Status === 0 };
+          // Ook zonder controle geen antwoord: een storing, geen DNSSEC-fout.
+          if (unchecked.Status !== 0) return null;
+          return { hasDs, validated: false, bogus: true };
         }
+        if (soa.Status !== 0 && soa.Status !== 3) return null;
         return { hasDs, validated: soa.AD === true, bogus: false };
       } catch {
         return null;

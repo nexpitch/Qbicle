@@ -18,9 +18,18 @@ export interface EolCycleDef {
   eol: string | boolean;
 }
 
+/** Wie werkt dit bij: de hostingpartij (server en taal), de webbouwer (CMS, plug-ins, scripts) of de leverancier (SaaS). */
+export type Beheerder = 'hosting' | 'webbouwer' | 'leverancier';
+
 export interface ProductDef {
   /** Vaste sleutel, ook voor de discriminator van de vingerafdruk. */
   key: string;
+  /** Wie dit bijwerkt; bepaalt de actie (server-bijwerken of software-bijwerken). */
+  wie: Beheerder;
+  /** Slug op endoflife.date; als die er is, gaat de snapshot (eol-snapshot.json) voor `cycles`. */
+  eolSlug?: string;
+  /** Een bibliotheek in de browser weegt lichter dan software op de server. */
+  bibliotheek?: boolean;
   /** Naam in het rapport. */
   name: string;
   /** Hoe het product in headers of de generator-tag heet. */
@@ -46,6 +55,8 @@ for (let minor = 0; minor <= 24; minor++) nginxCycles.push({ cycle: `1.${minor}`
 export const PRODUCTS: ProductDef[] = [
   {
     key: 'php',
+    wie: 'hosting',
+    eolSlug: 'php',
     name: 'PHP',
     match: /^php$/i,
     cpe: { vendor: 'php', product: 'php' },
@@ -72,6 +83,8 @@ export const PRODUCTS: ProductDef[] = [
   },
   {
     key: 'apache-httpd',
+    wie: 'hosting',
+    eolSlug: 'apache-http-server',
     name: 'Apache HTTP Server',
     match: /^apache$/i,
     cpe: { vendor: 'apache', product: 'http_server' },
@@ -87,6 +100,8 @@ export const PRODUCTS: ProductDef[] = [
   },
   {
     key: 'nginx',
+    wie: 'hosting',
+    eolSlug: 'nginx',
     name: 'nginx',
     match: /^nginx$/i,
     cpe: { vendor: 'f5', product: 'nginx' },
@@ -98,6 +113,8 @@ export const PRODUCTS: ProductDef[] = [
   },
   {
     key: 'openssl',
+    wie: 'hosting',
+    eolSlug: 'openssl',
     name: 'OpenSSL',
     match: /^openssl$/i,
     cpe: { vendor: 'openssl', product: 'openssl' },
@@ -121,6 +138,7 @@ export const PRODUCTS: ProductDef[] = [
   {
     // IIS-versie hoort vast bij een Windows Server-versie; die bepaalt de ondersteuning.
     key: 'iis',
+    wie: 'hosting',
     name: 'Microsoft IIS (Windows Server)',
     match: /^microsoft-iis$/i,
     cycles: [
@@ -137,12 +155,58 @@ export const PRODUCTS: ProductDef[] = [
     ],
   },
   {
+    key: 'tomcat',
+    wie: 'hosting',
+    eolSlug: 'tomcat',
+    name: 'Apache Tomcat',
+    match: /^(?:apache-coyote|tomcat)$/i,
+    cpe: { vendor: 'apache', product: 'tomcat' },
+  },
+  { key: 'aspnet', wie: 'hosting', name: 'ASP.NET', match: /^asp\.net$/i },
+  { key: 'litespeed', wie: 'hosting', name: 'LiteSpeed', match: /^litespeed$/i },
+  { key: 'openresty', wie: 'hosting', name: 'OpenResty (nginx)', match: /^openresty$/i },
+  // Besturingssystemen: versie zien we zelden, maar CentOS Linux is in elke versie voorbij.
+  { key: 'centos', wie: 'hosting', eolSlug: 'centos', name: 'CentOS Linux', match: /^centos$/i },
+  { key: 'centos-stream', wie: 'hosting', name: 'CentOS Stream', match: /^centos-stream$/i },
+  { key: 'ubuntu', wie: 'hosting', eolSlug: 'ubuntu', name: 'Ubuntu Linux', match: /^ubuntu$/i },
+  { key: 'debian', wie: 'hosting', eolSlug: 'debian', name: 'Debian Linux', match: /^debian$/i },
+  { key: 'rhel', wie: 'hosting', eolSlug: 'rhel', name: 'Red Hat Enterprise Linux', match: /^rhel$/i },
+  { key: 'windows', wie: 'hosting', name: 'Windows Server', match: /^windows$/i },
+  { key: 'freebsd', wie: 'hosting', name: 'FreeBSD', match: /^freebsd$/i },
+  // CDN: zit voor de echte server; de software erachter is dan vaak niet zichtbaar.
+  { key: 'cloudflare', wie: 'leverancier', name: 'Cloudflare', match: /^cloudflare$/i },
+  { key: 'akamai', wie: 'leverancier', name: 'Akamai', match: /^akamai$/i },
+  { key: 'cloudfront', wie: 'leverancier', name: 'Amazon CloudFront', match: /^cloudfront$/i },
+  // CMS en webwinkels
+  {
     key: 'wordpress',
+    wie: 'webbouwer',
+    eolSlug: 'wordpress',
     name: 'WordPress',
     match: /^wordpress$/i,
     cpe: { vendor: 'wordpress', product: 'wordpress' },
   },
+  { key: 'drupal', wie: 'webbouwer', eolSlug: 'drupal', name: 'Drupal', match: /^drupal$/i, cpe: { vendor: 'drupal', product: 'drupal' } },
+  { key: 'joomla', wie: 'webbouwer', eolSlug: 'joomla', name: 'Joomla', match: /^joomla!?$/i, cpe: { vendor: 'joomla', product: 'joomla\\!' } },
+  { key: 'typo3', wie: 'webbouwer', eolSlug: 'typo3', name: 'TYPO3', match: /^typo3$/i, cpe: { vendor: 'typo3', product: 'typo3' } },
+  { key: 'magento', wie: 'webbouwer', eolSlug: 'magento', name: 'Magento (Adobe Commerce)', match: /^magento$/i },
+  { key: 'shopware', wie: 'webbouwer', eolSlug: 'shopware', name: 'Shopware', match: /^shopware$/i },
+  { key: 'prestashop', wie: 'webbouwer', name: 'PrestaShop', match: /^prestashop$/i },
+  // Beheerde platforms: de leverancier werkt de software bij.
+  { key: 'shopify', wie: 'leverancier', name: 'Shopify', match: /^shopify$/i },
+  { key: 'wix', wie: 'leverancier', name: 'Wix', match: /^wix$/i },
+  { key: 'squarespace', wie: 'leverancier', name: 'Squarespace', match: /^squarespace$/i },
+  { key: 'webflow', wie: 'leverancier', name: 'Webflow', match: /^webflow$/i },
+  { key: 'lightspeed', wie: 'leverancier', name: 'Lightspeed eCom', match: /^lightspeed$/i },
+  // Bibliotheken die in de browser van de bezoeker draaien.
+  { key: 'jquery', wie: 'webbouwer', eolSlug: 'jquery', bibliotheek: true, name: 'jQuery', match: /^jquery$/i, cpe: { vendor: 'jquery', product: 'jquery' } },
+  { key: 'jquery-ui', wie: 'webbouwer', eolSlug: 'jquery-ui', bibliotheek: true, name: 'jQuery UI', match: /^jquery-ui$/i, cpe: { vendor: 'jqueryui', product: 'jquery_ui' } },
+  { key: 'bootstrap', wie: 'webbouwer', eolSlug: 'bootstrap', bibliotheek: true, name: 'Bootstrap', match: /^bootstrap$/i, cpe: { vendor: 'getbootstrap', product: 'bootstrap' } },
+  { key: 'angularjs', wie: 'webbouwer', eolSlug: 'angularjs', bibliotheek: true, name: 'AngularJS', match: /^angularjs$/i, cpe: { vendor: 'angularjs', product: 'angular.js' } },
+  { key: 'vue', wie: 'webbouwer', eolSlug: 'vue', bibliotheek: true, name: 'Vue.js', match: /^vue(?:\.js)?$/i, cpe: { vendor: 'vuejs', product: 'vue.js' } },
 ];
+
+export const productByKey = (key: string) => PRODUCTS.find((p) => p.key === key);
 
 /**
  * Actief misbruikte lekken (CISA KEV) in websitesoftware, in het formaat van de
@@ -215,6 +279,26 @@ export const BASE_NVD = {
         ],
       },
     },
+    {
+      cve: {
+        id: 'CVE-2020-11023',
+        descriptions: [{ lang: 'en', value: 'Cross-site scripting in jQuery before 3.5.0 when passing HTML containing <option> elements from untrusted sources to DOM manipulation methods.' }],
+        metrics: { cvssMetricV31: [{ cvssData: { baseScore: 6.1 } }] },
+        configurations: [
+          { nodes: [{ cpeMatch: [{ vulnerable: true, criteria: 'cpe:2.3:a:jquery:jquery:*:*:*:*:*:*:*:*', versionStartIncluding: '1.0.3', versionEndExcluding: '3.5.0' }] }] },
+        ],
+      },
+    },
+    {
+      cve: {
+        id: 'CVE-2020-11022',
+        descriptions: [{ lang: 'en', value: 'Cross-site scripting in jQuery 1.2 up to 3.5.0 when passing HTML from untrusted sources to DOM manipulation methods.' }],
+        metrics: { cvssMetricV31: [{ cvssData: { baseScore: 6.1 } }] },
+        configurations: [
+          { nodes: [{ cpeMatch: [{ vulnerable: true, criteria: 'cpe:2.3:a:jquery:jquery:*:*:*:*:*:*:*:*', versionStartIncluding: '1.2', versionEndExcluding: '3.5.0' }] }] },
+        ],
+      },
+    },
   ],
 };
 
@@ -224,6 +308,7 @@ export const BASE_KEV = {
     { cveID: 'CVE-2021-42013', dateAdded: '2021-11-03' },
     { cveID: 'CVE-2014-0160', dateAdded: '2022-05-04' },
     { cveID: 'CVE-2024-4577', dateAdded: '2024-06-12', knownRansomwareCampaignUse: 'Known' },
+    { cveID: 'CVE-2020-11023', dateAdded: '2025-01-23' },
   ],
 };
 
@@ -233,4 +318,6 @@ export const BASE_KEV = {
  */
 export const CONDITIONAL: Record<string, string> = {
   'CVE-2024-4577': 'Alleen als PHP als CGI op Windows draait; dat zien we van buitenaf niet.',
+  'CVE-2020-11022': 'Alleen als de website HTML van buiten (bijvoorbeeld uit een formulier) via jQuery in de pagina zet; dat zien we van buitenaf niet.',
+  'CVE-2020-11023': 'Alleen als de website HTML van buiten (bijvoorbeeld uit een formulier) via jQuery in de pagina zet; dat zien we van buitenaf niet.',
 };

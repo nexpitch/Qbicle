@@ -534,6 +534,19 @@ export function oplosGids(findingKey: string, actionKey: string, ctx: OplosConte
         ],
         waarschuwingen: ['Krijgt de versie helemaal geen updates meer? Dan is een overstap nodig; plan dat met je webbouwer.'],
       });
+    case 'server-bijwerken':
+      return af(ctx, {
+        ingreep: 'aanvragen',
+        wie: 'hosting',
+        wieTekst: 'Dit doet je hostingpartij: de server onder je website is van hen. Je hoeft het alleen aan te vragen.',
+        duur: 'Ongeveer 5 minuten om aan te vragen',
+        stappen: [
+          `Stuur je hostingpartij een bericht dat de server van ${ctx.naam} verouderde software draait (zie de bevinding hierboven).`,
+          'Vraag of ze PHP en de serversoftware bijwerken naar een versie die nog beveiligingsupdates krijgt.',
+          'Heb je zelf een VPS of eigen server? Installeer dan de updates van het besturingssysteem, of vraag je IT-partner.',
+        ],
+        waarschuwingen: ['Een nieuwere PHP-versie kan een oude website breken. Laat je webbouwer de website daarna even testen.'],
+      });
     case 'cert-vernieuwen':
       return af(ctx, {
         ingreep: 'aanvragen',

@@ -151,7 +151,7 @@ function MijnPakket(props: Ctx & { b: BillingOverview; extraDomeinCenten: number
         <dl class="dl">
           <dt>Volgende betaling</dt>
           <dd>
-            <b>{euro(b.volgendeBetaling.inclCents)}</b> incl. btw op {datum(b.volgendeBetaling.datum)}
+            <b>{euro(b.volgendeBetaling.inclCents)}</b> {b.btw.verlegd ? 'btw verlegd (0%)' : 'incl. btw'} op {datum(b.volgendeBetaling.datum)}
             <span class="small">
               {' '}
               ({euro(b.volgendeBetaling.exclCents)} excl. btw, {b.volgendeBetaling.pakket?.naam ?? ''} {per(b.volgendeBetaling.interval)}
@@ -160,6 +160,11 @@ function MijnPakket(props: Ctx & { b: BillingOverview; extraDomeinCenten: number
                 : ''}
               )
             </span>
+          </dd>
+          <dt>Btw</dt>
+          <dd>
+            {b.btw.verlegd ? <b>Btw verlegd, 0%</b> : `${b.btw.percentage}%`}
+            <span class="small"> {b.btw.uitleg}</span>
           </dd>
           <dt>Hoe</dt>
           <dd>
@@ -402,7 +407,7 @@ function Uitleg(props: { w: PlanChangePreview; proefTot: Date | null }) {
   const nb = w.volgendeBetaling;
   const volgende = (
     <li>
-      Daarna betaal je {euro(nb.exclCents)} excl. btw {per(nb.interval)} ({euro(nb.inclCents)} incl. btw){nb.datum ? <>, voor het eerst op {datum(nb.datum)}</> : null}.
+      Daarna betaal je {euro(nb.exclCents)} excl. btw {per(nb.interval)} ({w.btwPercentage === 0 ? 'btw verlegd, 0% btw' : `${euro(nb.inclCents)} incl. btw`}){nb.datum ? <>, voor het eerst op {datum(nb.datum)}</> : null}.
     </li>
   );
   switch (w.soort) {
@@ -434,7 +439,7 @@ function Uitleg(props: { w: PlanChangePreview; proefTot: Date | null }) {
           {w.bijbetalingExclCents > 0 ? (
             <li>
               Voor de resterende {w.restDagen} dagen van je betaalde periode betaal je nu alleen het verschil: <b>{euro(w.bijbetalingExclCents)}</b> excl. btw (
-              {euro(w.bijbetalingInclCents)} incl. btw). Het nieuwe pakket gaat in zodra die betaling binnen is.
+              {w.btwPercentage === 0 ? 'btw verlegd, 0% btw' : `${euro(w.bijbetalingInclCents)} incl. btw`}). Het nieuwe pakket gaat in zodra die betaling binnen is.
             </li>
           ) : (
             <li>Je betaalt nu niets extra.</li>

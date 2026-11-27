@@ -1,5 +1,6 @@
 import type { Net } from '../net.ts';
 import type { Check, FindingDraft } from '../types.ts';
+import { mailProfile, mailTarget, measuredOnNote } from './maildomain.ts';
 
 const LOOKUP_LIMIT = 10;
 const MECHANISMS = new Set(['all', 'include', 'a', 'mx', 'ptr', 'ip4', 'ip6', 'exists']);
@@ -20,7 +21,7 @@ export function parseSpf(record: string): ParsedSpf {
   const terms: ParsedSpf['terms'] = [];
   const syntaxErrors: string[] = [];
   for (const raw of parts) {
-    const m = raw.match(/^([+?~-]?)([a-z0-9]+)(?:([:=/])(.*))?$/i);
+    const m = raw.match(/^([+?~-]?)([a-z][a-z0-9_.-]*)(?:([:=/])(.*))?$/i);
     if (!m) {
       syntaxErrors.push(raw);
       continue;
@@ -52,22 +53,26 @@ interface LookupResult {
   broken: string[];
 }
 
-/** Telt DNS-lookups volgens RFC 7208 §4.6.4, inclusief geneste includes. */
-async function countLookups(net: Net, domain: string, depth: number, seen: Set<string>): Promise<LookupResult> {
+/**
+ * Telt DNS-lookups volgens RFC 7208 §4.6.4, inclusief geneste includes. Elke
+ * verwijzing telt, ook als dezelfde include twee keer voorkomt; alleen een lus
+ * (een include die naar zichzelf terugwijst) volgen we niet opnieuw.
+ */
+async function countLookups(net: Net, domain: string, depth: number, path: Set<string>): Promise<LookupResult> {
   const result: LookupResult = { count: 0, broken: [] };
-  if (depth > LOOKUP_LIMIT || seen.has(domain)) return result;
-  seen.add(domain);
+  if (depth > LOOKUP_LIMIT || path.has(domain)) return result;
   const txt = (await net.resolveTxt(domain)).filter(isSpfRecord);
   if (txt.length !== 1) {
     result.broken.push(domain);
     return result;
   }
+  const inner = new Set(path).add(domain);
   const { terms } = parseSpf(txt[0]!);
   for (const t of terms) {
     if (!LOOKUP_TERMS.has(t.name)) continue;
     result.count += 1;
     if ((t.name === 'include' || t.name === 'redirect') && t.value && !t.value.includes('%')) {
-      const sub = await countLookups(net, t.value.toLowerCase(), depth + 1, seen);
+      const sub = await countLookups(net, t.value.toLowerCase(), depth + 1, inner);
       result.count += sub.count;
       result.broken.push(...sub.broken);
     }
@@ -82,22 +87,26 @@ export const spfCheck: Check = {
   group: 'e-mail',
   appliesTo: 'domein',
   title: 'SPF: wie mag mailen namens dit domein',
-  async run({ domain, net }) {
-    const [txt, mx] = await Promise.all([net.resolveTxt(domain), net.resolveMx(domain)]);
+  async run(ctx) {
+    const { net } = ctx;
+    const target = await mailTarget(ctx);
+    const domain = target.name;
+    const note = measuredOnNote(ctx.domain, target);
+    const txt = await net.resolveTxt(domain);
     const records = txt.filter(isSpfRecord);
-    const evidence: Record<string, unknown> = { records, mx: mx.map((m) => m.exchange) };
+    const profile = await mailProfile(net, domain, ctx.memo);
+    const evidence: Record<string, unknown> = { measuredOn: domain, records, mx: profile.mx, nullMx: profile.nullMx };
     const findings: FindingDraft[] = [];
 
     if (records.length === 0) {
       findings.push({
-        // Zonder MX mailt het domein waarschijnlijk niet: dan is het advies "dichtzetten".
-        key: mx.length > 0 ? 'spf.missing' : 'spf.missing_no_mail',
+        // Alleen als zeker is dat er niet gemaild wordt, is het advies "dichtzetten".
+        key: profile.noMail ? 'spf.missing_no_mail' : 'spf.missing',
         certainty: 'vastgesteld',
         title: 'Er is niet vastgelegd wie namens dit domein mag mailen',
-        detail:
-          mx.length > 0
-            ? `${domain} ontvangt mail, maar heeft geen SPF-record. Ontvangers kunnen nepmail uit jouw naam dan moeilijker herkennen.`
-            : `${domain} heeft geen SPF-record. Ook als je hier niet mee mailt, helpt "v=spf1 -all" tegen nepmail uit jouw naam.`,
+        detail: profile.noMail
+          ? `${domain} heeft geen SPF-record en we zien geen tekenen dat er vanaf gemaild wordt. Verstuur je vanaf dit domein echt geen mail (ook geen nieuwsbrief, webshop- of factuurmail)? Dan helpt "v=spf1 -all" tegen nepmail uit jouw naam. Mail je er wel mee, zet dan de servers die namens jou mailen in het SPF-record.${note}`
+          : `${domain} heeft geen SPF-record. Ontvangers kunnen nepmail uit jouw naam dan moeilijker herkennen. Zet in het record alle diensten die namens jou mailen (je mailprovider, nieuwsbrief, webshop).${note}`,
       });
       return { outcome: 'finding', findings, evidence };
     }
@@ -166,6 +175,6 @@ export const spfCheck: Check = {
       });
     }
 
-    return { outcome: findings.length ? 'finding' : 'ok', findings, evidence };
+    return { outcome: findings.length ? 'finding' : 'ok', findings, evidence, message: note.trim() || undefined };
   },
 };

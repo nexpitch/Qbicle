@@ -335,7 +335,7 @@ a.kpi:hover { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line);
 .melding.crit { background: var(--st-crit-bg); border-color: #EBC3C8; color: var(--st-crit); }
 .melding.testmodus { border: 1.5px dashed var(--st-warn-dot); background: var(--surface); color: var(--fg); }
 .stack-tight { display: grid; gap: 4px; }
-.niveaus { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.niveaus { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
 .niveau { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--aqua); border-radius: var(--radius); padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
 .niveau:nth-child(2) { border-left-color: var(--petrol); }
 .niveau:nth-child(3) { border-left-color: var(--p-corp); }
@@ -391,27 +391,50 @@ label.vink input { width: 18px; height: 18px; accent-color: var(--petrol); }
 .copy-btn.gekopieerd .copy-ok { opacity: 1; }
 .copy-hidden { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
-/* Dashboard: alles in beeld, uitklapbaar per soort */
-.sects { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.sect + .sect { border-top: 1px solid var(--line); }
-.sect > summary { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; background: var(--surface); }
-.sect > summary::-webkit-details-marker { display: none; }
-.sect > summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 4px 4px; transition: transform .15s; }
-.sect[open] > summary::after { transform: rotate(-135deg); margin-bottom: -4px; }
-.sect > summary:hover { background: var(--surface-2); }
-.sect > summary:focus-visible { outline: 2px solid var(--petrol); outline-offset: -2px; }
-.sect > summary .dot { margin-top: 0; }
-.dot.lvl-none { background: transparent; border: 2px solid var(--line-strong); }
-.sect-name { display: grid; gap: 2px; min-width: 0; }
-.sect-count { font: 800 1.25rem/1 var(--f-display); font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right; }
-.sect-body { padding: 4px 14px 16px; background: var(--surface); }
-.sect[open] > summary { border-bottom: 1px dashed var(--line); }
+/* Dashboard: alles in beeld als tegels, met eerlijke dekking */
+.dekking { display: grid; gap: 8px; padding: 14px 16px; border-radius: 8px; background: var(--surface-2); }
+.dekking p { margin: 0; }
+.dekking-bar { width: 100%; height: 8px; display: block; border-radius: 4px; overflow: hidden; }
+.db-niet { fill: var(--line); }
+.db-deels { fill: var(--st-unk-dot); }
+.db-vol { fill: var(--st-ok-dot); }
+.dekking-legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 6px; }
+.lg:first-child { margin-left: 0; }
+.lg-vol { background: var(--st-ok-dot); }
+.lg-deels { background: var(--st-unk-dot); }
+.lg-niet { background: var(--line); }
+.tiles { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.tile { position: relative; min-width: 0; overflow-wrap: anywhere; display: grid; gap: 8px; align-content: start; padding: 16px; border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: 10px; background: var(--surface); }
+.tile.lvl-crit { border-top-color: var(--st-crit-dot); }
+.tile.lvl-warn { border-top-color: var(--st-warn-dot); }
+.tile.lvl-ok { border-top-color: var(--st-ok-dot); }
+.tile.lvl-unk { border-top-color: var(--st-unk-dot); }
+.tile.lvl-none { border-style: dashed; border-top-style: solid; background: var(--surface-2); }
+.tile:hover { border-color: var(--line-strong); box-shadow: 0 2px 10px rgba(10, 40, 50, .06); }
+.tile:focus-within { outline: 2px solid var(--petrol); outline-offset: 2px; }
+.tile-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tile-ico { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 9px; background: var(--surface-2); color: var(--petrol); }
+.tile.lvl-none .tile-ico { background: var(--surface); }
+.tile h3 { margin: 4px 0 0; font-size: 1.05rem; }
+.tile-link { color: var(--fg); text-decoration: none; }
+.tile-link::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+.tile-link:focus-visible { outline: none; }
+.tile-num { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .small { margin: 0; }
+.tile-mist { color: var(--muted); font-style: italic; }
+.tile-btn { position: relative; z-index: 1; justify-self: start; margin-top: 4px; padding: 8px 14px; font-size: .9rem; }
+.tile-niet { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1.5px dashed var(--line-strong); border-radius: 999px; font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.dekking-kaart { border-left: 4px solid var(--line-strong); }
+.dekking-kaart.dk-volledig { border-left-color: var(--st-ok-dot); }
+.dekking-kaart.dk-deels { border-left-color: var(--st-unk-dot); }
+.dekking-kaart .btn { justify-self: start; }
 .attention .list { margin-top: 4px; }
-@media (max-width: 640px) {
-  .sect > summary { grid-template-columns: auto 1fr auto auto; }
-  .sect-status { grid-column: 2 / -1; grid-row: 2; }
-  .sect-name .small { display: none; }
-}
+
+/* Domein verwijderen */
+.danger-zone { border-color: #EBC3C8; }
+.gevolgen { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: .95rem; }
+.btn.danger:hover { background: var(--st-crit-bg); }
 
 /* Scans: blok per domein en live voortgang */
 .scan-blok { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
