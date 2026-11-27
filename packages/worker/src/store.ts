@@ -175,6 +175,18 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
     );
   }
 
+  // Verwante domeinen ("Hoort dit ook bij jullie?") bij het domein zelf. Alleen als de
+  // scanner ze deze keer echt naliep; anders blijft de vorige stand staan.
+  const domeinAssetId = assetIds.get(assetKey('domein', report.domain));
+  if (domeinAssetId && report.verwanteDomeinen) {
+    await client.query(
+      `INSERT INTO asset_attribute (asset_id, key, value, observed_at, certainty)
+       VALUES ($1, 'domein.verwant', $2, $3, 'vastgesteld')
+       ON CONFLICT (asset_id, key) DO UPDATE SET value = EXCLUDED.value, observed_at = EXCLUDED.observed_at, certainty = EXCLUDED.certainty`,
+      [domeinAssetId, JSON.stringify(report.verwanteDomeinen), now],
+    );
+  }
+
   // 4. Score en afronden -----------------------------------------------------------
   const eerdere = await one<{ n: number }>(
     client,
