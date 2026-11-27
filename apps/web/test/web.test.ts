@@ -86,6 +86,18 @@ describe.skipIf(!hasDb)('web-app', () => {
     expect((await web.request(`/o/${org}/abonnement/wijzigen?pakket=bestaatniet&interval=maand`, { headers: { cookie } })).status).toBe(302);
     expect(await (await web.request(`/o/${org}/abonnement/opzeggen`, { headers: { cookie } })).text()).toContain('Wat er gebeurt');
     expect(abo).toContain('SEPA-machtiging');
+
+    // Facturen: overzicht, csv en pdf.
+    const fact = await (await web.request(`/o/${org}/facturen`, { headers: { cookie } })).text();
+    expect(fact).toMatch(/QB-\d{4}-\d{6}/);
+    const invId = fact.match(/facturen\/([0-9a-f-]{36})\/pdf/)![1]!;
+    const csv = await web.request(`/o/${org}/facturen/export.csv`, { headers: { cookie } });
+    expect(csv.headers.get('content-type')).toContain('text/csv');
+    expect(await csv.text()).toContain('Factuurnummer;Omschrijving');
+    const pdf = await web.request(`/o/${org}/facturen/${invId}/pdf`, { headers: { cookie } });
+    expect(pdf.headers.get('content-type')).toBe('application/pdf');
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');
+    expect((await web.request(`/o/${org}/facturen/${invId}/pdf`)).status).toBe(302);
     expect((await web.request(`/o/${org}/account`)).status).toBe(302);
 
     // Een ander ziet niets van deze organisatie.

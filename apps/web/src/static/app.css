@@ -236,3 +236,8 @@ a.keuze:hover { border-color: var(--petrol); }
 .meter-bar i.w95 { width: 95%; }
 .meter-bar i.w100 { width: 100%; }
 .subnav.anker a { border: 0; background: none; padding: 4px 8px; text-decoration: underline; color: var(--petrol); }
+.filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.filters label { min-width: 160px; }
+input[type=search] { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 11px 12px; font: 400 1rem var(--f-ui); background: #fff; color: var(--fg); }
+.table .nowrap { white-space: nowrap; }
+.melding.warn.row { align-items: center; }

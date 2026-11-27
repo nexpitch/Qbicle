@@ -10,6 +10,7 @@ import {
   listInvitations,
   listMembers,
   previewPlanChange,
+  getBillingHistory,
   getOrganization,
   getPayment,
   listInvoices,
@@ -26,6 +27,8 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Layout } from './layout.tsx';
+import { invoicePdf } from './pdf.ts';
+import { FacturenPage, facturenCsv } from './pages/facturen.tsx';
 import { AccountPage, UitnodigingPage } from './pages/account.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import { AbonnementPage, OpzeggenPage, WijzigenPage } from './pages/abonnement-beheer.tsx';
@@ -215,7 +218,8 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     if (!ctx) return c.redirect('/inloggen');
     const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
     const invoices = await listInvoices(p, ctx.s.user.id, ctx.org.id);
-    return c.html(<AbonnementPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} invoices={invoices} />);
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id);
+    return c.html(<AbonnementPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} invoices={invoices} actieNodig={h.actieNodig} />);
   });
 
   app.get('/o/:org/abonnement/wijzigen', async (c) => {
@@ -238,6 +242,37 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     if (!ctx) return c.redirect('/inloggen');
     const b = await getBilling(p, ctx.s.user.id, ctx.org.id);
     return c.html(<OpzeggenPage user={ctx.user} org={ctx.org} b={b} catalog={p.catalog} />);
+  });
+
+  app.get('/o/:org/facturen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const q = { zoek: c.req.query('zoek') ?? '', status: c.req.query('status') ?? '', jaar: /^\d{4}$/.test(c.req.query('jaar') ?? '') ? c.req.query('jaar')! : '' };
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id, q);
+    return c.html(<FacturenPage user={ctx.user} org={ctx.org} h={h} q={q} magBetalen={can(ctx.access, 'abonnement:beheren')} />);
+  });
+
+  app.get('/o/:org/facturen/export.csv', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const jaar = /^\d{4}$/.test(c.req.query('jaar') ?? '') ? c.req.query('jaar')! : '';
+    const h = await getBillingHistory(p, ctx.s.user.id, ctx.org.id, { jaar });
+    return c.body(facturenCsv(h), 200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="qbicle-facturen${jaar ? '-' + jaar : ''}.csv"`,
+    });
+  });
+
+  app.get('/o/:org/facturen/:inv/pdf', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const inv = await getInvoice(p, ctx.s.user.id, ctx.org.id, c.req.param('inv'));
+    const pay = await getPayment(p, ctx.s.user.id, inv.paymentId);
+    const pdf = invoicePdf(inv, { status: pay.status === 'betaald' ? 'Betaald' : 'Open', test: pay.provider === 'nep' });
+    return c.body(pdf as Uint8Array<ArrayBuffer>, 200, {
+      'content-type': 'application/pdf',
+      'content-disposition': `attachment; filename="${inv.number}.pdf"`,
+    });
   });
 
   app.get('/o/:org/facturen/:inv', async (c) => {

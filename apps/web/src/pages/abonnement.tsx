@@ -94,8 +94,10 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
   return (
     <Layout title={`Factuur ${inv.number}`} user={props.user} org={props.org} active="account">
       <div class="row between no-print">
-        <a href={`/o/${props.org.id}/abonnement`}>← Terug naar abonnement</a>
-        <span class="small">Opslaan als pdf: gebruik Afdrukken in je browser.</span>
+        <a href={`/o/${props.org.id}/facturen`}>← Terug naar facturen</a>
+        <a class="btn secondary small-btn" href={`/o/${props.org.id}/facturen/${inv.id}/pdf`} download>
+          Download pdf
+        </a>
       </div>
       <article class="factuur">
         <div class="kop">

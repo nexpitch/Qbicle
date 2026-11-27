@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import type { BillingInterval, BillingOverview, Catalog, Invoice, Plan, PlanChangePreview } from '@qbicle/platform';
+import type { BillingInterval, BillingOverview, Catalog, HistoryRow, Invoice, Plan, PlanChangePreview } from '@qbicle/platform';
 import { datum, euro, euroKort, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 
 type Ctx = { user: PageUser; org: NavOrg };
@@ -338,7 +338,7 @@ function LaatsteFacturen(props: Ctx & { invoices: Invoice[] }) {
   );
 }
 
-export function AbonnementPage(props: Ctx & { b: BillingOverview; catalog: Catalog; invoices: Invoice[] }) {
+export function AbonnementPage(props: Ctx & { b: BillingOverview; catalog: Catalog; invoices: Invoice[]; actieNodig?: HistoryRow[] }) {
   const { b, org } = props;
   const sub = b.abonnement;
   return (
@@ -348,6 +348,11 @@ export function AbonnementPage(props: Ctx & { b: BillingOverview; catalog: Catal
         <p class="lead">Je pakket, wat je volgende betaling is en hoe je betaalt. Prijzen zijn exclusief {props.catalog.btwPercentage}% btw.</p>
       </div>
       <AccountNav orgId={org.id} active="abonnement" />
+      {props.actieNodig?.length ? (
+        <p class="melding warn" role="alert">
+          Een betaling van {euro(props.actieNodig[0]!.payment.amountInclCents)} is niet gelukt. <a href={`/o/${org.id}/facturen`}>Bekijk en betaal opnieuw</a>
+        </p>
+      ) : null}
       <MijnPakket {...props} />
       <PakketKiezen {...props} />
       {b.magBeheren || b.betaalwijze.mandaat ? <Betaalwijze {...props} /> : null}

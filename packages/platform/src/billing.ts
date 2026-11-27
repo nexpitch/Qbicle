@@ -1120,3 +1120,143 @@ export async function requestInvoicePayment(p: Platform, actor: UserActor, organ
   );
   await audit(p.pool, actor, { organizationId, action: 'betaalwijze.factuur_aangevraagd', subject: organizationId });
 }
+
+// Facturen en betalingen (klantkant) -----------------------------------------------------
+
+export const HISTORY_FILTERS = ['alle', 'betaald', 'open', 'mislukt', 'terugbetaald'] as const;
+export type HistoryFilter = (typeof HISTORY_FILTERS)[number];
+
+export interface HistoryRow {
+  payment: Payment;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  refundedCents: number;
+  /** Klantvriendelijke status. */
+  status: 'betaald' | 'deels_terugbetaald' | 'terugbetaald' | 'open' | 'mislukt' | 'niet_betaald' | 'geannuleerd';
+  /** Mislukt of verlopen en nog niet opnieuw betaald: de klant kan het opnieuw proberen. */
+  opnieuwBetalen: boolean;
+}
+
+export interface BillingHistory {
+  rows: HistoryRow[];
+  jaren: number[];
+  /** Totaal van betaalde facturen in het gekozen jaar (of alles). */
+  totaal: { exclCents: number; vatCents: number; inclCents: number; aantal: number };
+  /** Betalingen die aandacht nodig hebben (mislukt, nog niet opnieuw betaald). */
+  actieNodig: HistoryRow[];
+}
+
+export async function getBillingHistory(
+  p: Platform,
+  userId: string,
+  organizationId: string,
+  opts: { zoek?: string; status?: string; jaar?: string | number } = {},
+): Promise<BillingHistory> {
+  await authorize(p.pool, userId, organizationId, 'abonnement:lezen');
+  const rows = await many<PayRow & { refunded_cents: number; invoice_id: string | null; invoice_number: string | null; superseded: boolean }>(
+    p.pool,
+    `SELECT ${PAY_COLS.split(',').map((c) => 'p.' + c.trim()).join(', ')}, p.refunded_cents, i.id AS invoice_id, i.number AS invoice_number,
+            EXISTS (SELECT 1 FROM payment q
+                     WHERE q.organization_id = p.organization_id AND q.id <> p.id AND q.created_at > p.created_at
+                       AND q.status IN ('open', 'betaald')
+                       AND ((p.audit_order_id IS NOT NULL AND q.audit_order_id = p.audit_order_id)
+                         OR (p.subscription_id IS NOT NULL AND q.subscription_id = p.subscription_id
+                             AND (q.plan_change IS NULL) = (p.plan_change IS NULL)
+                             AND (p.plan_change IS NOT NULL OR q.period_end >= p.period_end)))) AS superseded
+       FROM payment p LEFT JOIN invoice i ON i.payment_id = p.id
+      WHERE p.organization_id = $1
+      ORDER BY p.created_at DESC
+      LIMIT 500`,
+    [organizationId],
+  );
+  const all: HistoryRow[] = rows.map((r) => {
+    const refunded = r.refunded_cents ?? 0;
+    const status: HistoryRow['status'] =
+      r.status === 'betaald'
+        ? refunded >= r.amount_incl_cents && refunded > 0
+          ? 'terugbetaald'
+          : refunded > 0
+            ? 'deels_terugbetaald'
+            : 'betaald'
+        : r.status === 'verlopen'
+          ? 'niet_betaald'
+          : r.status;
+    return {
+      payment: toPay(r),
+      invoiceId: r.invoice_id,
+      invoiceNumber: r.invoice_number,
+      refundedCents: refunded,
+      status,
+      opnieuwBetalen: (r.status === 'mislukt' || r.status === 'verlopen') && !r.superseded,
+    };
+  });
+  const jaren = [...new Set(all.map((r) => new Date(r.payment.createdAt).getFullYear()))].sort((a, b) => b - a);
+  const filter = (HISTORY_FILTERS as readonly string[]).includes(opts.status ?? '') ? (opts.status as HistoryFilter) : 'alle';
+  const jaar = opts.jaar ? Number(opts.jaar) : null;
+  const zoek = (opts.zoek ?? '').trim().toLowerCase().slice(0, 100);
+  const shown = all.filter((r) => {
+    if (jaar && new Date(r.payment.createdAt).getFullYear() !== jaar) return false;
+    if (filter === 'betaald' && r.status !== 'betaald' && r.status !== 'deels_terugbetaald') return false;
+    if (filter === 'open' && r.status !== 'open') return false;
+    if (filter === 'mislukt' && r.status !== 'mislukt' && r.status !== 'niet_betaald') return false;
+    if (filter === 'terugbetaald' && r.refundedCents === 0) return false;
+    if (zoek && !`${r.invoiceNumber ?? ''} ${r.payment.description}`.toLowerCase().includes(zoek)) return false;
+    return true;
+  });
+  const paid = all.filter((r) => r.invoiceId && (!jaar || new Date(r.payment.createdAt).getFullYear() === jaar));
+  return {
+    rows: shown,
+    jaren,
+    totaal: {
+      exclCents: paid.reduce((s, r) => s + r.payment.amountExclCents, 0),
+      vatCents: paid.reduce((s, r) => s + r.payment.vatCents, 0),
+      inclCents: paid.reduce((s, r) => s + r.payment.amountInclCents, 0),
+      aantal: paid.length,
+    },
+    actieNodig: all.filter((r) => r.opnieuwBetalen),
+  };
+}
+
+/**
+ * Een mislukte of verlopen betaling opnieuw proberen: een nieuwe betaling voor
+ * precies hetzelfde (periode, bedrag, upgrade of Audit), met een nieuwe betaalpagina.
+ */
+export async function retryPayment(p: Platform, actor: UserActor, organizationId: string, paymentId: string): Promise<{ payment: Payment; checkoutUrl: string }> {
+  await authorize(p.pool, actor.userId, organizationId, 'abonnement:beheren');
+  if (!isUuid(paymentId)) throw notFound('Deze betaling');
+  const history = await getBillingHistory(p, actor.userId, organizationId);
+  const row = history.actieNodig.find((r) => r.payment.id === paymentId);
+  if (!row) throw new PlatformError('conflict', 'Deze betaling kun je niet opnieuw doen. Hij is al betaald of vervangen.');
+  return withTransaction(p.pool, async (q) => {
+    const old = await one<PayRow>(q, `SELECT ${PAY_COLS} FROM payment WHERE id = $1 AND organization_id = $2 FOR UPDATE`, [paymentId, organizationId]);
+    if (!old) throw notFound('Deze betaling');
+    if (old.subscription_id) {
+      const sub = await one<{ status: string }>(q, 'SELECT status FROM subscription WHERE id = $1', [old.subscription_id]);
+      if (!sub || sub.status === 'beeindigd') throw new PlatformError('conflict', 'Dit abonnement is beëindigd. Kies opnieuw een pakket.');
+    }
+    const row2 = await one<{ id: string }>(
+      q,
+      `INSERT INTO payment (organization_id, subscription_id, audit_order_id, description, period_start, period_end,
+                            amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, plan_change)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12) RETURNING id`,
+      [
+        organizationId,
+        old.subscription_id,
+        old.audit_order_id,
+        old.description,
+        old.period_start,
+        old.period_end,
+        old.amount_excl_cents,
+        old.vat_cents,
+        old.amount_incl_cents,
+        p.payments.name,
+        actor.userId,
+        old.plan_change ? JSON.stringify(old.plan_change) : null,
+      ],
+    );
+    const checkoutUrl = await createProviderPayment(p, q, row2!.id, old.amount_incl_cents, old.description);
+    await audit(q, actor, { organizationId, action: 'betaling.aangemaakt', subject: row2!.id, detail: { bedrag: old.amount_incl_cents, opnieuwVoor: paymentId } });
+    const pay = await one<PayRow>(q, `SELECT ${PAY_COLS} FROM payment WHERE id = $1`, [row2!.id]);
+    return { payment: toPay(pay!), checkoutUrl };
+  });
+}

@@ -16,6 +16,8 @@ import {
   updateBillingDetails,
   listContacts,
   changePlan,
+  retryPayment,
+  getBillingHistory,
   previewPlanChange,
   cancelScheduledChange,
   resumeSubscription,
@@ -446,6 +448,13 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     return c.json(pay.status === 'open' ? { ...(await syncPayment(p, pay.id, user(c))), organizationId: pay.organizationId } : pay);
   });
   // Alleen bij testbetalingen (nep-provider); bij Mollie bestaat dit adres niet.
+  v1.post('/organisaties/:org/betalingen/:pay/opnieuw', requireUser, async (c) => {
+    const r = await retryPayment(p, user(c), param(c, 'org'), param(c, 'pay'));
+    return c.json({ betaling: r.payment, betaalpagina: r.checkoutUrl }, 201);
+  });
+  v1.get('/organisaties/:org/betalingen', requireUser, async (c) =>
+    c.json(await getBillingHistory(p, user(c).userId, param(c, 'org'), { zoek: c.req.query('zoek'), status: c.req.query('status'), jaar: c.req.query('jaar') })),
+  );
   v1.post('/betalingen/:pay/test-uitkomst', requireUser, async (c) => {
     const { uitkomst } = await body(c, schemas.testPayment);
     return c.json(await settleTestPayment(p, user(c), param(c, 'pay'), uitkomst));

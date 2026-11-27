@@ -27,3 +27,10 @@ API: `GET /api/v1/organisaties/:org/contactpersonen`, `PUT|DELETE /api/v1/organi
 - **Opzeggen** (`/abonnement/opzeggen`) met uitleg wat er gebeurt en een reden (`subscription.cancel_reason`, `cancel_feedback`); opzegging intrekken kan tot het einde van de periode.
 - **Betaalwijze**: incasso (standaard) met de machtiging uit de eerste geslaagde betaling (`payment_mandate`, alleen laatste 4 tekens van de rekening), intrekken kan. Op factuur betalen stelt alleen Qbicle in (cockpit); de klant kan het aanvragen en dat komt als notitie (`org_note`, bron `systeem`) bij de klant in de cockpit.
 - Migratie 0014.
+
+## Facturen (`/o/<organisatie>/facturen`)
+
+- Alle betalingen met factuurnummer, status in gewone taal (betaald, wacht op betaling, mislukt, niet betaald, (deels) terugbetaald), zoeken op nummer of omschrijving, filter op status en jaar, totaal excl./incl. btw.
+- **Pdf** per factuur (`/facturen/<id>/pdf`, zonder externe bibliotheek) en een **csv** voor de boekhouding (`/facturen/export.csv`).
+- **Mislukte betaling**: melding bovenaan Facturen en Abonnement met een knop **Nu betalen**; dat maakt een nieuwe betaling voor precies hetzelfde (`retryPayment`). Een herinneringsmail stuurt nog niemand automatisch: bij mislukte incasso's bereidt de cockpit een conceptmail voor die een medewerker verstuurt.
+- Facturen versturen per e-mail naar het factuuradres zit er nog niet in (volgt met de Mollie-koppeling).
