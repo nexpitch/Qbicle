@@ -33,8 +33,8 @@ cockpit heeft dezelfde knop bij de klant.
 
 Elke controle staat in `vat_check` (onwijzigbaar): nummer, land, uitslag, tijdstip, het
 **consultatienummer** (`request_identifier`) van VIES en naam/adres zoals VIES ze geeft. VIES geeft
-een consultatienummer alleen als Qbicle zijn eigen btw-nummer meestuurt: zet `QBICLE_BTW_NUMMER`
-zodra de BV er is.
+een consultatienummer alleen als we ons eigen btw-nummer meesturen: zet `QBICLE_BTW_NUMMER` (het
+btw-nummer van Nexpitch BV).
 
 Per betaling, incassoregel en factuur staan los opgeslagen: `vat_code` (`nl_standaard` of
 `eu_verlegd`), `vat_rate` en `vat_check_id`. De factuur neemt de btw over van de betaling (wat de
@@ -45,7 +45,12 @@ Btw-richtlijn)" met de btw-nummers van klant en Qbicle.
 
 * `QBICLE_VIES` leeg = echte VIES-dienst; `test` = nep-VIES zonder netwerk (nummers met `000000`
   zijn ongeldig, met `999999` is VIES "in storing", de rest geldig).
-* `QBICLE_BTW_NUMMER` = btw-nummer van Qbicle (na oprichting BV).
+* Leverancier (Qbicle is een handelsnaam van Nexpitch BV): `QBICLE_LEVERANCIER_NAAM` (standaard
+  Nexpitch BV), `QBICLE_HANDELSNAAM` (standaard Qbicle), `QBICLE_BTW_NUMMER` (standaard NL854647910B01),
+  `QBICLE_KVK_NUMMER` (standaard 62097563),
+  `QBICLE_LEVERANCIER_ADRES`, `QBICLE_LEVERANCIER_POSTCODE_PLAATS`. Elke factuur bewaart een
+  momentopname hiervan (`invoice.supplier`); ontbreekt iets, dan staat op de factuur wat nog in te
+  stellen is.
 
 ## Aandachtspunten voor boekhouder en jurist
 
@@ -54,8 +59,8 @@ Btw-richtlijn)" met de btw-nummers van klant en Qbicle.
   of dat zo mag blijven of dat OSS nodig is.
 * Verlegde omzet moet in de **opgaaf intracommunautaire prestaties (ICP)** en in de btw-aangifte
   (rubriek 3b). Exporteer daarvoor betalingen met `vat_code = 'eu_verlegd'`.
-* Een echte factuur met verlegging vereist het btw-nummer van Qbicle; tot de BV er is, blijven het
-  testfacturen.
+* Een factuur met verlegging vereist het btw-nummer van de leverancier (Nexpitch BV): zet
+  `QBICLE_BTW_NUMMER` voordat er echte facturen uitgaan.
 * Creditnota's bestaan nog niet; als ze komen, nemen ze `vat_code` en `vat_rate` over van de
   oorspronkelijke factuur.
 * Mollie/boekhouding later: gebruik de opgeslagen `vat_code` per betaling/factuur als btw-code.

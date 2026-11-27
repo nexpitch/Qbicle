@@ -63,4 +63,6 @@ ALTER TABLE invoice
   ADD COLUMN customer_vat_number text,
   ADD COLUMN supplier_vat_number text,
   ADD COLUMN vat_check_id        uuid REFERENCES vat_check(id) ON DELETE RESTRICT,
+  -- Leverancier bij uitgifte (Nexpitch BV, handelsnaam Qbicle; KvK, btw-nummer, adres uit de configuratie).
+  ADD COLUMN supplier            jsonb,
   ADD CHECK (NOT reverse_charge OR (vat_code = 'eu_verlegd' AND vat_cents = 0 AND customer_vat_number IS NOT NULL));

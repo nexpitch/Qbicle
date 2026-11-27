@@ -283,7 +283,7 @@ export async function checkVatNumber(p: Platform, organizationId: string, source
   if (!o || !applicable(o.country, o.vat)) return undefined;
   const vat = o.vat;
   const prefix = EU_VAT_FORMATS[o.country]!.prefix;
-  const supplier = p.config.supplierVatNumber ? normalizeVatNumber(p.config.supplierVatNumber) : null;
+  const supplier = p.config.supplier.btwNummer ? normalizeVatNumber(p.config.supplier.btwNummer) : null;
   let result: ViesResult;
   if (!p.vies) {
     result = { status: 'storing', requestIdentifier: null, requestDate: null, name: null, address: null, error: 'Geen VIES-koppeling ingesteld' };

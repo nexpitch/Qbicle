@@ -128,6 +128,7 @@ describe.skipIf(!hasDb)('web-app', () => {
     expect(inv).toContain('Btw verlegd (0%)');
     expect(inv).toContain('reverse charge');
     expect(inv).toContain('BE0123456789');
+    expect(inv).toContain('Qbicle is een handelsnaam van Nexpitch BV');
     const pdf = Buffer.from(await (await web.request(`/o/${org}/facturen/${invId}/pdf`, { headers: { cookie } })).arrayBuffer()).toString('latin1');
     expect(pdf).toContain('reverse charge');
 

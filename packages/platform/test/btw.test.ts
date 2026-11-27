@@ -97,7 +97,7 @@ describe.skipIf(!hasDb)('btw verlegd voor EU-klanten buiten NL', () => {
 
   beforeAll(async () => {
     p = await createTestPlatform();
-    p.config.supplierVatNumber = 'NL864512378B01';
+    p.config.supplier = { ...p.config.supplier, btwNummer: 'NL864512378B01', kvk: '12345678' };
     eigenaar = await loginAs(p, 'eigenaar@voorbeeld.be');
   });
   beforeEach(() => {
@@ -124,6 +124,7 @@ describe.skipIf(!hasDb)('btw verlegd voor EU-klanten buiten NL', () => {
     await settleTestPayment(p, eigenaar, payment.id, 'betaald');
     const [inv] = await listInvoices(p, eigenaar.userId, org);
     expect(inv).toMatchObject({ vatCode: 'eu_verlegd', reverseCharge: true, vatRate: 0, vatCents: 0, customerVatNumber: 'BE0123456789', supplierVatNumber: 'NL864512378B01' });
+    expect(inv!.supplier).toMatchObject({ naam: 'Nexpitch BV', handelsnaam: 'Qbicle', btwNummer: 'NL864512378B01' });
     const row = await p.pool.query('SELECT vat_check_id FROM invoice WHERE id = $1', [inv!.id]);
     expect(row.rows[0].vat_check_id).toBeTruthy();
     // Het bewijs is onwijzigbaar.

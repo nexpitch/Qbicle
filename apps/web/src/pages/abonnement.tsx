@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import type { AuditPackage, BillingOverview, Catalog, Invoice, Payment } from '@qbicle/platform';
+import { supplierLines, type AuditPackage, type BillingOverview, type Catalog, type Invoice, type Payment } from '@qbicle/platform';
 import { datum, euro, euroKort, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 
 type Ctx = { user: PageUser; org: NavOrg };
@@ -186,12 +186,16 @@ export function FactuurPage(props: Ctx & { inv: Invoice }) {
         {inv.reverseCharge ? (
           <p class="melding">
             <b>Btw verlegd</b> (reverse charge, artikel 196 Btw-richtlijn 2006/112/EG). De afnemer voldoet de btw. Btw-nummer afnemer: {inv.customerVatNumber}. Btw-nummer
-            Qbicle: {inv.supplierVatNumber ?? 'volgt'}.
+            {inv.supplier?.naam ?? 'leverancier'}: {inv.supplierVatNumber ?? 'nog niet ingesteld'}.
           </p>
         ) : null}
-        <p class="small">
-          Gegevens van Qbicle als leverancier (bedrijfsnaam, adres, KvK en btw-nummer) volgen zodra de BV is opgericht. Tot die tijd is dit een testfactuur.
-        </p>
+        {inv.supplier ? (
+          <p class="small">
+            {supplierLines(inv.supplier).regels.join(' · ')}
+            {supplierLines(inv.supplier).ontbreekt.length ? ` (nog in te stellen: ${supplierLines(inv.supplier).ontbreekt.join(', ')})` : ''}
+          </p>
+        ) : null}
+        {inv.number.startsWith('TEST-') ? <p class="small">Dit is een testfactuur: er is geen geld afgeschreven.</p> : null}
       </article>
     </Layout>
   );

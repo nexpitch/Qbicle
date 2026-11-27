@@ -9,7 +9,7 @@ import {
   type Limits,
   type Plan,
 } from './catalog.ts';
-import type { Platform } from './context.ts';
+import type { Platform, SupplierDetails } from './context.ts';
 import { many, one, withTransaction, type Queryable } from './db.ts';
 import { notFound, PlatformError } from './errors.ts';
 import { authorize, cleanName, createOrganization, isUuid } from './organizations.ts';
@@ -779,6 +779,8 @@ export interface Invoice {
   reverseCharge: boolean;
   customerVatNumber: string | null;
   supplierVatNumber: string | null;
+  /** Momentopname van de leverancier (Nexpitch BV, handelsnaam Qbicle) bij uitgifte. */
+  supplier: SupplierDetails | null;
 }
 
 async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor): Promise<void> {
@@ -798,14 +800,27 @@ async function issueInvoice(p: Platform, q: Queryable, pay: PayRow, actor: Actor
   const rate = pay.vat_rate !== null ? Number(pay.vat_rate) : p.catalog.btwPercentage;
   await q.query(
     `INSERT INTO invoice (organization_id, payment_id, number, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, test,
-                          vat_code, reverse_charge, customer_vat_number, supplier_vat_number, vat_check_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                          vat_code, reverse_charge, customer_vat_number, supplier_vat_number, vat_check_id, supplier)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       pay.organization_id, pay.id, number, JSON.stringify(details), JSON.stringify(lines), pay.amount_excl_cents, rate, pay.vat_cents, pay.amount_incl_cents, test,
-      pay.vat_code, reverse, details.btwNummer, p.config.supplierVatNumber, reverse ? pay.vat_check_id : null,
+      pay.vat_code, reverse, details.btwNummer, p.config.supplier.btwNummer, reverse ? pay.vat_check_id : null, JSON.stringify(p.config.supplier),
     ],
   );
   await audit(q, actor, { organizationId: pay.organization_id, action: 'factuur.uitgegeven', subject: number });
+}
+
+/** Regels over de leverancier op een factuur (scherm en pdf). */
+export function supplierLines(s: SupplierDetails): { regels: string[]; ontbreekt: string[] } {
+  const regels = [
+    s.handelsnaam && s.handelsnaam !== s.naam ? `${s.handelsnaam} is een handelsnaam van ${s.naam}` : s.naam,
+    s.adres ?? '',
+    s.postcodePlaats ?? '',
+    s.kvk ? `KvK ${s.kvk}` : '',
+    s.btwNummer ? `Btw ${s.btwNummer}` : '',
+  ].filter(Boolean);
+  const ontbreekt = [!s.adres ? 'adres' : '', !s.kvk ? 'KvK-nummer' : '', !s.btwNummer ? 'btw-nummer' : ''].filter(Boolean);
+  return { regels, ontbreekt };
 }
 
 interface InvRow {
@@ -823,6 +838,7 @@ interface InvRow {
   reverse_charge: boolean;
   customer_vat_number: string | null;
   supplier_vat_number: string | null;
+  supplier: SupplierDetails | null;
 }
 const toInv = (r: InvRow): Invoice => ({
   id: r.id,
@@ -839,9 +855,10 @@ const toInv = (r: InvRow): Invoice => ({
   reverseCharge: r.reverse_charge,
   customerVatNumber: r.customer_vat_number,
   supplierVatNumber: r.supplier_vat_number,
+  supplier: r.supplier,
 });
 const INV_COLS = `id, number, issued_at, customer, lines, amount_excl_cents, vat_rate, vat_cents, amount_incl_cents, payment_id,
-  vat_code, reverse_charge, customer_vat_number, supplier_vat_number`;
+  vat_code, reverse_charge, customer_vat_number, supplier_vat_number, supplier`;
 
 export async function listInvoices(p: Platform, userId: string, organizationId: string): Promise<Invoice[]> {
   await authorize(p.pool, userId, organizationId, 'abonnement:lezen');
