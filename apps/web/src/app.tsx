@@ -24,7 +24,18 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  can,
+  demoDataAllowed,
+  domainOverview,
+  findDnsHost,
+  getAssetDetail,
+  getDashboard,
+  listDomains,
+  resolveAccess,
+} from '@qbicle/platform';
 import { Layout } from './layout.tsx';
+import { AssetPage, AssetsPage, DashboardPage, DomeinenPage, koppelingenSectie, systemenSectie, WaarStaatDomeinPage } from './pages/dashboard.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import {
   AbonnementPage,
@@ -32,7 +43,6 @@ import {
   BetalingPage,
   FactuurPage,
   KiesOrganisatiePage,
-  OverzichtPage,
   TestBetaalPage,
   WelkomPage,
 } from './pages/abonnement.tsx';
@@ -147,6 +157,9 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/aanmelden/check-je-mail', (c) => c.html(<CheckMailPage />));
   app.get('/inloggen', (c) => c.html(<InloggenPage />));
   app.get('/inloggen/check-je-mail', (c) => c.html(<CheckMailPage />));
+  app.get('/domein-bevestigen', (c) =>
+    c.html(<TokenPage title="Domein bevestigen" api="/api/v1/domeinverificatie/bevestigen" next="/overzicht" />),
+  );
   app.get('/inloggen/bevestigen', (c) => c.html(<TokenPage title="Inloggen" api="/api/v1/auth/inloggen" next="/overzicht" />));
 
   // Ingelogd ------------------------------------------------------------------------
@@ -168,8 +181,51 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/o/:org/overzicht', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
-    const b = await getBilling(p, ctx.s.user.id, ctx.org.id).catch(() => null);
-    return c.html(<OverzichtPage user={ctx.user} org={ctx.org} b={b} />);
+    const [d, b, access] = await Promise.all([
+      getDashboard(p, ctx.s.user.id, ctx.org.id),
+      getBilling(p, ctx.s.user.id, ctx.org.id).catch(() => null),
+      resolveAccess(p.pool, ctx.s.user.id, ctx.org.id),
+    ]);
+    const demo = demoDataAllowed() && Boolean(access && can(access, 'org:wijzigen'));
+    const extra = [
+      koppelingenSectie(koppelingen.lijst(ctx.org.id), await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
+      systemenSectie(await listSystemen(p, ctx.s.user.id, ctx.org.id), `/o/${ctx.org.id}`),
+    ];
+    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} />);
+  });
+
+  app.get('/o/:org/assets', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const d = await getDashboard(p, ctx.s.user.id, ctx.org.id);
+    return c.html(<AssetsPage user={ctx.user} org={ctx.org} d={d} soort={c.req.query('soort')} />);
+  });
+
+  app.get('/o/:org/assets/:asset', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const a = await getAssetDetail(p, ctx.s.user.id, ctx.org.id, c.req.param('asset'));
+    return c.html(<AssetPage user={ctx.user} org={ctx.org} a={a} />);
+  });
+
+  app.get('/o/:org/domeinen', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const [domains, access] = await Promise.all([listDomains(p, ctx.s.user.id, ctx.org.id), resolveAccess(p.pool, ctx.s.user.id, ctx.org.id)]);
+    const magBeheren = Boolean(access && can(access, 'domeinen:beheren'));
+    const overview = await domainOverview(p, ctx.s.user.id, ctx.org.id, domains);
+    const q = c.req.query();
+    const added = q.toegevoegd !== undefined ? { aantal: Number(q.toegevoegd) || 0, bestaatAl: Number(q.bestaat) || 0, ongeldig: (q.ongeldig ?? '').slice(0, 300) } : undefined;
+    return c.html(
+      <DomeinenPage user={ctx.user} org={ctx.org} domains={domains} magBeheren={magBeheren} sent={q.mail === 'verstuurd'} overview={overview} added={added} />,
+    );
+  });
+
+  app.get('/o/:org/domeinen/:dom/waar', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const r = await findDnsHost(p, ctx.s.user.id, ctx.org.id, c.req.param('dom'));
+    return c.html(<WaarStaatDomeinPage user={ctx.user} org={ctx.org} domainId={c.req.param('dom')} r={r} />);
   });
 
   app.get('/o/:org/welkom', async (c) => {

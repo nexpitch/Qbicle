@@ -68,4 +68,53 @@ describe.skipIf(!hasDb)('web-app', () => {
     // Een ander ziet niets van deze organisatie.
     expect((await web.request(`/o/${org}/abonnement`)).status).toBe(302);
   });
+
+  it('dashboard: lege staat, voorbeelddata, assets, detail per asset en domeinen', async () => {
+    process.env.QBICLE_DEMODATA = 'aan';
+    try {
+      expect((await json('/api/v1/registratie', { email: 'dash@test.nl', organisatie: 'Dash BV', pakket: 'business', interval: 'jaar' })).status).toBe(202);
+      const login = await json('/api/v1/auth/inloggen', { token: extractToken(p.mailer.last('dash@test.nl')!.text, 'qbl_')! });
+      const org = ((await login.json()) as any).registratie.organizationId as string;
+      const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+      const get = (path: string) => web.request(path, { headers: { cookie } });
+
+      let html = await (await get(`/o/${org}/overzicht`)).text();
+      expect(html).toContain('Voeg je domein toe');
+      expect(html).toContain('Vul met voorbeelddata');
+      // Lege staat toont al alle onderdelen, ingeklapt, met wanneer de scan komt.
+      expect(html).toContain('Alles in beeld');
+      expect(html.match(/<details class="sect"/g)?.length).toBe(9);
+      expect(html).toContain('Nog niets vastgelegd');
+      expect(html).toContain('Nog niet gescand');
+      expect(html).toContain('Voeg een domein toe om te starten');
+
+      expect((await json(`/api/v1/organisaties/${org}/demodata`, {}, cookie)).status).toBe(201);
+      html = await (await get(`/o/${org}/overzicht`)).text();
+      expect(html).toContain('Direct aandacht');
+      expect(html).toContain('id="sectie-koppelingen"');
+      expect(html).not.toMatch(/<details class="sect"[^>]* open/);
+      expect(html).toContain('Urgentie over tijd');
+      expect(html).toContain('Netwerkapparatuur');
+      expect(html).not.toMatch(/style="/);
+
+      const assets = await (await get(`/o/${org}/assets?soort=netwerk`)).text();
+      expect(assets).toContain('KPN Box 12');
+      expect(assets).not.toContain('Synology');
+      const vpn = assets.match(/href="(\/o\/[^"]+\/assets\/[0-9a-f-]{36})"/);
+      expect(vpn).toBeTruthy();
+      const detail = await get(vpn![1]!);
+      expect(detail.status).toBe(200);
+      expect(await detail.text()).toContain('Bevindingen');
+
+      expect(await (await get(`/o/${org}/domeinen`)).text()).toContain('voorbeeldbedrijf.example');
+      await json(`/api/v1/organisaties/${org}/domeinen/lijst`, { domeinen: 'kopieer-test.nl' }, cookie);
+      const dom = await (await get(`/o/${org}/domeinen`)).text();
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie.kopieer-test.nl"');
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie"');
+      expect(dom).toMatch(/data-kopieer="qbicle-verificatie=[0-9a-f]{32}"/);
+      expect((await get(`/o/${org}/assets/00000000-0000-0000-0000-000000000000`)).status).toBe(404);
+    } finally {
+      delete process.env.QBICLE_DEMODATA;
+    }
+  });
 });

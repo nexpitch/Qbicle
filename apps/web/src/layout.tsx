@@ -17,6 +17,16 @@ export function datum(d: Date | string | null | undefined): string {
   return new Date(d).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' });
 }
 
+/** 27 november 2026 om 14:02 (Nederlandse tijd) */
+export function datumTijd(d: Date | string | null | undefined): string {
+  if (!d) return '';
+  return `${datum(d)} om ${tijd(d)}`;
+}
+/** 14:02 (Nederlandse tijd) */
+export function tijd(d: Date | string): string {
+  return new Date(d).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' });
+}
+
 export interface PageUser {
   email: string;
 }
@@ -61,6 +71,8 @@ export function Layout(props: {
               <nav aria-label="Hoofdmenu">
                 {org ? <span class="org-name hide-sm">{org.name}</span> : null}
                 {org ? link(`/o/${org.id}/overzicht`, 'Overzicht', 'overzicht') : null}
+                {org ? link(`/o/${org.id}/assets`, 'Assets', 'assets') : null}
+                {org ? link(`/o/${org.id}/domeinen`, 'Domeinen', 'domeinen') : null}
                 {org ? link(`/o/${org.id}/systemen`, 'Systemen', 'systemen') : null}
                 {org ? link(`/o/${org.id}/koppelingen`, 'Koppelingen', 'koppelingen') : null}
                 {org ? link(`/o/${org.id}/abonnement`, 'Abonnement', 'abonnement') : null}

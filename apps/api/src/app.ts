@@ -68,6 +68,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
+import { addDomains, demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
 import { KoppelingFout, KOPPELINGEN, teststandVoor } from '@qbicle/koppelingen';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -114,7 +115,7 @@ const schemas = {
   createClient: z.object({ name: z.string().max(200) }),
   grantPartner: z.object({ partnerOrganizationId: id, access: z.enum(PARTNER_ACCESS).default('lezer') }),
   addDomain: z.object({ name: z.string().max(300) }),
-  emailVerify: z.object({ address: z.string().max(320) }),
+  emailVerify: z.object({ address: z.string().max(320), eigenAdres: z.string().max(320).optional() }),
   scan: z.object({ maxLevel: z.union([z.literal(0), z.literal(1)]).optional() }),
   signup: z.object({
     email,
@@ -364,6 +365,17 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const input = await body(c, schemas.addDomain);
     return c.json(await addDomain(p, user(c), param(c, 'org'), input), 201);
   });
+  v1.post('/organisaties/:org/domeinen/lijst', requireUser, async (c) => {
+    const input = await body(c, z.object({ domeinen: z.union([z.string().max(5000), z.array(z.string().max(300)).max(100)]) }));
+    const resultaten = await addDomains(p, user(c), param(c, 'org'), input.domeinen);
+    const ongeldig = resultaten.filter((r) => r.status === 'ongeldig').map((r) => r.invoer);
+    return c.json({
+      aantal: resultaten.filter((r) => r.status === 'toegevoegd').length,
+      bestaatAl: resultaten.filter((r) => r.status === 'bestaat_al').length,
+      ongeldigTekst: ongeldig.join(', '),
+      resultaten,
+    }, 201);
+  });
   v1.get('/organisaties/:org/domeinen/:dom', requireUser, async (c) =>
     c.json(await getDomain(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
   );
@@ -371,11 +383,16 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     await removeDomain(p, user(c), param(c, 'org'), param(c, 'dom'));
     return c.body(null, 204);
   });
+  v1.get('/organisaties/:org/domeinen/:dom/dns-beheer', requireUser, async (c) =>
+    c.json(await findDnsHost(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
+  );
   v1.post('/organisaties/:org/domeinen/:dom/verificatie/dns', requireUser, async (c) =>
     c.json(await verifyDomainByDns(p, user(c), param(c, 'org'), param(c, 'dom'))),
   );
   v1.post('/organisaties/:org/domeinen/:dom/verificatie/email', requireUser, async (c) => {
-    const { address } = await body(c, schemas.emailVerify);
+    const input = await body(c, schemas.emailVerify);
+    // De web-app stuurt "ander" plus het zelf ingevulde adres.
+    const address = input.address === 'ander' ? (input.eigenAdres ?? '') : input.address;
     await startEmailVerification(p, user(c), param(c, 'org'), param(c, 'dom'), address);
     return c.json({ bericht: `We hebben een bevestigingslink gestuurd naar ${address.trim().toLowerCase()}.` }, 202);
   });
@@ -390,6 +407,16 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const input = await body(c, schemas.scan);
     const opts = input.maxLevel === undefined ? {} : { maxLevel: input.maxLevel };
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
+  });
+
+  // Dashboard -------------------------------------------------------------------------
+  v1.get('/organisaties/:org/dashboard', requireUser, async (c) => c.json(await getDashboard(p, user(c).userId, param(c, 'org'))));
+  v1.get('/organisaties/:org/assets/:asset', requireUser, async (c) =>
+    c.json(await getAssetDetail(p, user(c).userId, param(c, 'org'), param(c, 'asset'))),
+  );
+  v1.post('/organisaties/:org/demodata', requireUser, async (c) => {
+    if (!demoDataAllowed()) return c.json({ fout: 'niet_gevonden', bericht: 'Deze pagina bestaat niet.' }, 404);
+    return c.json(await seedDemoData(p, user(c), param(c, 'org')), 201);
   });
 
   // Pakketten, registratie en abonnement ---------------------------------------------

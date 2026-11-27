@@ -5,6 +5,7 @@
 #   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
 #                                                            testset scannen (map ./testset)
 #   docker compose run --rm bewaker                          één ronde van de bewakingsagent (cockpit)
+#   docker compose run --rm worker --eenmalig                scans plannen en de wachtrij één keer afwerken
 #   docker compose --profile api up api                      API op http://localhost:8080/api/v1
 #   docker compose --profile web up web                      klantomgeving op http://localhost:3000
 #   docker compose --profile cockpit up cockpit              interne cockpit op http://localhost:3100
@@ -62,6 +63,31 @@ services:
       QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
     entrypoint: ["npx", "--no-install", "tsx", "packages/ops/src/cli.ts"]
 
+  # Scan-worker met planner: zet scans van bevestigde domeinen in de wachtrij (eerste scan
+  # meteen, daarna wekelijks), draait de passieve scanner en slaat het resultaat op voor het
+  # dashboard. Start vanzelf mee met de klantomgeving (web). Geen poortscans, nooit lekken uitproberen.
+  worker:
+    build: .
+    profiles: ["web", "tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
+      QBICLE_APP_ORIGIN: ${QBICLE_WEB_ORIGIN:-http://localhost:3000}
+      QBICLE_SCANNER_INFO_URL: ${QBICLE_SCANNER_INFO_URL:-https://qbicle.example/scanner}
+      QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
+      QBICLE_SCAN_INTERVAL_DAGEN: ${QBICLE_SCAN_INTERVAL_DAGEN:-7}
+      # Lokale testopstelling: zonder Brevo-sleutel gaat de mail "eerste scan klaar" naar de log.
+      NODE_ENV: development
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
+      QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
+      QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
+      QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+    restart: unless-stopped
+    entrypoint: ["npx", "--no-install", "tsx", "packages/worker/src/cli.ts"]
+
   api:
     build: .
     profiles: ["api"]
@@ -91,14 +117,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Zonder worker blijft het dashboard leeg: hij start vanzelf mee.
+      worker:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
       # Moet het adres zijn dat je in de browser gebruikt (inloglinks en controle op herkomst).
       QBICLE_APP_ORIGIN: ${QBICLE_WEB_ORIGIN:-http://localhost:3000}
       QBICLE_SECURE_COOKIES: "uit"
       PORT: "3000"
+      # Dit is de lokale testopstelling, geen productie (de image zet standaard NODE_ENV=production).
+      NODE_ENV: development
       # Testbetalingen tot Mollie gekoppeld is (wacht op de BV).
       QBICLE_BETAALPROVIDER: nep
+      QBICLE_NEPBETALING: "aan"
+      QBICLE_DEMODATA: "aan"
+      # 'aan' = mail (inloglinks) in het Terminal-venster in plaats van via Brevo.
+      QBICLE_MAIL_CONSOLE: ${QBICLE_MAIL_CONSOLE:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
       QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
       QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}

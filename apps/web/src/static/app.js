@@ -97,6 +97,34 @@
     history.replaceState(null, '', url);
   });
 
+  // Kopieerknoppen: waarde op het klembord, korte melding "Gekopieerd".
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var t = document.createElement('textarea');
+      t.value = text; t.setAttribute('readonly', ''); t.className = 'copy-hidden';
+      document.body.appendChild(t); t.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(t);
+      ok ? resolve() : reject(new Error('kopiëren lukt niet'));
+    });
+  }
+  var live = document.createElement('p');
+  live.className = 'copy-hidden'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+  document.body.appendChild(live);
+  document.addEventListener('click', function (e) {
+    var btn = e.target instanceof Element ? e.target.closest('[data-kopieer]') : null;
+    if (!btn) return;
+    copyText(btn.getAttribute('data-kopieer')).then(function () {
+      btn.classList.add('gekopieerd');
+      live.textContent = 'Gekopieerd';
+      setTimeout(function () { btn.classList.remove('gekopieerd'); live.textContent = ''; }, 1600);
+    }, function () {
+      live.textContent = 'Kopiëren lukte niet. Selecteer de tekst en kopieer hem zelf.';
+    });
+  });
+
   // Links uit e-mails: het token staat achter # en gaat met een POST naar de API.
   var tokenBox = document.querySelector('[data-token-post]');
   if (tokenBox) {

@@ -56,6 +56,10 @@ describe.skipIf(!hasDb)('register systemen (web)', () => {
     expect(lijst).toContain('Hoge impact');
     expect(lijst).toContain('Nu oppakken');
 
+    const overzicht = await (await page(`/o/${org}/overzicht`)).text();
+    expect(overzicht).toContain('1 met aandacht');
+    expect(overzicht).toContain(`/o/${org}/systemen/${s.id}`);
+
     const detail = await (await page(`/o/${org}/systemen/${s.id}`)).text();
     expect(detail).toContain('Wat je kunt doen');
     expect(detail).toContain('tweestapsverificatie');

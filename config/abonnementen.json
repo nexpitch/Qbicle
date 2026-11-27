@@ -2,6 +2,8 @@
   "_uitleg": "Prijzen en pakketten van Qbicle. Bedragen in euro's per maand, exclusief btw. Wijzig hier een prijs en herstart de app; bestaande abonnementen houden hun prijs tot ze verlengd of gewijzigd worden. De ankerprijs van MKB staat nog open (49 of 39): pas alleen 'perMaandBijJaar' en 'perMaandBijMaand' van 'mkb' aan.",
   "btwPercentage": 21,
   "proefDagen": 14,
+  "_extraDomein": "Add-on: prijs per domein boven de limiet van het pakket, per maand excl. btw (keuze Erik 27-11).",
+  "extraDomeinPerMaand": 5,
   "valuta": "EUR",
   "abonnementen": [
     {
