@@ -6,6 +6,7 @@ import {
   extractToken,
   controleSamenvatting,
   getChecklist,
+  getDashboard,
   getScan,
   inviteMember,
   many,
@@ -38,6 +39,13 @@ describe('checklist samenvoegen (zonder database)', () => {
     const c = buildChecklist([actie], [task({ status: 'gedaan', still_seen_at: new Date() }) as never], []);
     expect(c.items[0]!.statusLabel).toBe('Nog niet opgelost');
     expect(c.summary).toMatchObject({ done: 0, nogNietOpgelost: 1 });
+  });
+
+  it('herbeoordeling van een geaccepteerd risico wordt gemeld als de datum voorbij is', () => {
+    const now = new Date('2027-06-01T12:00:00Z');
+    const c = buildChecklist([actie], [task({ status: 'genegeerd', reason: 'r', review_at: new Date('2027-05-27T00:00:00Z') }) as never], [], now);
+    expect(c.items[0]!.reviewDue).toBe(true);
+    expect(c.summary.herbeoordelen).toBe(1);
   });
 
   it('bewust niet telt niet mee in het totaal; bevestigd blijft 90 dagen zichtbaar', () => {
@@ -158,6 +166,43 @@ describe.skipIf(!hasDb)('checklist en scans', () => {
     cfg = healthyConfig(D);
     await scan();
     expect((await item())?.status).toBe('bevestigd');
+  });
+
+  it('geaccepteerd risico telt niet mee in de urgentie, blijft zichtbaar met herbeoordeling, en is terug te draaien', async () => {
+    await scan();
+    const voor = await getDashboard(p, eigenaar.userId, org);
+    expect(voor.actions.map((a) => a.key)).toContain(ACTIE);
+    await updateTask(p, eigenaar, org, ACTIE, { status: 'genegeerd', reason: 'We mailen niet vanaf dit domein' });
+    const na = await getDashboard(p, eigenaar.userId, org);
+    expect(na.actions.map((a) => a.key)).not.toContain(ACTIE);
+    expect(na.urgency).toBeLessThan(voor.urgency);
+    let c = await getChecklist(p, eigenaar.userId, org);
+    let i = c.items.find((x) => x.key === ACTIE)!;
+    expect(i.statusLabel).toBe('Geaccepteerd risico');
+    expect(i.findingCount).toBe(1);
+    const maanden = (i.reviewAt!.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
+    expect(maanden).toBeGreaterThan(5.5);
+    expect(c.summary.genegeerd).toBe(1);
+
+    // Volgende scan ziet het nog: blijft geaccepteerd, geen "terug"/"opgelost".
+    await scan();
+    c = await getChecklist(p, eigenaar.userId, org);
+    expect(c.items.find((x) => x.key === ACTIE)!.status).toBe('genegeerd');
+    expect((await getDashboard(p, eigenaar.userId, org)).actions.map((a) => a.key)).not.toContain(ACTIE);
+
+    // Alsnog oppakken: telt weer mee.
+    await updateTask(p, eigenaar, org, ACTIE, { status: 'bezig' });
+    expect((await getDashboard(p, eigenaar.userId, org)).actions.map((a) => a.key)).toContain(ACTIE);
+    i = (await getChecklist(p, eigenaar.userId, org)).items.find((x) => x.key === ACTIE)!;
+    expect(i.reviewAt).toBeNull();
+  });
+
+  it('geaccepteerd risico dat echt wordt opgelost = bevestigd door scan', async () => {
+    await scan();
+    await updateTask(p, eigenaar, org, ACTIE, { status: 'genegeerd', reason: 'Later' });
+    cfg = healthyConfig(D);
+    await scan();
+    expect((await item())!.status).toBe('bevestigd');
   });
 
   it('bewust niet vraagt een reden; een lezer mag niets wijzigen', async () => {

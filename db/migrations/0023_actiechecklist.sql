@@ -10,7 +10,7 @@ CREATE TABLE action_task (
   organization_id  uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   action_key       text NOT NULL CHECK (char_length(action_key) BETWEEN 1 AND 100),
   -- open, bezig (opgepakt), gedaan (afgevinkt, wacht op scan), bevestigd (scan ziet het niet meer),
-  -- genegeerd (bewust niet oppakken, met reden).
+  -- genegeerd (geaccepteerd risico, met reden; telt niet mee in de urgentie).
   status           text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'bezig', 'gedaan', 'bevestigd', 'genegeerd')),
   note             text CHECK (char_length(note) <= 2000),
   reason           text CHECK (char_length(reason) <= 2000),
@@ -25,6 +25,9 @@ CREATE TABLE action_task (
   still_seen_scan  uuid REFERENCES scan(id) ON DELETE SET NULL,
   confirmed_at     timestamptz,
   confirmed_scan   uuid REFERENCES scan(id) ON DELETE SET NULL,
+  -- Geaccepteerd risico (status genegeerd): wanneer opnieuw beoordelen. De bevindingen van
+  -- deze actie krijgen finding.accepted_at, zodat ze niet meer in de urgentie meetellen.
+  review_at        timestamptz,
   PRIMARY KEY (organization_id, action_key),
   CHECK (status <> 'genegeerd' OR reason IS NOT NULL)
 );

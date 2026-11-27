@@ -32,10 +32,13 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   bezig: 'Opgepakt',
   gedaan: 'Afgevinkt, wacht op controle',
   bevestigd: 'Bevestigd door scan',
-  genegeerd: 'Bewust niet opgepakt',
+  genegeerd: 'Geaccepteerd risico',
 };
 
 const ASSIGNEES = ['zelf', 'it-partner', 'webbouwer'] as const;
+
+/** Een geaccepteerd risico beoordeel je na zoveel maanden opnieuw. */
+export const ACCEPT_REVIEW_MONTHS = 6;
 
 /** Bij welke actie hoort een bevinding (zelfde regel als het scoremodel). */
 export function actionKeyFor(findingKey: string): string {
@@ -77,6 +80,9 @@ export interface ChecklistItem {
   doneBy: string | null;
   stillSeenAt: Date | null;
   confirmedAt: Date | null;
+  /** Geaccepteerd risico: wanneer opnieuw beoordelen, en of dat moment voorbij is. */
+  reviewAt: Date | null;
+  reviewDue: boolean;
   log: TaskLogEntry[];
 }
 
@@ -90,7 +96,10 @@ export interface ChecklistSummary {
   nogNietOpgelost: number;
   bezig: number;
   open: number;
+  /** Geaccepteerde risico's: tellen niet mee in de urgentie, maar verdwijnen niet. */
   genegeerd: number;
+  /** Geaccepteerde risico's waarvan de herbeoordeling verlopen is. */
+  herbeoordelen: number;
 }
 
 export interface Checklist {
@@ -113,7 +122,11 @@ interface TaskRow {
   done_by_email: string | null;
   still_seen_at: Date | null;
   confirmed_at: Date | null;
+  review_at?: Date | null;
 }
+
+/** Open bevindingen die bij een geaccepteerd risico horen (finding.accepted_at gezet). */
+export type AcceptedByAction = Map<string, { count: number; assets: DashboardAssetRef[] }>;
 
 interface LogRow {
   action_key: string;
@@ -132,7 +145,13 @@ const DAY = 24 * 60 * 60 * 1000;
 const ORDER: Record<TaskStatus, number> = { open: 0, bezig: 0, gedaan: 1, genegeerd: 2, bevestigd: 3 };
 
 /** Zet de acties van het dashboard en wat de klant vastlegde samen tot één lijst. Puur, voor tests. */
-export function buildChecklist(actions: DashboardAction[], tasks: TaskRow[], logs: LogRow[], now = new Date()): Omit<Checklist, 'magBijwerken'> {
+export function buildChecklist(
+  actions: DashboardAction[],
+  tasks: TaskRow[],
+  logs: LogRow[],
+  now = new Date(),
+  accepted: AcceptedByAction = new Map(),
+): Omit<Checklist, 'magBijwerken'> {
   const byKey = new Map(tasks.map((t) => [t.action_key, t]));
   const logsByKey = new Map<string, TaskLogEntry[]>();
   for (const l of logs) {
@@ -166,6 +185,8 @@ export function buildChecklist(actions: DashboardAction[], tasks: TaskRow[], log
       doneBy: t?.done_by_email ?? null,
       stillSeenAt: nogNietOpgelost ? t!.still_seen_at : null,
       confirmedAt: status === 'bevestigd' ? (t?.confirmed_at ?? null) : null,
+      reviewAt: status === 'genegeerd' ? (t?.review_at ?? null) : null,
+      reviewDue: status === 'genegeerd' && Boolean(t?.review_at && t.review_at <= now),
       log: logsByKey.get(a.key) ?? [],
     };
   };
@@ -174,10 +195,17 @@ export function buildChecklist(actions: DashboardAction[], tasks: TaskRow[], log
   const onList = new Set(actions.map((a) => a.key));
   // Wat de scan niet meer ziet en bevestigd is: blijft een tijd zichtbaar als "opgelost".
   for (const t of tasks) {
-    if (onList.has(t.action_key) || t.status !== 'bevestigd') continue;
-    if (t.confirmed_at && now.getTime() - t.confirmed_at.getTime() > CONFIRMED_VISIBLE_DAYS * DAY) continue;
+    if (onList.has(t.action_key)) continue;
     const def = ACTIONS[t.action_key] ?? { title: 'Bevinding laten beoordelen', why: '', forWho: 'it-partner' as const };
-    items.push(item({ key: t.action_key, title: def.title, why: def.why, forWho: def.forWho, level: 'ok', findingCount: 0, assets: [] }, t, 'bevestigd'));
+    if (t.status === 'bevestigd') {
+      if (t.confirmed_at && now.getTime() - t.confirmed_at.getTime() > CONFIRMED_VISIBLE_DAYS * DAY) continue;
+      items.push(item({ key: t.action_key, title: def.title, why: def.why, forWho: def.forWho, level: 'ok', findingCount: 0, assets: [] }, t, 'bevestigd'));
+    } else if (t.status === 'genegeerd') {
+      // Geaccepteerd risico: staat niet meer in de acties van het dashboard (telt niet mee), maar blijft hier staan.
+      const a = accepted.get(t.action_key);
+      if (!a?.count) continue; // niets meer open: de scan zet hem op bevestigd
+      items.push(item({ key: t.action_key, title: def.title, why: def.why, forWho: def.forWho, level: 'unk', findingCount: a.count, assets: a.assets }, t, 'genegeerd'));
+    }
   }
   // Stabiel sorteren: eerst wat nog moet (in de volgorde van het dashboard), dan afgevinkt, dan de rest.
   const idx = new Map(items.map((x, i) => [x, i]));
@@ -193,16 +221,18 @@ export function buildChecklist(actions: DashboardAction[], tasks: TaskRow[], log
     bezig: count((x) => x.status === 'bezig'),
     open: count((x) => x.status === 'open'),
     genegeerd: count((x) => x.status === 'genegeerd'),
+    herbeoordelen: count((x) => x.reviewDue),
   };
   return { items, summary };
 }
 
-async function loadTasks(q: Queryable, organizationId: string): Promise<{ tasks: TaskRow[]; logs: LogRow[] }> {
-  const [tasks, logs] = await Promise.all([
+async function loadTasks(q: Queryable, organizationId: string): Promise<{ tasks: TaskRow[]; logs: LogRow[]; accepted: AcceptedByAction }> {
+  const [tasks, logs, acc] = await Promise.all([
     many<TaskRow>(
       q,
       `SELECT t.action_key, t.status, t.note, t.reason, t.assigned_to, t.assignee_name, t.updated_at,
-              ub.email::text AS updated_by_email, t.done_at, db.email::text AS done_by_email, t.still_seen_at, t.confirmed_at
+              ub.email::text AS updated_by_email, t.done_at, db.email::text AS done_by_email, t.still_seen_at, t.confirmed_at,
+              t.review_at
          FROM action_task t
          LEFT JOIN app_user ub ON ub.id = t.updated_by
          LEFT JOIN app_user db ON db.id = t.done_by
@@ -216,8 +246,23 @@ async function loadTasks(q: Queryable, organizationId: string): Promise<{ tasks:
         WHERE l.organization_id = $1 ORDER BY l.at DESC, l.id LIMIT 500`,
       [organizationId],
     ),
+    many<{ finding_key: string; asset_id: string; type: string; value: string }>(
+      q,
+      `SELECT f.finding_key, a.id AS asset_id, a.type, a.value FROM finding f JOIN asset a ON a.id = f.asset_id
+        WHERE a.organization_id = $1 AND a.status = 'actief' AND f.resolved_at IS NULL AND f.accepted_at IS NOT NULL`,
+      [organizationId],
+    ),
   ]);
-  return { tasks, logs };
+  const accepted: AcceptedByAction = new Map();
+  for (const f of acc) {
+    const k = actionKeyFor(f.finding_key);
+    const x = accepted.get(k) ?? { count: 0, assets: [] };
+    x.count++;
+    const label = f.type === 'website' ? f.value.replace(/^https?:\/\//, '').replace(/\/$/, '') : f.value;
+    if (!x.assets.some((r) => r.id === f.asset_id)) x.assets.push({ id: f.asset_id, label });
+    accepted.set(k, x);
+  }
+  return { tasks, logs, accepted };
 }
 
 /**
@@ -227,8 +272,8 @@ async function loadTasks(q: Queryable, organizationId: string): Promise<{ tasks:
 export async function getChecklist(p: Platform, userId: string, organizationId: string, actions?: DashboardAction[]): Promise<Checklist> {
   const access = await authorize(p.pool, userId, organizationId, 'bevindingen:lezen');
   const acts = actions ?? (await getDashboard(p, userId, organizationId)).actions;
-  const { tasks, logs } = await loadTasks(p.pool, organizationId);
-  return { ...buildChecklist(acts, tasks, logs), magBijwerken: can(access, 'bevindingen:accepteren') };
+  const { tasks, logs, accepted } = await loadTasks(p.pool, organizationId);
+  return { ...buildChecklist(acts, tasks, logs, new Date(), accepted), magBijwerken: can(access, 'bevindingen:accepteren') };
 }
 
 export interface TaskInput {
@@ -270,7 +315,7 @@ export async function updateTask(p: Platform, actor: UserActor, organizationId: 
     const note = input.note === undefined ? (cur?.note ?? null) : clean(input.note, 2000);
     const reasonIn = input.reason === undefined ? (cur?.reason ?? null) : clean(input.reason, 2000);
     if (to === 'genegeerd' && (!reasonIn || reasonIn.length < 3)) {
-      throw new PlatformError('ongeldige_invoer', 'Schrijf kort op waarom je deze actie bewust niet oppakt.');
+      throw new PlatformError('ongeldige_invoer', 'Schrijf kort op waarom je dit risico accepteert.');
     }
     const reason = to === 'genegeerd' ? reasonIn : null;
     const assignedTo = input.assignedTo === undefined ? (cur?.assigned_to ?? null) : input.assignedTo;
@@ -289,9 +334,18 @@ export async function updateTask(p: Platform, actor: UserActor, organizationId: 
          still_seen_at = CASE WHEN $9 THEN NULL ELSE t.still_seen_at END,
          still_seen_scan = CASE WHEN $9 THEN NULL ELSE t.still_seen_scan END,
          confirmed_at = CASE WHEN $9 THEN NULL ELSE t.confirmed_at END,
-         confirmed_scan = CASE WHEN $9 THEN NULL ELSE t.confirmed_scan END`,
+         confirmed_scan = CASE WHEN $9 THEN NULL ELSE t.confirmed_scan END,
+         review_at = CASE WHEN $9 THEN EXCLUDED.review_at ELSE t.review_at END`,
       [organizationId, actionKey, to, note, reason, assignedTo, assigneeName, actor.userId, statusChanged],
     );
+    if (statusChanged && (to === 'genegeerd' || from === 'genegeerd')) {
+      await q.query(
+        `UPDATE action_task SET review_at = CASE WHEN status = 'genegeerd' THEN now() + make_interval(months => $3) END
+          WHERE organization_id = $1 AND action_key = $2`,
+        [organizationId, actionKey, ACCEPT_REVIEW_MONTHS],
+      );
+      await setAccepted(q, organizationId, actionKey, to === 'genegeerd' ? actor.userId : null, to === 'genegeerd');
+    }
     const log = (kind: TaskLogEntry['kind'], text: string | null, f: TaskStatus | null = null, t: TaskStatus | null = null) =>
       q.query(
         `INSERT INTO action_task_log (organization_id, action_key, actor_user_id, kind, from_status, to_status, text, at)
@@ -313,6 +367,29 @@ export async function updateTask(p: Platform, actor: UserActor, organizationId: 
   });
 }
 
+/**
+ * Geaccepteerd risico: de open bevindingen van deze actie krijgen accepted_at (dan
+ * tellen ze niet mee in de urgentie, zie dashboard.ts), of verliezen het weer.
+ * Gekoppeld via de sleutel van de bevinding (finding_key -> actie), nooit via tekst.
+ */
+async function setAccepted(q: Queryable, organizationId: string, actionKey: string, userId: string | null, accept: boolean): Promise<number> {
+  const rows = await many<{ id: string; finding_key: string }>(
+    q,
+    `SELECT f.id, f.finding_key FROM finding f JOIN asset a ON a.id = f.asset_id
+      WHERE a.organization_id = $1 AND f.resolved_at IS NULL AND (f.accepted_at IS ${accept ? '' : 'NOT '}NULL)`,
+    [organizationId],
+  );
+  const ids = rows.filter((r) => actionKeyFor(r.finding_key) === actionKey).map((r) => r.id);
+  if (!ids.length) return 0;
+  await q.query(
+    accept
+      ? 'UPDATE finding SET accepted_at = now(), accepted_by = $2 WHERE id = ANY($1::uuid[])'
+      : 'UPDATE finding SET accepted_at = NULL, accepted_by = NULL WHERE id = ANY($1::uuid[])',
+    accept ? [ids, userId] : [ids],
+  );
+  return ids.length;
+}
+
 export interface VerifyResult {
   bevestigd: string[];
   nogNietOpgelost: string[];
@@ -329,22 +406,31 @@ export interface VerifyResult {
  */
 export async function verifyChecklistAfterScan(q: Queryable, organizationId: string, scanId: string): Promise<VerifyResult> {
   const scan = await one<{ started_at: Date | null }>(q, 'SELECT started_at FROM scan WHERE id = $1', [scanId]);
+  // Nieuwe bevindingen bij een geaccepteerd risico vallen onder dezelfde acceptatie.
+  const geaccepteerd = await many<{ action_key: string }>(
+    q,
+    "SELECT action_key FROM action_task WHERE organization_id = $1 AND status = 'genegeerd'",
+    [organizationId],
+  );
+  for (const g of geaccepteerd) await setAccepted(q, organizationId, g.action_key, null, true);
   const startedAt = scan?.started_at ?? new Date(0);
-  const findings = await many<{ finding_key: string; open: boolean; seen_now: boolean; resolved_now: boolean }>(
+  const findings = await many<{ finding_key: string; open: boolean; unresolved: boolean; seen_now: boolean; resolved_now: boolean }>(
     q,
     `SELECT f.finding_key,
             (f.resolved_at IS NULL AND f.accepted_at IS NULL AND a.status = 'actief') AS open,
+            (f.resolved_at IS NULL AND a.status = 'actief') AS unresolved,
             (f.resolved_at IS NULL AND f.last_scan_id = $2) AS seen_now,
             (f.resolved_scan_id = $2) AS resolved_now
        FROM finding f JOIN asset a ON a.id = f.asset_id
       WHERE a.organization_id = $1 AND (f.resolved_at IS NULL OR f.resolved_scan_id = $2)`,
     [organizationId, scanId],
   );
-  const per = new Map<string, { open: number; seenNow: boolean; resolvedNow: boolean }>();
+  const per = new Map<string, { open: number; unresolved: number; seenNow: boolean; resolvedNow: boolean }>();
   for (const f of findings) {
     const k = actionKeyFor(f.finding_key);
-    const x = per.get(k) ?? { open: 0, seenNow: false, resolvedNow: false };
+    const x = per.get(k) ?? { open: 0, unresolved: 0, seenNow: false, resolvedNow: false };
     if (f.open) x.open++;
+    if (f.unresolved) x.unresolved++;
     x.seenNow ||= f.open && f.seen_now;
     x.resolvedNow ||= f.resolved_now;
     per.set(k, x);
@@ -366,8 +452,9 @@ export async function verifyChecklistAfterScan(q: Queryable, organizationId: str
 
   for (const key of keys) {
     const t = byKey.get(key);
-    const s = per.get(key) ?? { open: 0, seenNow: false, resolvedNow: false };
-    if (s.open === 0) {
+    const s = per.get(key) ?? { open: 0, unresolved: 0, seenNow: false, resolvedNow: false };
+    // Een geaccepteerd risico is pas opgelost als ook de geaccepteerde bevindingen weg zijn.
+    if (s.unresolved === 0) {
       if (t?.status === 'bevestigd') continue;
       // Open of opgepakt zonder afvinken: alleen bevestigen als deze scan het oplossen zag.
       const confirm = t?.status === 'gedaan' || s.resolvedNow;
@@ -376,11 +463,13 @@ export async function verifyChecklistAfterScan(q: Queryable, organizationId: str
         `INSERT INTO action_task AS t (organization_id, action_key, status, confirmed_at, confirmed_scan, updated_at)
          VALUES ($1, $2, 'bevestigd', now(), $3, now())
          ON CONFLICT (organization_id, action_key) DO UPDATE SET status = 'bevestigd', reason = NULL, confirmed_at = now(),
-           confirmed_scan = $3, still_seen_at = NULL, still_seen_scan = NULL, updated_at = now()`,
+           confirmed_scan = $3, still_seen_at = NULL, still_seen_scan = NULL, review_at = NULL, updated_at = now()`,
         [organizationId, key, scanId],
       );
       await log(key, t?.status ?? 'open', 'bevestigd', 'De scan ziet dit niet meer. Opgelost.');
       out.bevestigd.push(key);
+    } else if (s.open === 0) {
+      continue; // alleen geaccepteerde bevindingen over: niets te beoordelen
     } else if (t?.status === 'gedaan' && s.seenNow && t.done_at && t.done_at < startedAt) {
       await q.query(
         'UPDATE action_task SET still_seen_at = now(), still_seen_scan = $3 WHERE organization_id = $1 AND action_key = $2',

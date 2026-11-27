@@ -264,7 +264,7 @@ function AandachtCard(props: { d: Dashboard; base: string; checklist?: Checklist
         <h2 id="acties-kop">Direct aandacht</h2>
         <span class="small">belangrijkste eerst</span>
       </div>
-      {props.checklist && props.checklist.summary.total ? <ChecklistVoortgang s={props.checklist.summary} href={`${props.base}/acties`} /> : null}
+      {props.checklist && (props.checklist.summary.total || props.checklist.summary.genegeerd) ? <ChecklistVoortgang s={props.checklist.summary} href={`${props.base}/acties`} /> : null}
       {top.length === 0 ? (
         <p class="melding ok">Niets dat nu direct aandacht nodig heeft. We blijven alles bewaken.</p>
       ) : (

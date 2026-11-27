@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import { FOR_WHO_LABELS, TASK_STATUS_LABELS, type Checklist, type ChecklistItem, type ChecklistSummary, type TaskLogEntry } from '@qbicle/platform';
+import { ACCEPT_REVIEW_MONTHS, FOR_WHO_LABELS, TASK_STATUS_LABELS, type Checklist, type ChecklistItem, type ChecklistSummary, type TaskLogEntry } from '@qbicle/platform';
 import { FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { tijdstip } from './scan.tsx';
 
@@ -30,7 +30,7 @@ export function ChecklistVoortgang(props: { s: ChecklistSummary; href?: string }
     s.wachtOpScan ? `${s.wachtOpScan} wacht op de volgende scan` : null,
     s.nogNietOpgelost ? `${s.nogNietOpgelost} nog niet opgelost` : null,
     s.bezig ? `${s.bezig} opgepakt` : null,
-    s.genegeerd ? `${s.genegeerd} bewust niet opgepakt` : null,
+    s.genegeerd ? `${s.genegeerd} ${s.genegeerd === 1 ? 'geaccepteerd risico' : "geaccepteerde risico's"} (tellen niet mee in de urgentie)` : null,
   ].filter(Boolean);
   return (
     <div class="checklist-voortgang stack-xs">
@@ -89,9 +89,17 @@ function Stand(props: { i: ChecklistItem }) {
   }
   if (i.status === 'genegeerd') {
     return (
-      <p class="small">
-        Bewust niet opgepakt{i.updatedBy ? ` (${i.updatedBy})` : ''}. Reden: {i.reason}
-      </p>
+      <div class="stack-xs">
+        <p class="small">
+          Geaccepteerd{i.updatedBy ? ` door ${i.updatedBy}` : ''}
+          {i.updatedAt ? ` op ${tijdstip(i.updatedAt)}` : ''}. Reden: {i.reason}
+        </p>
+        <p class="small">
+          Telt niet mee in de urgentie. We blijven het wel zien bij elke scan.
+          {i.reviewAt && !i.reviewDue ? ` Opnieuw beoordelen vóór ${tijdstip(i.reviewAt).split(' om ')[0]}.` : ''}
+        </p>
+        {i.reviewDue ? <p class="melding warn small">Tijd om dit risico opnieuw te beoordelen. Accepteer het opnieuw of pak het alsnog op.</p> : null}
+      </div>
     );
   }
   if (i.status === 'bezig') {
@@ -108,7 +116,7 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
     <li class={`checklist-item${klaar ? ' is-klaar' : ''}`} id={`actie-${i.key}`}>
       <div class="row between">
         <Status kind={statusKind(i)}>{i.statusLabel}</Status>
-        {i.findingCount ? <span class={`small lvl-${i.level}`}>{LEVEL_LABEL[i.level]}</span> : null}
+        {i.findingCount && i.status !== 'genegeerd' ? <span class={`small lvl-${i.level}`}>{LEVEL_LABEL[i.level]}</span> : null}
       </div>
       <h3>{i.title}</h3>
       {i.why ? <p class="small">{i.why}</p> : null}
@@ -132,7 +140,15 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
 
       {props.mag && !klaar ? (
         <div class="row">
-          {i.status !== 'gedaan' ? (
+          {i.status === 'genegeerd' ? (
+            <form data-api={api}>
+              <FormError />
+              <input type="hidden" name="status" value="bezig" />
+              <button class="btn secondary" type="submit">
+                Alsnog oppakken
+              </button>
+            </form>
+          ) : i.status !== 'gedaan' ? (
             <form data-api={api}>
               <FormError />
               <input type="hidden" name="status" value="gedaan" />
@@ -154,7 +170,7 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
 
       {props.mag && !klaar ? (
         <details class="more">
-          <summary>Notitie, toewijzen of bewust niet oppakken</summary>
+          <summary>Notitie, toewijzen of risico accepteren</summary>
           <form data-api={api} class="stack-sm">
             <FormError />
             <fieldset class="stack-xs">
@@ -166,7 +182,7 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
               ))}
             </fieldset>
             <label>
-              Reden (nodig bij "bewust niet opgepakt")
+              Reden (nodig bij "geaccepteerd risico")
               <textarea name="reason" rows={2} maxlength={2000}>
                 {i.reason ?? ''}
               </textarea>
@@ -226,7 +242,8 @@ function Item(props: { i: ChecklistItem; orgId: string; mag: boolean }) {
 
 export function ActiesPage(props: Ctx & { c: Checklist }) {
   const { c, org } = props;
-  const todo = c.items.filter((i) => i.status !== 'bevestigd');
+  const todo = c.items.filter((i) => i.status !== 'bevestigd' && i.status !== 'genegeerd');
+  const geaccepteerd = c.items.filter((i) => i.status === 'genegeerd');
   const done = c.items.filter((i) => i.status === 'bevestigd');
   return (
     <Layout title="Acties" user={props.user} org={org} active="acties">
@@ -250,6 +267,20 @@ export function ActiesPage(props: Ctx & { c: Checklist }) {
           </ol>
         ) : null}
       </section>
+      {geaccepteerd.length ? (
+        <section class="card stack">
+          <h2>Geaccepteerde risico's</h2>
+          <p class="small">
+            Bewust niet opgepakt, met reden. Ze tellen niet mee in je urgentie, maar verdwijnen niet: na {ACCEPT_REVIEW_MONTHS} maanden vragen we je ze
+            opnieuw te beoordelen.
+          </p>
+          <ol class="checklist">
+            {geaccepteerd.map((i) => (
+              <Item i={i} orgId={org.id} mag={c.magBijwerken} />
+            ))}
+          </ol>
+        </section>
+      ) : null}
       {done.length ? (
         <section class="card stack">
           <h2>Opgelost en bevestigd</h2>
