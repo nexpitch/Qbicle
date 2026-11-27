@@ -47,10 +47,9 @@ Btw-richtlijn)" met de btw-nummers van klant en Qbicle.
   zijn ongeldig, met `999999` is VIES "in storing", de rest geldig).
 * Leverancier (Qbicle is een handelsnaam van Nexpitch BV): `QBICLE_LEVERANCIER_NAAM` (standaard
   Nexpitch BV), `QBICLE_HANDELSNAAM` (standaard Qbicle), `QBICLE_BTW_NUMMER` (standaard NL854647910B01),
-  `QBICLE_KVK_NUMMER` (standaard 62097563),
+  `QBICLE_KVK_NUMMER` (standaard 62097563), adres standaard Maasdijk 3, 6624 KN Heerewaarden,
   `QBICLE_LEVERANCIER_ADRES`, `QBICLE_LEVERANCIER_POSTCODE_PLAATS`. Elke factuur bewaart een
-  momentopname hiervan (`invoice.supplier`); ontbreekt iets, dan staat op de factuur wat nog in te
-  stellen is.
+  momentopname hiervan (`invoice.supplier`), dus een verhuizing verandert oude facturen niet.
 
 ## Aandachtspunten voor boekhouder en jurist
 

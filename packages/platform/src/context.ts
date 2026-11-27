@@ -47,8 +47,8 @@ export const DEFAULT_CONFIG: PlatformConfig = {
   domainMailHours: 24,
   dnsReverifyDays: 30,
   signupHours: 24,
-  // Gegevens van Nexpitch BV zoals Erik ze aanleverde (27-11-2026). Adres nog in te stellen.
-  supplier: { naam: 'Nexpitch BV', handelsnaam: 'Qbicle', kvk: '62097563', btwNummer: 'NL854647910B01', adres: null, postcodePlaats: null },
+  // Gegevens van Nexpitch BV zoals Erik ze aanleverde (27-11-2026). Adres "op dit moment": wijzig via QBICLE_LEVERANCIER_ADRES.
+  supplier: { naam: 'Nexpitch BV', handelsnaam: 'Qbicle', kvk: '62097563', btwNummer: 'NL854647910B01', adres: 'Maasdijk 3', postcodePlaats: '6624 KN Heerewaarden' },
   vatCheckMaxDays: 31,
 };
 

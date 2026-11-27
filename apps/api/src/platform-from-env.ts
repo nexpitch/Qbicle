@@ -35,8 +35,8 @@ function supplierFromEnv(env: NodeJS.ProcessEnv) {
     handelsnaam: v('QBICLE_HANDELSNAAM') ?? d.handelsnaam,
     kvk: v('QBICLE_KVK_NUMMER') ?? d.kvk,
     btwNummer: v('QBICLE_BTW_NUMMER')?.replace(/[\s.]/g, '').toUpperCase() ?? d.btwNummer,
-    adres: v('QBICLE_LEVERANCIER_ADRES'),
-    postcodePlaats: v('QBICLE_LEVERANCIER_POSTCODE_PLAATS'),
+    adres: v('QBICLE_LEVERANCIER_ADRES') ?? d.adres,
+    postcodePlaats: v('QBICLE_LEVERANCIER_POSTCODE_PLAATS') ?? d.postcodePlaats,
   };
 }
 
