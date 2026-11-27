@@ -58,36 +58,44 @@ export async function runBewaker(ctx: OpsContext): Promise<{ runId: string; stat
       }
     }
 
-    // 2. Gebruik: afwijkend = interne melding; limiet bijna/over = bericht aan klant (mens keurt goed).
-    for (const sig of await detectUsageSignals(ctx)) {
-      const day = new Date().toISOString().slice(0, 10);
-      if (sig.kind === 'afwijkend') {
-        const r = await propose(ctx, actor, {
-          kind: 'ticket.melding',
-          title: `Afwijkend gebruik bij ${sig.organizationName}`,
-          rationale: sig.message,
-          payload: { subject: `Afwijkend gebruik: ${sig.organizationName}`, body: `${sig.message} Controleer of dit klopt of op misbruik wijst.`, priority: 'normaal', category: 'overig' },
-          organizationId: sig.organizationId,
-          dedupeKey: `gebruik.afwijkend:${sig.organizationId}:${sig.metric}:${day}`,
-          runId,
-        });
-        if (r.created) stats.gebruikMeldingen++;
-      } else {
-        const month = day.slice(0, 7);
-        const r = await propose(ctx, actor, {
-          kind: 'klant.bericht',
-          title: `${sig.organizationName} ${sig.kind === 'limiet_over' ? 'zit over' : 'nadert'} de limiet`,
-          rationale: `${sig.message} Voorstel: de eigenaar laten weten dat de limiet ${sig.kind === 'limiet_over' ? 'bereikt is' : 'bijna bereikt is'}, met de optie om over te stappen.`,
-          payload: {
-            subject: sig.kind === 'limiet_over' ? 'Je hebt de limiet van je Qbicle-pakket bereikt' : 'Je nadert de limiet van je Qbicle-pakket',
-            body: `Hallo,\n\n${sig.message.replace(`${sig.organizationName}: `, 'Jullie gebruik: ')}\n\nWil je meer ruimte? Kijk in je account bij Abonnement voor een groter pakket, of beantwoord deze mail.`,
-          },
-          organizationId: sig.organizationId,
-          dedupeKey: `gebruik.${sig.kind}:${sig.organizationId}:${sig.metric}:${month}`,
-          runId,
-        });
-        if (r.created) stats.limietBerichten++;
-      }
+    // 2. Gebruik: afwijkend = interne melding; limiet bijna/over = één bericht per klant
+    //    (alle limieten samen), dat een mens goedkeurt.
+    const day = new Date().toISOString().slice(0, 10);
+    const month = day.slice(0, 7);
+    const signals = await detectUsageSignals(ctx);
+    for (const sig of signals.filter((s) => s.kind === 'afwijkend')) {
+      const r = await propose(ctx, actor, {
+        kind: 'ticket.melding',
+        title: `Afwijkend gebruik bij ${sig.organizationName}`,
+        rationale: sig.message,
+        payload: { subject: `Afwijkend gebruik: ${sig.organizationName}`, body: `${sig.message} Controleer of dit klopt of op misbruik wijst.`, priority: 'normaal', category: 'overig' },
+        organizationId: sig.organizationId,
+        dedupeKey: `gebruik.afwijkend:${sig.organizationId}:${sig.metric}:${day}`,
+        runId,
+      });
+      if (r.created) stats.gebruikMeldingen++;
+    }
+    const perOrg = new Map<string, typeof signals>();
+    for (const sig of signals.filter((s) => s.kind !== 'afwijkend')) {
+      perOrg.set(sig.organizationId, [...(perOrg.get(sig.organizationId) ?? []), sig]);
+    }
+    for (const [orgId, list] of perOrg) {
+      const over = list.some((s) => s.kind === 'limiet_over');
+      const name = list[0]!.organizationName;
+      const lines = list.map((s) => `- ${s.message.replace(`${name}: `, '')}`).join('\n');
+      const r = await propose(ctx, actor, {
+        kind: 'klant.bericht',
+        title: `${name} ${over ? 'zit over' : 'nadert'} de limiet van het pakket`,
+        rationale: `${list.map((s) => s.message).join(' ')} Voorstel: de eigenaar laten weten dat de limiet ${over ? 'bereikt is' : 'bijna bereikt is'}, met de optie om over te stappen.`,
+        payload: {
+          subject: over ? 'Je hebt de limiet van je Qbicle-pakket bereikt' : 'Je nadert de limiet van je Qbicle-pakket',
+          body: `Hallo,\n\nJullie gebruik deze maand:\n${lines}\n\nWil je meer ruimte? Kijk in je account bij Abonnement voor een groter pakket, of beantwoord deze mail.`,
+        },
+        organizationId: orgId,
+        dedupeKey: `gebruik.${over ? 'limiet_over' : 'limiet_bijna'}:${orgId}:${month}`,
+        runId,
+      });
+      if (r.created) stats.limietBerichten++;
     }
 
     // 3. Herhaalde fouten zonder melding.

@@ -350,7 +350,7 @@ export async function detectUsageSignals(ctx: Ctx): Promise<UsageSignal[]> {
         metric: r.metric,
         value: today,
         reference: Math.round(base * 10) / 10,
-        message: `${r.name}: ${today} ${METRIC_NL[r.metric]} vandaag, normaal ongeveer ${Math.round(base)} per dag.`,
+        message: `${r.name}: ${formatNum(today)} ${METRIC_NL[r.metric]} vandaag, normaal ongeveer ${formatNum(Math.round(base))} per dag.`,
       });
     }
   }

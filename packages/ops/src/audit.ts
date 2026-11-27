@@ -3,7 +3,7 @@ import { actorLabel, type OpsActor } from './context.ts';
 
 /**
  * Schrijft naar hetzelfde alleen-toevoegen audit_log als het platform, met
- * acties onder 'ops.' en als actor 'agent:<sleutel>', 'gebruiker:<id>' of 'systeem'.
+ * acties onder 'ops.' en als actor 'agent:<sleutel>', 'medewerker:<id>' of 'systeem'.
  */
 export async function opsAudit(
   q: Queryable,

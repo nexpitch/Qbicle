@@ -91,3 +91,14 @@ Lokaal één ronde draaien:
 docker compose run --rm migrate
 docker compose run --rm bewaker
 ```
+
+## In de cockpit
+
+Vier schermen onder "Techniek en support" (`apps/cockpit/src/modules/`):
+
+- **Gebruik**: kosten, tokens, scans en API per klant, marge, AI per functie, signalen. Per klant de limieten met balk; financieel/beheerder kan een limiet aanpassen.
+- **Gezondheid**: één oordeel bovenaan, scanjobs (vast/mislukt, opnieuw starten), fouten (opgelost markeren) en mailbezorging.
+- **Support**: tickets met filters; per ticket het gesprek, antwoorden (mailt de klant) of interne notitie, en rechts alle klantcontext.
+- **Agents**: de wachtrij met voorstellen (goedkeuren en uitvoeren of afwijzen), de agents met noodrem, geschiedenis en activiteit.
+
+Starten zoals de cockpit zelf: `bash scripts/cockpit.sh` en dan `http://localhost:3100`.

@@ -25,7 +25,8 @@ export type OpsActor =
   | { kind: 'systeem' };
 
 export function actorLabel(a: OpsActor): string {
-  if (a.kind === 'medewerker') return `gebruiker:${a.userId}`;
+  // Zelfde notatie als de cockpit-shell (audit-log toont dan het label Qbicle).
+  if (a.kind === 'medewerker') return `medewerker:${a.userId}`;
   if (a.kind === 'agent') return `agent:${a.agentKey}`;
   return 'systeem';
 }
