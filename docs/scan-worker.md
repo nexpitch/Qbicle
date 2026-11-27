@@ -1,7 +1,8 @@
 # Scan-worker en planner
 
 De scan-worker (`packages/worker`) zorgt dat het klantdashboard echte cijfers krijgt.
-Hij draait op de achtergrond en doet elke minuut:
+Hij draait op de achtergrond. Plannen doet hij elke minuut, in de wachtrij kijkt hij elke 3 seconden
+(`QBICLE_WORKER_WACHTRIJ_SECONDEN`), zodat een scan die de klant zelf start meteen begint:
 
 1. **Plannen** (`planScans`): bevestigde domeinen in de wachtrij zetten.
    - Net bevestigd en nog nooit gescand: meteen (eerste scan).
@@ -13,7 +14,9 @@ Hij draait op de achtergrond en doet elke minuut:
 2. **Scannen** (`drainQueue`): de oudste scan uit de wachtrij pakken (`FOR UPDATE SKIP LOCKED`,
    dus meerdere workers kunnen naast elkaar), de passieve scanner draaien en het resultaat opslaan.
    Na 10 minuten (`QBICLE_SCAN_TIMEOUT_MINUTEN`) breekt hij af en is de scan mislukt.
-3. **Hartslag** in `worker_heartbeat`, zodat de cockpit ziet of er een worker draait.
+3. **Hartslag** in `worker_heartbeat` (elke 30 seconden, ook tijdens een scan), zodat de cockpit en de klant
+   zien of er een worker draait. Staat een scan 30 seconden in de wachtrij zonder dat de scanner draait,
+   dan toont de scanpagina "De scanner draait niet" (lokaal met uitleg hoe je hem start).
 
 ## Scangrenzen
 

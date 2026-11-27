@@ -50,14 +50,53 @@ export interface ScanView {
   pct: number;
   result: { urgency: number; band: string; openFindings: number } | null;
   workerActief: boolean;
+  /** Alleen bij status 'wachtrij'. */
+  wacht: WaitInfo | null;
 }
 
+/** Zo lang mag een scan in de wachtrij staan voordat we zeggen dat de scanner niet draait. */
+export const SCAN_START_SECONDS = 30;
+
+/** De worker geeft elke 30 seconden een hartslag; 90 seconden stil = hij draait niet. */
 async function workerActive(p: Platform): Promise<boolean> {
   const r = await one<{ actief: boolean }>(
     p.pool,
-    "SELECT EXISTS (SELECT 1 FROM worker_heartbeat WHERE last_seen > now() - interval '3 minutes') AS actief",
+    "SELECT EXISTS (SELECT 1 FROM worker_heartbeat WHERE last_seen > now() - interval '90 seconds') AS actief",
   );
   return Boolean(r?.actief);
+}
+
+/** Wat de klant ziet zolang een scan in de wachtrij staat. */
+export interface WaitInfo {
+  /** true: de scan had al moeten beginnen; toon de melding "De scanner draait niet". */
+  vast: boolean;
+  tekst: string;
+  /** Alleen buiten productie: wat je op je eigen computer doet om de scanner te starten. */
+  hulp: string | null;
+}
+
+export function waitInfo(opts: { createdAt: Date; workerActief: boolean; anderBezig: boolean; now?: Date; production?: boolean }): WaitInfo {
+  const now = opts.now ?? new Date();
+  const age = (now.getTime() - new Date(opts.createdAt).getTime()) / 1000;
+  const production = opts.production ?? process.env.NODE_ENV === 'production';
+  if (opts.workerActief && opts.anderBezig) {
+    return { vast: false, tekst: 'Qbicle scant eerst een ander domein. Jouw scan begint direct daarna.', hulp: null };
+  }
+  if (opts.workerActief && age < SCAN_START_SECONDS) {
+    return { vast: false, tekst: 'De scan begint over een paar seconden.', hulp: null };
+  }
+  if (!opts.workerActief && age < SCAN_START_SECONDS) {
+    return { vast: false, tekst: 'We wachten tot de scanner de scan oppakt.', hulp: null };
+  }
+  return {
+    vast: true,
+    tekst: production
+      ? 'De scanner draait op dit moment niet. Wij zijn gewaarschuwd en je scan start vanzelf zodra hij weer draait. Je hoeft niets te doen.'
+      : 'De scanner draait niet, dus je scan blijft in de wachtrij staan. Hij start vanzelf zodra de scanner weer draait.',
+    hulp: production
+      ? null
+      : 'Start Qbicle opnieuw met: bash scripts/klantomgeving.sh. Of kijk in Docker Desktop of qbicle-worker draait (groen) en start hem. Wat hij doet zie je met: docker compose --profile web logs -f worker',
+  };
 }
 
 export function stepsFor(status: ScanView['status'], progress: ScanProgress | null): { steps: ScanView['steps']; pct: number } {
@@ -91,10 +130,12 @@ export async function getScan(p: Platform, userId: string, organizationId: strin
     progress: ScanProgress | null;
     urgency: number | null;
     band: string | null;
+    ander_bezig: boolean;
   }>(
     p.pool,
     `SELECT s.id, s.domain_id, d.name, s.status, s.trigger, s.created_at, s.started_at, s.finished_at, s.error, s.progress,
-            ss.urgency, ss.band
+            ss.urgency, ss.band,
+            EXISTS (SELECT 1 FROM scan b WHERE b.status = 'bezig' AND b.id <> s.id) AS ander_bezig
        FROM scan s JOIN domain d ON d.id = s.domain_id LEFT JOIN score_snapshot ss ON ss.scan_id = s.id
       WHERE s.id = $1 AND d.organization_id = $2`,
     [scanId, organizationId],
@@ -118,6 +159,7 @@ export async function getScan(p: Platform, userId: string, organizationId: strin
       : /bestaat niet|niet \(meer\) bevestigd|gevraagd het niet te scannen|DNS/.test(s.error ?? '')
         ? s.error
         : 'De scan is niet gelukt door een storing bij Qbicle. We kijken ernaar en proberen het later vanzelf opnieuw.';
+  const workerActief = await workerActive(p);
   return {
     id: s.id,
     domainId: s.domain_id,
@@ -131,7 +173,8 @@ export async function getScan(p: Platform, userId: string, organizationId: strin
     steps,
     pct,
     result,
-    workerActief: await workerActive(p),
+    workerActief,
+    wacht: s.status === 'wachtrij' ? waitInfo({ createdAt: s.created_at, workerActief, anderBezig: s.ander_bezig }) : null,
   };
 }
 

@@ -53,7 +53,12 @@ describe.skipIf(!hasDb)('scans zichtbaar in de web-app', () => {
     const page = await (await get(`/o/${org}/scans/${scanId}`)).text();
     expect(page).toContain(`Scan van ${D} staat klaar`);
     expect(page).toContain('Domein en DNS');
+    // Titel en uitleg van een stap staan in eigen blokken (ook zonder stylesheet niet aan elkaar geplakt).
+    expect(page).toContain('<div class="stap-titel"><strong>Domein en DNS</strong></div><div class="stap-uitleg">');
     expect(page).toContain('data-scan=');
+    expect(page).toContain('De scan begint over een paar seconden.');
+    expect(page).toMatch(/<script src="\/static\/app\.js\?v=[0-9a-f]{10}"/);
+    expect(page).toContain('http-equiv="refresh"');
     expect(await (await get(`/o/${org}/domeinen`)).text()).toContain('Bekijk de scan die nu loopt');
 
     const cfg = healthyConfig(D);
@@ -81,6 +86,18 @@ describe.skipIf(!hasDb)('scans zichtbaar in de web-app', () => {
     const again = await post(`/api/v1/organisaties/${org}/domeinen/${domainId}/scans`);
     expect(again.status).toBe(429);
     expect(((await again.json()) as any).bericht).toMatch(/net gescand/);
+  });
+
+  it('na 30 seconden in de wachtrij zonder scanner: melding "De scanner draait niet" met uitleg', async () => {
+    await p.pool.query('DELETE FROM worker_heartbeat');
+    const d = (await p.pool.query(`INSERT INTO domain (organization_id, name, verified_at, verification_method, verification_token) VALUES ($1, 'www.scanbedrijf.nl', now(), 'dns-txt', 't') RETURNING id`, [org])).rows[0].id;
+    const s = (await p.pool.query(`INSERT INTO scan (domain_id, trigger, created_at) VALUES ($1, 'handmatig', now() - interval '45 seconds') RETURNING id`, [d])).rows[0].id;
+    const api = (await (await get(`/api/v1/organisaties/${org}/scans/${s}`)).json()) as any;
+    expect(api.wacht.vast).toBe(true);
+    expect(api.wacht.hulp).toContain('bash scripts/klantomgeving.sh');
+    const html = await (await get(`/o/${org}/scans/${s}`)).text();
+    expect(html).toContain('De scanner draait niet');
+    expect(html).not.toMatch(/data-scan-vast hidden/);
   });
 
   it('een scan van een andere organisatie is niet te zien', async () => {
