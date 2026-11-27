@@ -206,7 +206,11 @@ export const headersCheck: Check = {
       }
     }
 
-    const csp = h['content-security-policy'];
+    const headerCsp = h['content-security-policy'];
+    // Een CSP mag ook in de pagina staan (<meta http-equiv>); frame-ancestors werkt daar niet.
+    const metaCsp = metaContentSecurityPolicy(final.body);
+    const csp = headerCsp ?? metaCsp;
+    if (metaCsp && !headerCsp) (evidence as Record<string, unknown>).metaCsp = metaCsp;
     if (!csp) {
       findings.push({
         key: 'web.csp_missing',
@@ -216,7 +220,9 @@ export const headersCheck: Check = {
       });
     }
 
-    if ((h['x-content-type-options'] ?? '').toLowerCase().trim() !== 'nosniff') {
+    // Dubbel meegestuurde headers komen samengevoegd binnen ("nosniff, nosniff"): per waarde beoordelen.
+    const xcto = headerValues(h['x-content-type-options']);
+    if (!(xcto.length > 0 && xcto.every((v) => v === 'nosniff'))) {
       findings.push({
         key: 'web.xcto_missing',
         certainty: 'vastgesteld',
@@ -225,9 +231,9 @@ export const headersCheck: Check = {
       });
     }
 
-    const xfo = (h['x-frame-options'] ?? '').toLowerCase();
-    const frameAncestors = /(^|;)\s*frame-ancestors\s/i.test(csp ?? '');
-    if (!frameAncestors && !['deny', 'sameorigin'].includes(xfo.trim())) {
+    const xfo = headerValues(h['x-frame-options']);
+    const frameAncestors = /(^|[;,])\s*frame-ancestors\s/i.test(headerCsp ?? '');
+    if (!frameAncestors && !(xfo.length > 0 && xfo.every((v) => v === 'deny' || v === 'sameorigin'))) {
       findings.push({
         key: 'web.framing_unprotected',
         certainty: 'vastgesteld',
@@ -302,8 +308,31 @@ export const cookiesCheck: Check = {
 
 const SESSION_COOKIE = /^(phpsessid|jsessionid|asp\.net_sessionid|aspsessionid\w*|connect\.sid|laravel_session|ci_session|wordpress_logged_in\w*|wordpress_sec\w*|wp-settings\w*)$|sess|(^|[_.-])sid($|[_.-])|auth|token|login/i;
 
+/** CSRF-cookies (XSRF-TOKEN, csrftoken) moeten juist door scripts leesbaar zijn; dat zijn geen inlogcookies. */
+const CSRF_COOKIE = /csrf|xsrf/i;
+
 export function isSessionCookie(name: string): boolean {
-  return SESSION_COOKIE.test(name);
+  return SESSION_COOKIE.test(name) && !CSRF_COOKIE.test(name);
+}
+
+/** Waarden van een (mogelijk dubbel meegestuurde) header, in kleine letters. */
+export function headerValues(v: string | undefined): string[] {
+  return (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** CSP uit een <meta http-equiv="Content-Security-Policy" content="..."> in de pagina. */
+export function metaContentSecurityPolicy(body: string): string | null {
+  for (const m of body.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/http-equiv\s*=\s*["']?content-security-policy["'\s>]/i.test(tag)) continue;
+    const c = tag.match(/content\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+    const v = (c?.[1] ?? c?.[2] ?? '').trim();
+    if (v) return v;
+  }
+  return null;
 }
 
 export function parseCookie(header: string) {

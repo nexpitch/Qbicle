@@ -97,6 +97,11 @@ export const ACTIONS: Record<string, ActionDef> = {
     why: 'Het certificaat verloopt binnenkort. Verloopt het, dan krijgen bezoekers een waarschuwing.',
     forWho: 'webbouwer',
   },
+  'tls-oud-uitzetten': {
+    title: 'Laat oude, onveilige verbindingen (TLS 1.0 en 1.1) uitzetten',
+    why: 'Je website accepteert nog versleuteling die sinds 2021 als onveilig geldt. Moderne browsers gebruiken die niet meer; aanvallers kunnen er soms wel misbruik van maken.',
+    forWho: 'webbouwer',
+  },
   'spf-instellen': {
     title: 'Leg vast welke servers namens jou mogen mailen (SPF)',
     why: 'Zonder deze instelling kan iedereen makkelijker mail versturen die van jouw domein lijkt te komen.',
@@ -224,6 +229,8 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'cert.untrusted_ca': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
   'cert.name_mismatch': { b: 45, action: 'cert-vernieuwen', voorlopig: true },
   'cert.expires_14d': { b: 20, action: 'cert-automatisch' },
+  'tls.only_legacy': { b: 45, action: 'tls-oud-uitzetten', voorlopig: true },
+  'tls.legacy_enabled': { b: 5, action: 'tls-oud-uitzetten', voorlopig: true },
   'cert.expires_30d': { b: 10, action: 'cert-automatisch', voorlopig: true },
 
   // E-mail: SPF

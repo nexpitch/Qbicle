@@ -5,7 +5,7 @@ import { dkimCheck } from './checks/dkim.ts';
 import { dmarcCheck } from './checks/dmarc.ts';
 import { spfCheck } from './checks/spf.ts';
 import { softwareCheck } from './checks/software.ts';
-import { certificateCheck } from './checks/tls.ts';
+import { certificateCheck, tlsVersionsCheck } from './checks/tls.ts';
 import {
   cookiesCheck,
   headersCheck,
@@ -27,6 +27,7 @@ export const CHECKS: Check[] = [
   dnssecCheck,
   caaCheck,
   certificateCheck,
+  tlsVersionsCheck,
   httpsRedirectCheck,
   headersCheck,
   cookiesCheck,

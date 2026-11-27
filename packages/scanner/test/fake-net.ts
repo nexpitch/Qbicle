@@ -1,4 +1,4 @@
-import type { DnssecStatus, HttpResponse, Net, TlsInfo } from '../src/net.ts';
+import type { DnssecStatus, HttpResponse, LegacyTls, Net, TlsInfo } from '../src/net.ts';
 import { NetError } from '../src/net.ts';
 
 /**
@@ -20,6 +20,8 @@ export interface FakeNetConfig {
   ptr?: Record<string, string[]>;
   dnssec?: Record<string, DnssecStatus | null>;
   tls?: Record<string, TlsInfo | Error>;
+  /** Oude TLS-versies per host; standaard geweigerd. */
+  tlsLegacy?: Record<string, Partial<LegacyTls>>;
   http?: Record<string, Partial<HttpResponse> | Error>;
 }
 
@@ -47,6 +49,10 @@ export function fakeNet(cfg: FakeNetConfig): Net & { requests: string[] } {
       const v = cfg.tls?.[host];
       if (!v) return Promise.reject(new NetError('ECONNREFUSED', 'geen tls'));
       return val(v, v as TlsInfo);
+    },
+    tlsLegacy: async (host) => {
+      requests.push(`tls-oud:${host}`);
+      return { 'TLSv1': false, 'TLSv1.1': false, ...(cfg.tlsLegacy?.[host] ?? {}) };
     },
     httpGet: (url) => {
       requests.push(`get:${url}`);

@@ -80,7 +80,8 @@ export const certificateCheck: Check = {
         title: 'Het certificaat komt van een partij die browsers niet vertrouwen',
         detail: `Het certificaat van ${host} is uitgegeven door ${info.cert.issuer ?? 'een onbekende partij'}, die niet in de lijst van erkende uitgevers staat.`,
       });
-    } else if (err) {
+    } else if (err && !(err === 'ERR_TLS_CERT_ALTNAME_INVALID' && !info.nameMatches)) {
+      // Een certificaat voor een andere naam melden we hieronder één keer, niet ook als "ongeldig".
       findings.push({
         key: 'cert.invalid',
         certainty: 'vastgesteld',
@@ -101,12 +102,16 @@ export const certificateCheck: Check = {
     const lifetimeDays = Math.floor((validTo.getTime() - new Date(info.cert.validFrom).getTime()) / DAY);
     evidence.lifetimeDays = lifetimeDays;
     const shortLived = lifetimeDays <= SHORT_LIVED_DAYS;
+    // Bij korte certificaten (90 dagen, of zelfs 6 dagen) hangt de drempel af van de looptijd:
+    // een certificaat van 6 dagen heeft altijd minder dan een week over, en dat is normaal.
+    const warnDays = shortLived ? Math.min(7, Math.floor(lifetimeDays / 3)) : 14;
+    evidence.warnDays = warnDays;
     if (daysLeft >= 0 && err !== 'CERT_HAS_EXPIRED') {
-      if (daysLeft <= (shortLived ? 7 : 14)) {
+      if (daysLeft <= warnDays) {
         findings.push({
           key: 'cert.expires_14d',
           certainty: 'vastgesteld',
-          title: shortLived ? 'Het certificaat verloopt binnen een week' : 'Het certificaat verloopt binnen twee weken',
+          title: shortLived ? (warnDays >= 7 ? 'Het certificaat verloopt binnen een week' : 'Het certificaat verloopt bijna') : 'Het certificaat verloopt binnen twee weken',
           detail: `Het certificaat van ${host} verloopt op ${dateNl}, over ${daysLeft} dagen.`,
         });
       } else if (!shortLived && daysLeft <= 30) {
@@ -125,5 +130,65 @@ export const certificateCheck: Check = {
       evidence,
       message: findings.length ? undefined : `Geldig tot ${dateNl}, uitgegeven door ${info.cert.issuer ?? 'onbekend'}.`,
     };
+  },
+};
+
+/**
+ * Oude TLS-versies (Erik, 27-11: de scanner mag TLS 1.0 en 1.1 aanbieden). Per versie
+ * één gewone verbinding, zoals een oude browser die zou maken; geen aanval.
+ */
+export const tlsVersionsCheck: Check = {
+  key: 'tls.versions',
+  level: 1,
+  group: 'certificaat',
+  appliesTo: 'website',
+  title: 'Versleuteling: oude TLS-versies',
+  async run(ctx) {
+    const host = hostOf(ctx.asset);
+    const [modern, legacy] = await Promise.all([
+      getTls(ctx, host).then(
+        (i) => ({ ok: true as const, protocol: i.protocol }),
+        (e) => ({ ok: false as const, error: String((e as { code?: string }).code ?? e) }),
+      ),
+      ctx.net.tlsLegacy(host, 443),
+    ]);
+    const accepted = (['TLSv1', 'TLSv1.1'] as const).filter((v) => legacy[v] === true);
+    const evidence = { modern, legacy };
+    const names = accepted.map((v) => (v === 'TLSv1' ? 'TLS 1.0' : 'TLS 1.1')).join(' en ');
+    if (!modern.ok && accepted.length > 0) {
+      return {
+        outcome: 'finding',
+        evidence,
+        findings: [
+          {
+            key: 'tls.only_legacy',
+            certainty: 'vastgesteld',
+            title: 'De website werkt alleen met verouderde versleuteling',
+            detail: `${host} accepteert ${names}, maar geen moderne versie (TLS 1.2 of 1.3). Moderne browsers weigeren deze website daarom.`,
+          },
+        ],
+      };
+    }
+    if (accepted.length > 0) {
+      return {
+        outcome: 'finding',
+        evidence,
+        findings: [
+          {
+            key: 'tls.legacy_enabled',
+            certainty: 'vastgesteld',
+            title: 'De website accepteert nog verouderde versleuteling',
+            detail: `${host} accepteert naast moderne versleuteling ook ${names}. Die versies gelden sinds 2021 als onveilig en kunnen uit.`,
+          },
+        ],
+      };
+    }
+    if (!modern.ok) {
+      return { outcome: 'unknown', evidence, message: `We konden geen beveiligde verbinding met ${host} maken.` };
+    }
+    if (legacy.TLSv1 === null || legacy['TLSv1.1'] === null) {
+      return { outcome: 'unknown', evidence, message: 'We konden niet vaststellen of oude TLS-versies worden geaccepteerd.' };
+    }
+    return { outcome: 'ok', evidence, message: `Alleen moderne versleuteling (${modern.protocol ?? 'TLS 1.2 of hoger'}).` };
   },
 };
