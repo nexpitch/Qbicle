@@ -70,6 +70,16 @@ describe.skipIf(!hasDb)('scan-worker', () => {
     expect(await one(p.pool, `SELECT scans_klaar FROM worker_heartbeat WHERE worker_id = 'test-worker'`)).toEqual({ scans_klaar: 1 });
   });
 
+  it('slaat per bevinding de eigenaar en het platform op (Wix)', async () => {
+    cfg.http![`https://${D}/`] = { status: 200, headers: { 'strict-transport-security': 'max-age=31536000', 'x-wix-request-id': '1' } };
+    await queue();
+    await drainQueue(ctx());
+    const rows = await many<{ finding_key: string; owner: string | null; platform: string | null }>(
+      p.pool, 'SELECT finding_key, owner, platform FROM finding ORDER BY finding_key');
+    expect(rows.find((r) => r.finding_key === 'web.csp_missing')).toMatchObject({ owner: 'platform', platform: 'Wix' });
+    expect(rows.find((r) => r.finding_key === 'dmarc.missing')).toMatchObject({ owner: 'zelf', platform: null });
+  });
+
   it('dezelfde bevinding twee keer is één rij; opgelost als de check hem niet meer ziet; terug is een nieuwe rij', async () => {
     await queue();
     await drainQueue(ctx());

@@ -32,13 +32,13 @@ type Ctx = { user: PageUser; org: NavOrg };
 
 const LEVEL_LABEL: Record<Level, string> = { crit: 'Urgent', warn: 'Aandacht', unk: 'Onbekend', info: 'Ter info', ok: 'In orde' };
 const CERTAINTY_LABEL: Record<string, string> = {
-  vastgesteld: 'Vastgesteld',
+  vastgesteld: 'Gemeten',
   opgegeven: 'Door jou opgegeven',
   mogelijk: 'Mogelijk',
   onbekend: 'Niet vast te stellen',
 };
 const CERTAINTY_UITLEG: Record<string, string> = {
-  vastgesteld: 'We hebben dit zelf gezien.',
+  vastgesteld: 'We hebben dit zelf gemeten. Dat zegt hoe zeker de meting is, niet hoe groot het risico is.',
   opgegeven: 'Dit heb je zelf aan ons doorgegeven.',
   mogelijk: 'We zien sterke aanwijzingen, maar konden het niet helemaal vaststellen.',
   onbekend: 'We konden dit niet controleren. Dat betekent niet dat het in orde is.',
@@ -256,7 +256,7 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
         <h3>{a.title}</h3>
         <p class="small">{a.why}</p>
         <div class="row tags">
-          <span class="badge">{FOR_WHO_LABELS[a.forWho]}</span>
+          <span class="badge">{a.platform && a.forWho === 'zelf' ? `Kun je zelf, via ${a.platform}` : FOR_WHO_LABELS[a.forWho]}</span>
           {a.assets.slice(0, 3).map((x) => (
             <a class="tag" href={`${props.base}/assets/${x.id}`}>
               {x.label}
@@ -275,7 +275,9 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
   const { d } = props;
   const now = d.actions.filter((a) => a.level === 'crit' || a.level === 'warn');
   const top = now.slice(0, 5);
-  const rest = d.actions.slice(top.length);
+  const zelf = top.filter((a) => a.forWho === 'zelf');
+  const anderen = top.filter((a) => a.forWho !== 'zelf');
+  const rest = d.actions.filter((a) => !top.includes(a));
   const meldingen = d.meldingen;
   const assets = d.assets.filter((a) => a.level === 'crit').slice(0, 4);
   return (
@@ -287,11 +289,28 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
       {top.length === 0 ? (
         <p class="melding ok">Niets dat nu direct aandacht nodig heeft. We blijven alles bewaken.</p>
       ) : (
-        <ol class="actions">
-          {top.map((a, i) => (
-            <ActionRow a={a} i={i} base={props.base} />
-          ))}
-        </ol>
+        <>
+          {zelf.length ? (
+            <>
+              <h3 class="small">Wat jij kunt doen</h3>
+              <ol class="actions">
+                {zelf.map((a, i) => (
+                  <ActionRow a={a} i={i} base={props.base} />
+                ))}
+              </ol>
+            </>
+          ) : null}
+          {anderen.length ? (
+            <>
+              <h3 class="small">Wat je webbouwer, IT-partner of hoster moet doen</h3>
+              <ol class="actions" start={zelf.length + 1}>
+                {anderen.map((a, i) => (
+                  <ActionRow a={a} i={i + zelf.length} base={props.base} />
+                ))}
+              </ol>
+            </>
+          ) : null}
+        </>
       )}
       {assets.length ? (
         <p class="small">
@@ -323,7 +342,9 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
       ) : null}
       {rest.length ? (
         <details class="more">
-          <summary>Nog {rest.length} {rest.length === 1 ? 'actie' : 'acties'} voor later</summary>
+          <summary>
+            Nog {rest.length} {rest.length === 1 ? 'punt' : 'punten'} voor later of ter info
+          </summary>
           <ol class="actions" start={top.length + 1}>
             {rest.map((a, i) => (
               <ActionRow a={a} i={i + top.length} base={props.base} />
@@ -331,7 +352,40 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
           </ol>
         </details>
       ) : null}
+      {d.platforms.length ? <PlatformLines d={d} base={props.base} /> : null}
     </section>
+  );
+}
+
+/** Ligt bij je platform: geen taak en telt niet mee, wel één regel per platform. */
+function PlatformLines(props: { d: Dashboard; base: string }) {
+  return (
+    <div class="stack-sm" id="platform">
+      <h3 class="small">Ligt bij je platform</h3>
+      <ul class="list">
+        {props.d.platforms.map((p) => (
+          <li class="list-item">
+            <span class="dot lvl-info" aria-hidden="true"></span>
+            <div class="stack-xs">
+              <p>
+                {p.naam} bepaalt {p.findingCount === 1 ? 'één beveiligingsinstelling' : `${p.findingCount} beveiligingsinstellingen`} van{' '}
+                {p.assets.map((x, i) => (
+                  <>
+                    {i ? ', ' : ''}
+                    <a href={`${props.base}/assets/${x.id}`}>{x.label}</a>
+                  </>
+                ))}
+                . Daar kun je zelf niets aan veranderen; ze tellen niet mee in je score.
+              </p>
+              <p class="small">
+                Dit kun je wel doen: zet tweestapsverificatie aan op je {p.naam}-account, kijk wie er beheerder is, en vraag {p.naam} naar een
+                beveiligingsverklaring (ISO 27001 of SOC 2) en een verwerkersovereenkomst.
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -739,9 +793,16 @@ function FindingCard(props: { f: AssetFindingDetail }) {
       <h3>{f.title}</h3>
       <p>{f.detail}</p>
       {f.certainty === 'mogelijk' || f.certainty === 'onbekend' ? <p class="small">{CERTAINTY_UITLEG[f.certainty]}</p> : null}
-      {f.action ? (
+      {f.action?.forWho === 'platform' ? (
         <div class="todo">
-          <p class="kpi-label">Wat te doen · {FOR_WHO_LABELS[f.action.forWho]}</p>
+          <p class="kpi-label">{FOR_WHO_LABELS.platform}</p>
+          <p class="small">
+            {f.platform ?? 'Je platform'} bepaalt deze instelling; je kunt hem zelf niet veranderen. Daarom telt hij niet mee in je score.
+          </p>
+        </div>
+      ) : f.action ? (
+        <div class="todo">
+          <p class="kpi-label">Wat te doen · {f.platform && f.action.forWho === 'zelf' ? `Kun je zelf, via ${f.platform}` : FOR_WHO_LABELS[f.action.forWho]}</p>
           <p>
             <b>{f.action.title}</b>
           </p>
@@ -793,7 +854,26 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
           <section class="card" aria-labelledby="bev-kop">
             <h2 id="bev-kop">Bevindingen</h2>
             {a.open.length ? (
-              a.open.map((f) => <FindingCard f={f} />)
+              <>
+                {a.open.filter((f) => f.level !== 'info').map((f) => (
+                  <FindingCard f={f} />
+                ))}
+                {a.open.some((f) => f.level === 'info') ? (
+                  <details class="more">
+                    <summary>
+                      {(() => {
+                        const n = a.open.filter((f) => f.level === 'info').length;
+                        return `${n} ${n === 1 ? 'punt' : 'punten'} ter info`;
+                      })()}
+                    </summary>
+                    <div class="stack-sm">
+                      {a.open.filter((f) => f.level === 'info').map((f) => (
+                        <FindingCard f={f} />
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+              </>
             ) : (
               <p class="melding ok">Op dit asset staat niets open.</p>
             )}

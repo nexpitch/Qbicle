@@ -92,6 +92,15 @@ export interface DashboardAction {
   level: Level;
   findingCount: number;
   assets: DashboardAssetRef[];
+  /** Gezet als de klant dit via een platform regelt (bijv. certificaat op Wix). */
+  platform?: string;
+}
+
+/** Bevindingen die alleen een platform kan veranderen: geen taak, één regel per platform. */
+export interface DashboardPlatform {
+  naam: string;
+  findingCount: number;
+  assets: DashboardAssetRef[];
 }
 
 export interface DashboardAsset {
@@ -185,6 +194,7 @@ export interface Dashboard {
   /** Begin van "sinds vorige keer": de periode waarover opgelost en nieuw gaan. */
   since: Date;
   actions: DashboardAction[];
+  platforms: DashboardPlatform[];
   groups: DashboardAssetGroup[];
   assets: DashboardAsset[];
   trend: TrendPoint[];
@@ -455,13 +465,15 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
   });
 
   // Alle acties (het scoremodel geeft er maximaal drie terug), zwaarste eerst.
-  const grouped = new Map<string, { weight: number; fps: string[]; owners: Owner[] }>();
+  const grouped = new Map<string, { weight: number; fps: string[]; owners: Owner[]; info: boolean; platform?: string }>();
   for (const c of current.contributions) {
     if (c.weight <= 0) continue;
-    const g = grouped.get(c.action) ?? { weight: 0, fps: [], owners: [] };
+    const g = grouped.get(c.action) ?? { weight: 0, fps: [], owners: [], info: true };
     g.weight += c.weight;
     g.fps.push(c.fingerprint);
     g.owners.push(c.owner);
+    g.info &&= c.info;
+    if (c.owner === 'platform' && c.platform) g.platform = c.platform;
     grouped.set(c.action, g);
   }
   const actions: DashboardAction[] = [...grouped.entries()]
@@ -486,12 +498,24 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
         why: def.why,
         forWho: forWhoOf(g.owners, def.forWho),
         weight: Math.round(g.weight * 10) / 10,
-        level: levelFromWeight(g.weight, kev),
+        // Alleen lichte punten (gewicht 3 of lager): ter info, geen aandachtspunt.
+        level: g.info && !kev && g.weight < CRIT_WEIGHT ? ('info' as const) : levelFromWeight(g.weight, kev),
         findingCount: g.fps.length,
         assets: [...refs.values()],
+        ...(g.platform ? { platform: g.platform } : {}),
       };
     })
     .sort((x, y) => y.weight - x.weight);
+
+  const platforms: DashboardPlatform[] = current.platformNotes.map((n) => {
+    const refs = new Map<string, DashboardAssetRef>();
+    for (const fp of n.fingerprints) {
+      const f = byFingerprint.get(fp);
+      const a = f ? byId.get(f.asset_id) : undefined;
+      if (a) refs.set(a.id, { id: a.id, label: assetLabel(a) });
+    }
+    return { naam: n.platform, findingCount: n.fingerprints.length, assets: [...refs.values()] };
+  });
 
   // Trend: wekelijks punt, teruggerekend uit de geschiedenis van bevindingen.
   const firstKnown = l.assets.reduce<Date | null>((m, a) => (!m || a.first_seen < m ? a.first_seen : m), null);
@@ -612,6 +636,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     counts,
     since,
     actions,
+    platforms,
     groups,
     assets,
     trend,
@@ -659,6 +684,8 @@ export interface AssetFindingDetail {
   certainty: Certainty;
   level: Level;
   action: { key: string; title: string; why: string; forWho: ForWho } | null;
+  /** Platform of hostingpartij waar het asset draait, als de scanner die herkende. */
+  platform: string | null;
   vulns: { cveId: string; cvss: number | null; inKev: boolean; epss: number | null }[];
   sources: Source[];
   firstSeen: Date;
@@ -723,6 +750,7 @@ export async function getAssetDetail(p: Platform, userId: string, organizationId
       certainty: f.certainty,
       level: f.resolved_at || f.accepted_at ? 'ok' : levelOf(c, kev),
       action: actionKey && def ? { key: actionKey, title: def.title, why: def.why, forWho: c ? ownerLabelOf(c) : def.forWho } : null,
+      platform: f.platform,
       vulns: vs.map((v) => ({ cveId: v.cve_id, cvss: v.cvss === null ? null : Number(v.cvss), inKev: v.in_kev, epss: v.epss === null ? null : Number(v.epss) })),
       sources: sourcesFor(Array.isArray(f.sources) ? f.sources : [], vs),
       firstSeen: f.first_seen,

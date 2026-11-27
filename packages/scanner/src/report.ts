@@ -20,7 +20,7 @@ const OUTCOME_NL = {
 } as const;
 
 const CERTAINTY_NL = {
-  vastgesteld: 'Technisch vastgesteld',
+  vastgesteld: 'Gemeten',
   mogelijk: 'Mogelijk risico',
   onbekend: 'Onbekend',
   opgegeven: 'Door jou opgegeven',
