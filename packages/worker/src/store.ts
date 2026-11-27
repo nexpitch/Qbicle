@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
-import { many, one } from '@qbicle/platform';
+import { many, one, verifyChecklistAfterScan } from '@qbicle/platform';
 import type { ScanReport } from '@qbicle/scanner';
 import type { Finding } from '@qbicle/score';
 
@@ -180,6 +180,9 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
             max_level = $4 WHERE id = $1`,
     [job.id, now, report.scannerVersion, report.maxLevel],
   );
+
+  // 5. Checklist: afgevinkte acties bevestigen of terugzetten op "nog niet opgelost".
+  await verifyChecklistAfterScan(client, job.organizationId, job.id);
 
   return { assets: assetIds.size, checks: report.checks.length, nieuw, bijgewerkt, opgelost: toResolve.length, urgency: s.urgency,
     eerste: (eerdere?.n ?? 0) === 0, acties: s.actionCount };

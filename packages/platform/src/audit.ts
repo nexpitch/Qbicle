@@ -54,6 +54,7 @@ export type AuditAction =
   | 'systeem.toegevoegd'
   | 'systeem.gewijzigd'
   | 'systeem.verwijderd'
+  | 'actie.bijgewerkt'
   // Interne cockpit (apps/cockpit) en operationele onderdelen (packages/ops).
   | `cockpit.${string}`
   | `ops.${string}`;

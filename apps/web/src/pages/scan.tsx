@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import type { DomainScanInfo, ScanView } from '@qbicle/platform';
+import type { DomainScanInfo, ScanControle, ScanView } from '@qbicle/platform';
 import { BANDS } from '@qbicle/score';
 import { FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
 
@@ -86,6 +86,27 @@ export function DomeinScanBlok(props: { orgId: string; domainId: string; info: D
   );
 }
 
+/** Uitslag van één controle in gewone taal; app.js gebruikt dezelfde teksten. */
+export function controleUitslag(c: Pick<ScanControle, 'uitkomst' | 'bevindingen'>): { tekst: string; kind: 'ok' | 'warn' | 'unk' } {
+  switch (c.uitkomst) {
+    case 'ok':
+      return { tekst: 'In orde', kind: 'ok' };
+    case 'finding':
+      return { tekst: c.bevindingen === 1 ? '1 bevinding' : `${c.bevindingen} bevindingen`, kind: 'warn' };
+    case 'not_applicable':
+      return { tekst: 'Niet van toepassing', kind: 'unk' };
+    default:
+      return { tekst: 'Niet te controleren', kind: 'unk' };
+  }
+}
+
+export function samenvattingTekst(s: NonNullable<ScanView['samenvatting']>): string {
+  const c = s.uitgevoerd === 1 ? '1 controle' : `${s.uitgevoerd} controles`;
+  const b = s.bevindingen === 0 ? 'geen bevindingen' : s.bevindingen === 1 ? '1 bevinding' : `${s.bevindingen} bevindingen`;
+  const n = s.nietGelukt ? `. ${s.nietGelukt === 1 ? '1 controle kon' : `${s.nietGelukt} controles konden`} we deze keer niet uitvoeren` : '';
+  return `Dit hebben we gecontroleerd: ${c}, ${b}${n}.`;
+}
+
 const STEP_LABEL = { wachten: 'Wacht', bezig: 'Bezig', klaar: 'Klaar' } as const;
 const STEP_KIND = { wachten: 'unk', bezig: 'warn', klaar: 'ok' } as const;
 
@@ -153,7 +174,7 @@ export function ScanPage(props: Ctx & { s: ScanView; magScannen?: boolean }) {
         </p>
         <ol class="scan-stappen">
           {s.steps.map((st) => (
-            <li data-stap={st.key} data-stap-status={st.status}>
+            <li data-stap={st.key} data-stap-status={st.status} data-stap-bezig={st.bezig}>
               <div class="stap-tekst">
                 <div class="stap-titel">
                   <strong>{st.label}</strong>
@@ -166,6 +187,27 @@ export function ScanPage(props: Ctx & { s: ScanView; magScannen?: boolean }) {
             </li>
           ))}
         </ol>
+        <p class="scan-nu" data-scan-nu hidden></p>
+        <div class="stack-sm" data-scan-controles-blok hidden={s.controles.length === 0}>
+          <h3>Wat we controleerden</h3>
+          <ol class="scan-controles" data-scan-controles>
+            {s.controles.map((c) => {
+              const u = controleUitslag(c);
+              return (
+                <li data-controle={`${c.key}|${c.asset}`}>
+                  <span class="stap-tekst">
+                    <strong>{c.titel}</strong>
+                    <span class="stap-uitleg">{c.asset}</span>
+                  </span>
+                  <Status kind={u.kind}>{u.tekst}</Status>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+        <p class="melding" data-scan-samenvatting hidden={!(s.status === 'klaar' && s.samenvatting)}>
+          {s.samenvatting ? samenvattingTekst(s.samenvatting) : ''}
+        </p>
         <div class="melding ok" data-scan-resultaat hidden={!s.result}>
           {s.result ? (
             <>

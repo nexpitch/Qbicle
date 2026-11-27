@@ -21,11 +21,32 @@ const ACTIVE_SUBSCRIPTION = "('proef', 'actief', 'achterstallig', 'opgezegd')";
 
 /** De stappen die de klant tijdens het scannen ziet; sleutels zijn de groepen van de scanner-checks. */
 export const SCAN_STEPS = [
-  { key: 'domein', label: 'Domein en DNS', uitleg: 'DNSSEC en welke certificaatuitgevers je toestaat' },
-  { key: 'e-mail', label: 'E-mail', uitleg: 'SPF, DKIM en DMARC: kan iemand uit jullie naam mailen?' },
-  { key: 'certificaat', label: 'Certificaat', uitleg: 'Is de beveiligde verbinding geldig en up-to-date?' },
-  { key: 'website', label: 'Website en software', uitleg: 'Beveiligingsinstellingen, cookies en verouderde software' },
+  { key: 'domein', label: 'Domein en DNS', uitleg: 'DNSSEC en welke certificaatuitgevers je toestaat', bezig: 'We controleren je DNS-records' },
+  { key: 'e-mail', label: 'E-mail', uitleg: 'SPF, DKIM en DMARC: kan iemand uit jullie naam mailen?', bezig: 'We controleren je mailbeveiliging (SPF, DKIM en DMARC)' },
+  { key: 'certificaat', label: 'Certificaat', uitleg: 'Is de beveiligde verbinding geldig en up-to-date?', bezig: 'We controleren het certificaat van je website' },
+  { key: 'website', label: 'Website en software', uitleg: 'Beveiligingsinstellingen, cookies en verouderde software', bezig: 'We controleren je website: software, beveiligingsinstellingen en cookies' },
 ] as const;
+
+/** Eén uitgevoerde controle, zoals de klant hem tijdens en na de scan ziet. */
+export interface ScanControle {
+  /** Sleutel van de scanner-check, bijv. "mail.dmarc". */
+  key: string;
+  titel: string;
+  groep: string;
+  /** Waarop: het domein of de website (zonder https://). */
+  asset: string;
+  uitkomst: 'ok' | 'finding' | 'unknown' | 'error' | 'not_applicable';
+  bevindingen: number;
+}
+
+/** "Dit hebben we gecontroleerd": alleen controles die echt zijn uitgevoerd tellen mee. */
+export function controleSamenvatting(controles: ScanControle[]): { uitgevoerd: number; bevindingen: number; nietGelukt: number } {
+  return {
+    uitgevoerd: controles.filter((c) => c.uitkomst === 'ok' || c.uitkomst === 'finding').length,
+    bevindingen: controles.reduce((n, c) => n + (c.uitkomst === 'finding' ? c.bevindingen : 0), 0),
+    nietGelukt: controles.filter((c) => c.uitkomst === 'unknown' || c.uitkomst === 'error').length,
+  };
+}
 
 export type StepStatus = 'wachten' | 'bezig' | 'klaar';
 
@@ -33,6 +54,8 @@ export type StepStatus = 'wachten' | 'bezig' | 'klaar';
 export interface ScanProgress {
   stappen: Record<string, { totaal: number; klaar: number }>;
   opslaan?: boolean;
+  /** Uitgevoerde controles in de volgorde waarin ze klaar waren (sinds 0023; oudere scans hebben dit niet). */
+  controles?: ScanControle[];
 }
 
 export interface ScanView {
@@ -45,7 +68,10 @@ export interface ScanView {
   startedAt: Date | null;
   finishedAt: Date | null;
   error: string | null;
-  steps: { key: string; label: string; uitleg: string; status: StepStatus }[];
+  steps: { key: string; label: string; uitleg: string; bezig: string; status: StepStatus }[];
+  /** Uitgevoerde controles, één voor één zoals de worker ze afrondde. */
+  controles: ScanControle[];
+  samenvatting: { uitgevoerd: number; bevindingen: number; nietGelukt: number } | null;
   /** 0..100: hoe ver de scan is. */
   pct: number;
   result: { urgency: number; band: string; openFindings: number } | null;
@@ -110,7 +136,7 @@ export function stepsFor(status: ScanView['status'], progress: ScanProgress | nu
     else if (status !== 'bezig' || !st) stepStatus = 'wachten';
     else stepStatus = st.totaal > 0 && st.klaar >= st.totaal ? 'klaar' : 'bezig';
     if (stepStatus === 'klaar') done++;
-    return { key: s.key, label: s.label, uitleg: s.uitleg, status: stepStatus };
+    return { key: s.key, label: s.label, uitleg: s.uitleg, bezig: s.bezig, status: stepStatus };
   });
   const pct = status === 'klaar' ? 100 : status === 'bezig' ? Math.min(95, Math.round(5 + (done / SCAN_STEPS.length) * 85 + (progress?.opslaan ? 5 : 0))) : 0;
   return { steps, pct };
@@ -174,6 +200,11 @@ export async function getScan(p: Platform, userId: string, organizationId: strin
     error,
     steps,
     pct,
+    // In de volgorde van de stappen, zoals de klant ze ook tijdens de scan zag.
+    controles: [...(s.progress?.controles ?? [])].sort(
+      (a, b) => SCAN_STEPS.findIndex((x) => x.key === a.groep) - SCAN_STEPS.findIndex((x) => x.key === b.groep),
+    ),
+    samenvatting: s.progress?.controles?.length ? controleSamenvatting(s.progress.controles) : null,
     result,
     workerActief,
     retryable: s.status === 'mislukt' && !/niet \(meer\) bevestigd|gevraagd het niet te scannen/.test(s.error ?? ''),

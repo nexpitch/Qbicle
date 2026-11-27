@@ -20,6 +20,8 @@ import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { KoppelingStatusBadge } from './koppelingen.tsx';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
+import { ChecklistVoortgang, statusKind } from './acties.tsx';
+import type { Checklist } from '@qbicle/platform';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -88,7 +90,7 @@ export interface DashSection {
   body: Child;
 }
 
-export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean; extra?: DashSection[] }) {
+export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | null; demo: boolean; extra?: DashSection[]; checklist?: Checklist }) {
   const { d, org, b } = props;
   const base = `/o/${org.id}`;
   return (
@@ -117,7 +119,7 @@ export function DashboardPage(props: Ctx & { d: Dashboard; b: BillingOverview | 
       {d.hasData ? (
         <>
           <Kpis d={d} base={base} />
-          <AandachtCard d={d} base={base} />
+          <AandachtCard d={d} base={base} checklist={props.checklist} />
         </>
       ) : (
         <EmptyState base={base} demo={props.demo} meldingen={d.meldingen} />
@@ -216,8 +218,9 @@ function Kpis(props: { d: Dashboard; base: string }) {
   );
 }
 
-function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
+function ActionRow(props: { a: DashboardAction; i: number; base: string; checklist?: Checklist }) {
   const { a } = props;
+  const task = props.checklist?.items.find((x) => x.key === a.key);
   return (
     <li class="action">
       <span class={`action-nr lvl-${a.level}`} aria-hidden="true">
@@ -235,6 +238,12 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
           ))}
           {a.assets.length > 3 ? <span class="small">en {a.assets.length - 3} meer</span> : null}
         </div>
+        {task ? (
+          <p class="small">
+            <Status kind={statusKind(task)}>{task.statusLabel}</Status>{' '}
+            <a href={`${props.base}/acties#actie-${a.key}`}>{task.status === 'open' ? 'Afvinken' : 'Bekijken'}</a>
+          </p>
+        ) : null}
       </div>
       <Status kind={a.level}>{LEVEL_LABEL[a.level]}</Status>
     </li>
@@ -242,7 +251,7 @@ function ActionRow(props: { a: DashboardAction; i: number; base: string }) {
 }
 
 /** Bovenaan: wat nu aandacht nodig heeft (urgent en aandacht), plus meldingen. De rest klapt in. */
-function AandachtCard(props: { d: Dashboard; base: string }) {
+function AandachtCard(props: { d: Dashboard; base: string; checklist?: Checklist }) {
   const { d } = props;
   const now = d.actions.filter((a) => a.level === 'crit' || a.level === 'warn');
   const top = now.slice(0, 5);
@@ -255,12 +264,13 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
         <h2 id="acties-kop">Direct aandacht</h2>
         <span class="small">belangrijkste eerst</span>
       </div>
+      {props.checklist && props.checklist.summary.total ? <ChecklistVoortgang s={props.checklist.summary} href={`${props.base}/acties`} /> : null}
       {top.length === 0 ? (
         <p class="melding ok">Niets dat nu direct aandacht nodig heeft. We blijven alles bewaken.</p>
       ) : (
         <ol class="actions">
           {top.map((a, i) => (
-            <ActionRow a={a} i={i} base={props.base} />
+            <ActionRow a={a} i={i} base={props.base} checklist={props.checklist} />
           ))}
         </ol>
       )}
@@ -297,7 +307,7 @@ function AandachtCard(props: { d: Dashboard; base: string }) {
           <summary>Nog {rest.length} {rest.length === 1 ? 'actie' : 'acties'} voor later</summary>
           <ol class="actions" start={top.length + 1}>
             {rest.map((a, i) => (
-              <ActionRow a={a} i={i + top.length} base={props.base} />
+              <ActionRow a={a} i={i + top.length} base={props.base} checklist={props.checklist} />
             ))}
           </ol>
         </details>

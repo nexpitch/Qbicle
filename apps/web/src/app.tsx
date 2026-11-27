@@ -39,6 +39,7 @@ import {
   findDnsHost,
   getAssetDetail,
   getDashboard,
+  getChecklist,
   listDomains,
   resolveAccess,
 } from '@qbicle/platform';
@@ -58,6 +59,7 @@ import {
   WelkomPage,
 } from './pages/abonnement.tsx';
 import { ScanPage } from './pages/scan.tsx';
+import { ActiesPage } from './pages/acties.tsx';
 import { SysteemFormPage, SystemenPage } from './pages/systemen.tsx';
 import { ItStappenplanPage, KoppelingDetailPage, KoppelingenPage } from './pages/koppelingen.tsx';
 
@@ -204,7 +206,14 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
       koppelingenSectie(koppelingen.lijst(ctx.org.id), await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
       systemenSectie(await listSystemen(p, ctx.s.user.id, ctx.org.id), `/o/${ctx.org.id}`),
     ];
-    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} />);
+    const checklist = await getChecklist(p, ctx.s.user.id, ctx.org.id, d.actions);
+    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} checklist={checklist} />);
+  });
+
+  app.get('/o/:org/acties', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    return c.html(<ActiesPage user={ctx.user} org={ctx.org} c={await getChecklist(p, ctx.s.user.id, ctx.org.id)} />);
   });
 
   app.get('/o/:org/assets', async (c) => {
