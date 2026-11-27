@@ -100,7 +100,6 @@ describe('security headers', () => {
       'web.csp_missing',
       'web.framing_unprotected',
       'web.hsts_missing',
-      'web.referrer_missing',
       'web.xcto_missing',
     ]);
   });

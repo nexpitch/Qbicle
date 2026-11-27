@@ -234,20 +234,35 @@ export const headersCheck: Check = {
     const xfo = headerValues(h['x-frame-options']);
     const frameAncestors = /(^|[;,])\s*frame-ancestors\s/i.test(headerCsp ?? '');
     if (!frameAncestors && !(xfo.length > 0 && xfo.every((v) => v === 'deny' || v === 'sameorigin'))) {
-      findings.push({
-        key: 'web.framing_unprotected',
-        certainty: 'vastgesteld',
-        title: 'De website kan in andermans pagina worden ingesloten',
-        detail: 'Er is geen frame-ancestors of X-Frame-Options ingesteld. Een nepsite kan je pagina dan onzichtbaar insluiten om klikken te misleiden.',
-      });
+      // Misleiden met klikken loont alleen waar een bezoeker iets invult of ingelogd iets doet.
+      const formulier = sensitiveForm(final.body);
+      if (formulier) (evidence as Record<string, unknown>).formulier = formulier;
+      findings.push(
+        formulier
+          ? {
+              key: 'web.framing_login',
+              certainty: 'vastgesteld',
+              title: 'De pagina met een inlog- of betaalformulier kan in andermans pagina worden ingesloten',
+              detail: `Er is geen frame-ancestors of X-Frame-Options ingesteld, en de pagina heeft een ${formulier === 'betalen' ? 'betaalformulier' : 'inlogformulier'}. Een nepsite kan de pagina dan onzichtbaar insluiten en bezoekers laten klikken of invullen zonder dat ze het merken.`,
+            }
+          : {
+              key: 'web.framing_unprotected',
+              certainty: 'vastgesteld',
+              title: 'De website kan in andermans pagina worden ingesloten',
+              detail: 'Er is geen frame-ancestors of X-Frame-Options ingesteld. Op deze pagina zagen we geen inlog- of betaalformulier, dus het risico is klein; met zo\'n formulier kan een nepsite bezoekers laten klikken of invullen zonder dat ze het merken.',
+            },
+      );
     }
 
-    if (!h['referrer-policy']) {
+    // Zonder Referrer-Policy sturen browsers sinds 2021 alleen het domein mee naar andere sites;
+    // alleen een waarde die meer doorgeeft is een bevinding.
+    const referrer = effectiveReferrerPolicy(h['referrer-policy']);
+    if (referrer === 'unsafe-url' || referrer === 'no-referrer-when-downgrade') {
       findings.push({
-        key: 'web.referrer_missing',
+        key: 'web.referrer_unsafe',
         certainty: 'vastgesteld',
-        title: 'Geen Referrer-Policy ingesteld',
-        detail: 'De website legt niet vast welke adresgegevens naar andere sites mogen worden meegestuurd.',
+        title: 'De website geeft volledige adressen door aan andere websites',
+        detail: `De Referrer-Policy staat op "${referrer}". Andere websites zien dan het volledige adres van de pagina die je bezoeker bekeek, inclusief wat erachter staat (zoals zoekwoorden of een ordernummer). Zonder deze instelling doen browsers dat niet.`,
       });
     }
 
@@ -281,7 +296,11 @@ export const cookiesCheck: Check = {
       return { outcome: 'ok', evidence, message: 'De homepage zet geen cookies bij het eerste bezoek.' };
     }
     const findings: FindingDraft[] = [];
-    const insecure = [...new Set(cookies.filter((c) => !c.secure).map((c) => c.name))];
+    // Secure doet ertoe bij sessie- en inlogcookies. Dwingt de site HSTS af, dan gebruikt de
+    // browser toch al alleen https; zonder HSTS telt elke cookie zonder Secure.
+    const hsts = hstsActive(chain);
+    (evidence as Record<string, unknown>).hsts = hsts;
+    const insecure = [...new Set(cookies.filter((c) => !c.secure && (!hsts || isSessionCookie(c.name))).map((c) => c.name))];
     // Alleen sessie- en inlogcookies horen HttpOnly te hebben; toestemmings- en
     // analysecookies moeten vaak juist door scripts gelezen worden.
     const noHttpOnly = [...new Set(cookies.filter((c) => !c.httpOnly && isSessionCookie(c.name)).map((c) => c.name))];
@@ -290,7 +309,9 @@ export const cookiesCheck: Check = {
         key: 'web.cookie_insecure',
         certainty: 'vastgesteld',
         title: 'Cookies kunnen over een onbeveiligde verbinding worden verstuurd',
-        detail: `Deze cookies missen de Secure-vlag: ${insecure.join(', ')}.`,
+        detail: hsts
+          ? `Deze sessie- of inlogcookies missen de Secure-vlag: ${insecure.join(', ')}. De website dwingt https af (HSTS), maar bij het allereerste bezoek of na het verlopen daarvan kan zo'n cookie alsnog onbeveiligd worden verstuurd.`
+          : `Deze cookies missen de Secure-vlag: ${insecure.join(', ')}. De website dwingt ook geen https af (HSTS), dus de browser kan ze over een onbeveiligde verbinding versturen.`,
       });
     }
     if (noHttpOnly.length) {
@@ -313,6 +334,43 @@ const CSRF_COOKIE = /csrf|xsrf/i;
 
 export function isSessionCookie(name: string): boolean {
   return SESSION_COOKIE.test(name) && !CSRF_COOKIE.test(name);
+}
+
+/** HSTS met een max-age boven nul op het eerste https-antwoord van de host. */
+function hstsActive(chain: Chain): boolean {
+  const first = chain.hops.find((h) => new URL(h.url).protocol === 'https:');
+  const v = first?.headers['strict-transport-security'];
+  return Number(v?.match(/max-age\s*=\s*"?(\d+)/i)?.[1] ?? 0) > 0;
+}
+
+const REFERRER_POLICIES = new Set([
+  'no-referrer',
+  'no-referrer-when-downgrade',
+  'origin',
+  'origin-when-cross-origin',
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
+  'unsafe-url',
+]);
+
+/** De Referrer-Policy die de browser gebruikt: de laatste geldige waarde in de lijst. */
+export function effectiveReferrerPolicy(v: string | undefined): string | null {
+  const valid = headerValues(v).filter((x) => REFERRER_POLICIES.has(x));
+  return valid.at(-1) ?? null;
+}
+
+/**
+ * Heeft de pagina een inlog- of betaalformulier? Een wachtwoordveld, of een veld voor
+ * een kaartnummer (autocomplete="cc-number"). Alleen wat in de html staat.
+ */
+export function sensitiveForm(body: string): 'inloggen' | 'betalen' | null {
+  for (const m of body.matchAll(/<input\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (/autocomplete\s*=\s*["']?cc-(number|csc|exp)/i.test(tag)) return 'betalen';
+  }
+  if (/<input\b[^>]*\btype\s*=\s*["']?password\b/i.test(body)) return 'inloggen';
+  return null;
 }
 
 /** Waarden van een (mogelijk dubbel meegestuurde) header, in kleine letters. */

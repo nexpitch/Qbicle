@@ -126,8 +126,8 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
     if (open) {
       await client.query(
         `UPDATE finding SET last_seen = $2, certainty = $3, title = $4, detail = $5, sources = $6,
-                finding_key = $7, check_key = $8, last_scan_id = $9 WHERE id = $1`,
-        [open.id, now, f.certainty, f.title, f.detail, sources, f.key, f.checkKey, job.id],
+                finding_key = $7, check_key = $8, last_scan_id = $9, owner = $10, platform = $11 WHERE id = $1`,
+        [open.id, now, f.certainty, f.title, f.detail, sources, f.key, f.checkKey, job.id, f.owner ?? null, platformOf(f)],
       );
       findingId = open.id;
       bijgewerkt++;
@@ -135,10 +135,10 @@ export async function storeScanReport(client: pg.PoolClient, job: ScanJob, repor
       const r = await one<{ id: string }>(
         client,
         `INSERT INTO finding (asset_id, check_key, finding_key, fingerprint, scan_fingerprint, certainty, title, detail,
-                              sources, first_seen, last_seen, last_scan_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11) RETURNING id`,
+                              sources, first_seen, last_seen, last_scan_id, owner, platform)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12, $13) RETURNING id`,
         [assetId, f.checkKey, f.key, episodeFingerprint(assetId, f.fingerprint, now), f.fingerprint, f.certainty,
-          f.title, f.detail, sources, now, job.id],
+          f.title, f.detail, sources, now, job.id, f.owner ?? null, platformOf(f)],
       );
       findingId = r!.id;
       nieuw++;
@@ -211,4 +211,9 @@ async function storeVulns(client: pg.PoolClient, findingId: string, f: Finding):
     );
     await client.query('INSERT INTO finding_vuln (finding_id, cve_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [findingId, v.cveId]);
   }
+}
+
+/** Platformnaam zoals de scanner die zag, ingekort tot wat de kolom toestaat. */
+function platformOf(f: { platform?: string }): string | null {
+  return f.platform ? f.platform.slice(0, 100) : null;
 }

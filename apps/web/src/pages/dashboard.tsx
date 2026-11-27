@@ -30,7 +30,7 @@ import { WebProfielSectie } from './webprofiel.tsx';
 
 type Ctx = { user: PageUser; org: NavOrg };
 
-const LEVEL_LABEL: Record<Level, string> = { crit: 'Urgent', warn: 'Aandacht', unk: 'Onbekend', ok: 'In orde' };
+const LEVEL_LABEL: Record<Level, string> = { crit: 'Urgent', warn: 'Aandacht', unk: 'Onbekend', info: 'Ter info', ok: 'In orde' };
 const CERTAINTY_LABEL: Record<string, string> = {
   vastgesteld: 'Vastgesteld',
   opgegeven: 'Door jou opgegeven',

@@ -8,14 +8,16 @@ import {
   REPEAT_FACTOR,
   DIVISOR,
   FALLBACK_WEIGHT,
+  INFO_MAX_B,
   MAX_ACTIONS,
+  PLATFORM_TELT_MEE,
   MODEL_VERSION,
   VISIBILITY_FACTOR,
   WEIGHTS,
   type Band,
   type ForWho,
 } from './model.ts';
-import type { Finding, LinkedVuln, Outcome } from './types.ts';
+import type { Finding, LinkedVuln, Outcome, Owner } from './types.ts';
 
 export interface Contribution {
   fingerprint: string;
@@ -31,8 +33,29 @@ export interface Contribution {
    * certificaatfout op hetzelfde asset al meetelt.
    */
   r: number;
-  /** b × m × z × k × r, vóór het plafond per actie */
+  /**
+   * Platformfactor: 0 als alleen het platform dit kan veranderen (owner "platform"),
+   * behalve bij PLATFORM_TELT_MEE en een actief misbruikt lek; anders 1.
+   */
+  p: number;
+  /** b × m × z × k × r × p, vóór het plafond per actie */
   weight: number;
+  /** Wie het kan oplossen: Finding.owner, of anders de doelgroep van de actie. */
+  owner: Owner;
+  /** Platform of hostingpartij van het asset, als die bekend is. */
+  platform?: string;
+  /**
+   * Ter info: telt (licht) mee, maar is geen aandachtspunt. Gewicht in het model
+   * (b) van INFO_MAX_B of lager, zonder actief misbruikt lek.
+   */
+  info: boolean;
+}
+
+export interface PlatformNote {
+  /** Bijvoorbeeld "Wix". */
+  platform: string;
+  /** Bevindingen die alleen het platform kan veranderen en daarom niet meetellen. */
+  fingerprints: string[];
 }
 
 export interface TopAction {
@@ -40,6 +63,8 @@ export interface TopAction {
   title: string;
   why: string;
   forWho: ForWho;
+  /** Gezet als de actie op een platform draait: de klant regelt het dan via dat platform. */
+  platform?: string;
   weight: number;
   findingCount: number;
   fingerprints: string[];
@@ -74,6 +99,11 @@ export interface ScoreResult {
    * goed nieuws, want een groot deel is niet gecontroleerd. Het rapport toont dit naast de score.
    */
   coverageWarning: string | null;
+  /**
+   * Per platform de bevindingen die alleen het platform kan veranderen. Geen taak;
+   * het rapport toont één regel per platform (leverancierscheck).
+   */
+  platformNotes: PlatformNote[];
 }
 
 export interface ScoreInput {
@@ -112,6 +142,7 @@ export function score(input: ScoreInput): ScoreResult {
   const contributions: Contribution[] = [];
 
   const raw: Omit<Contribution, 'r'>[] = [];
+  const platformNotes = new Map<string, string[]>();
   for (const f of input.findings) {
     // Dezelfde bevinding twee keer aanleveren mag de score niet verdubbelen.
     if (seen.has(f.fingerprint)) continue;
@@ -125,7 +156,27 @@ export function score(input: ScoreInput): ScoreResult {
     const m = exploitFactor(f.vulns);
     const z = f.z ?? VISIBILITY_FACTOR[f.asset.visibility];
     const k = CERTAINTY_FACTOR[f.certainty];
-    raw.push({ fingerprint: f.fingerprint, key: f.key, action: def.action, b: def.b, m, z, k, weight: def.b * m * z * k });
+    const kev = f.vulns?.some((v) => v.inKev) === true;
+    const owner: Owner = f.owner ?? ACTIONS[def.action]?.forWho ?? 'it-partner';
+    const p = owner === 'platform' && !PLATFORM_TELT_MEE.has(f.key) && !kev ? 0 : 1;
+    if (p === 0) {
+      const naam = f.platform ?? 'je platform';
+      platformNotes.set(naam, [...(platformNotes.get(naam) ?? []), f.fingerprint]);
+    }
+    raw.push({
+      fingerprint: f.fingerprint,
+      key: f.key,
+      action: def.action,
+      b: def.b,
+      m,
+      z,
+      k,
+      p,
+      weight: def.b * m * z * k * p,
+      owner,
+      ...(f.platform ? { platform: f.platform } : {}),
+      info: def.b <= INFO_MAX_B && !kev,
+    });
   }
 
   // Zwaarste eerst, zodat die volledig telt en herhalingen de korting krijgen.
@@ -185,15 +236,21 @@ export function score(input: ScoreInput): ScoreResult {
       why: 'We hebben iets gevonden waar nog geen vaste uitleg voor is.',
       forWho: 'it-partner' as const,
     };
+    // Telt een platformbevinding toch mee (certificaat, https, actief lek), dan moet de
+    // klant het zelf bij het platform regelen.
+    const who: ForWho = c.owner === 'platform' ? 'zelf' : c.owner;
     const a = byAction.get(c.action) ?? {
       key: c.action,
       title: def.title,
       why: def.why,
-      forWho: def.forWho,
+      forWho: who,
+      ...(c.owner === 'platform' && c.platform ? { platform: c.platform } : {}),
       weight: 0,
       findingCount: 0,
       fingerprints: [],
     };
+    // Verschillende eigenaren binnen één actie: dan geldt de doelgroep uit het model.
+    if (a.findingCount > 0 && a.forWho !== who) a.forWho = def.forWho;
     a.weight += c.weight;
     a.findingCount += 1;
     a.fingerprints.push(c.fingerprint);
@@ -222,5 +279,8 @@ export function score(input: ScoreInput): ScoreResult {
     actionCount: actions.length,
     unknownKeys: [...unknownKeys].sort(),
     coverageWarning,
+    platformNotes: [...platformNotes.entries()]
+      .map(([platform, fingerprints]) => ({ platform, fingerprints }))
+      .sort((x, y) => x.platform.localeCompare(y.platform)),
   };
 }

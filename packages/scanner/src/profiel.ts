@@ -51,9 +51,9 @@ export const MAATREGEL_TEKST: Record<string, { label: string; uitleg: string }> 
 export const HEADER_MAATREGELEN: { key: string; label: string; bad: string[]; uitleg: string }[] = [
   { key: 'hsts', label: 'Altijd een beveiligde verbinding (HSTS)', bad: ['web.hsts_missing', 'web.hsts_short'], uitleg: 'Browsers gebruiken alleen nog https, ook als iemand http intypt.' },
   { key: 'csp', label: 'Bescherming tegen ingevoegde scripts (CSP)', bad: ['web.csp_missing'], uitleg: 'Beperkt welke scripts de pagina mag laden; dat maakt misbruik via een lek veel lastiger.' },
-  { key: 'framing', label: 'Niet in een andere website in te bouwen', bad: ['web.framing_unprotected'], uitleg: 'Voorkomt dat een nepwebsite jouw pagina onzichtbaar inbouwt om klikken te stelen.' },
+  { key: 'framing', label: 'Niet in een andere website in te bouwen', bad: ['web.framing_unprotected', 'web.framing_login'], uitleg: 'Voorkomt dat een nepwebsite jouw pagina onzichtbaar inbouwt om klikken te stelen.' },
   { key: 'xcto', label: 'Bestandstypes niet laten raden (nosniff)', bad: ['web.xcto_missing'], uitleg: 'De browser voert geen bestanden uit die zich als iets anders voordoen.' },
-  { key: 'referrer', label: 'Adressen niet doorgeven aan andere websites', bad: ['web.referrer_missing'], uitleg: 'Andere websites zien niet welke pagina je bezoeker net bekeek.' },
+  { key: 'referrer', label: 'Adressen niet doorgeven aan andere websites', bad: ['web.referrer_unsafe'], uitleg: 'Andere websites zien niet welke pagina je bezoeker net bekeek.' },
 ];
 
 function findingKeys(c: CheckResult | undefined): Set<string> {

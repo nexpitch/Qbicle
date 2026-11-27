@@ -14,6 +14,7 @@ import {
   versionDisclosureCheck,
 } from './checks/web.ts';
 import { normalizeDomain, organizationalDomain } from './domain.ts';
+import { assignOwners, hostingPerAsset } from './eigenaar.ts';
 import { fingerprint } from './fingerprint.ts';
 import { isPublicIp } from './ip.ts';
 import { SCANNER_VERSION, type Net } from './net.ts';
@@ -212,7 +213,7 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
       jobs.push(Promise.resolve(noWebsiteResult(check, domainAsset, websites)));
     }
   }
-  const results = await Promise.all(
+  const done = await Promise.all(
     jobs.map((j) =>
       j.then((r) => {
         try {
@@ -224,6 +225,9 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
       }),
     ),
   );
+  // Eigenaar per bevinding uit het hostingtype (platform, hosting, eigen server).
+  const hosting = hostingPerAsset(done);
+  const results = done.map((r) => ({ ...r, findings: assignOwners(r.findings, hosting) }));
   const findings = results.flatMap((r) => r.findings);
 
   return {

@@ -9,7 +9,7 @@
  * de versie, zodat oude rapporten niet veranderen.
  */
 
-export const MODEL_VERSION = 'light-2026.11-v0.5';
+export const MODEL_VERSION = 'light-2026.11-v0.6';
 
 /**
  * v0.2, na de eerste testset (22 domeinen, 26-11-2026):
@@ -51,6 +51,31 @@ export const COVERAGE_WARN_PCT = 80;
  * - einde-ondersteuning en laatste versies komen uit een snapshot van endoflife.date.
  */
 
+/**
+ * v0.6, eigenaar per hostingtype (27-11-2026, besluit Erik):
+ * - elke bevinding kan een eigenaar hebben (Finding.owner). Bevindingen die alleen het
+ *   platform kan veranderen (Wix, Shopify ...) tellen niet mee en geven geen taak, behalve
+ *   een kapot of bijna verlopen certificaat, geen https en een actief misbruikt lek (PLATFORM_TELT_MEE);
+ * - gewicht 3 en lager is "Ter info" (INFO_MAX_B): zichtbaar, maar geen aandachtspunt;
+ * - "Geen Referrer-Policy" is geen bevinding meer (alleen een onveilige waarde, web.referrer_unsafe);
+ *   oude bevindingen met web.referrer_missing tellen niet meer mee;
+ * - insluiten zonder bescherming telt zwaarder als de pagina een inlog- of betaalformulier heeft
+ *   (web.framing_login); zonder formulier is het ter info.
+ */
+export const INFO_MAX_B = 3;
+
+/** Bevindingen die ook op een platform meetellen: daar moet de klant zelf in actie komen. */
+export const PLATFORM_TELT_MEE = new Set([
+  'cert.expired',
+  'cert.invalid',
+  'cert.chain_incomplete',
+  'cert.self_signed',
+  'cert.untrusted_ca',
+  'cert.name_mismatch',
+  'cert.expires_14d',
+  'web.no_https_redirect',
+]);
+
 /** Bevindingen die samen één probleem zijn: een certificaat dat browsers weigeren. */
 export const CERT_BROKEN_KEYS = new Set([
   'cert.expired',
@@ -72,7 +97,7 @@ export const ACTION_CAP: Record<string, number> = {
 /** Deler in de afvlakking 100 × (1 − e^(−som/DIVISOR)). */
 export const DIVISOR = 60;
 
-export type ForWho = 'zelf' | 'it-partner' | 'webbouwer' | 'hosting';
+export type ForWho = 'zelf' | 'it-partner' | 'webbouwer' | 'hosting' | 'platform';
 
 export interface ActionDef {
   title: string;
@@ -267,8 +292,11 @@ export const WEIGHTS: Record<string, WeightDef> = {
   'web.hsts_short': { b: 2, action: 'website-headers', voorlopig: true },
   'web.csp_missing': { b: 3, action: 'website-headers' },
   'web.framing_unprotected': { b: 3, action: 'website-headers', voorlopig: true },
+  'web.framing_login': { b: 6, action: 'website-headers', voorlopig: true },
   'web.xcto_missing': { b: 2, action: 'website-headers', voorlopig: true },
-  'web.referrer_missing': { b: 1, action: 'website-headers', voorlopig: true },
+  'web.referrer_unsafe': { b: 2, action: 'website-headers', voorlopig: true },
+  // Vervallen in v0.6; blijft staan zodat oude bevindingen niet als onbekend meetellen.
+  'web.referrer_missing': { b: 0, action: 'website-headers', voorlopig: true },
   'web.cookie_insecure': { b: 5, action: 'cookies-beveiligen', voorlopig: true },
   'web.cookie_no_httponly': { b: 2, action: 'cookies-beveiligen', voorlopig: true },
   'web.version_disclosed': { b: 3, action: 'versies-verbergen', voorlopig: true },
