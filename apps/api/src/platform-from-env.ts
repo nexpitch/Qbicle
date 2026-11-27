@@ -1,4 +1,5 @@
-import { createPool, DEFAULT_CONFIG, loadCatalog, mailerFromEnv, paymentProviderFromEnv, systemTxtResolver, type Platform } from '@qbicle/platform';
+import { BrevoMailer, createPool, DEFAULT_CONFIG, loadCatalog, mailerFromEnv, paymentProviderFromEnv, systemTxtResolver, type Platform } from '@qbicle/platform';
+import { LoggingMailer } from '@qbicle/ops';
 
 /**
  * Bouwt het platform uit de omgeving (of .env). Gedeeld door de losse API
@@ -11,9 +12,12 @@ export function platformFromEnv(env = process.env): Platform {
     process.exit(1);
   }
   const appOrigin = env.QBICLE_APP_ORIGIN ?? DEFAULT_CONFIG.appOrigin;
+  const pool = createPool(databaseUrl);
+  const mailer = mailerFromEnv();
   return {
-    pool: createPool(databaseUrl),
-    mailer: mailerFromEnv(),
+    pool,
+    // Elke mail komt in mail_event (bezorging zichtbaar in de cockpit).
+    mailer: new LoggingMailer(mailer, pool, mailer instanceof BrevoMailer ? 'brevo' : 'console'),
     dns: systemTxtResolver(env.QBICLE_DNS_SERVERS?.split(',').filter(Boolean)),
     config: { ...DEFAULT_CONFIG, appOrigin },
     catalog: loadCatalog(),

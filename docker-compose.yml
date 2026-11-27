@@ -4,8 +4,11 @@
 #   docker compose run --rm scanner voorbeeld.nl             één domein scannen
 #   docker compose run --rm scanner --bestand /data/testset.txt --uit /data/resultaten
 #                                                            testset scannen (map ./testset)
+#   docker compose run --rm bewaker                          één ronde van de bewakingsagent (cockpit)
 #   docker compose --profile api up api                      API op http://localhost:8080/api/v1
 #   docker compose --profile web up web                      klantomgeving op http://localhost:3000
+#   docker compose --profile cockpit up cockpit              interne cockpit op http://localhost:3100
+#                                                            (makkelijker: bash scripts/cockpit.sh)
 services:
   db:
     image: postgres:16
@@ -42,6 +45,22 @@ services:
       QBICLE_DOH_URL: ${QBICLE_DOH_URL:-https://cloudflare-dns.com/dns-query}
     volumes:
       - ./testset:/data
+
+  # Bewakingsagent: zet vastgelopen scans opnieuw in de wachtrij en doet voorstellen
+  # in de cockpit. In productie elke 5 minuten; lokaal met de hand.
+  bewaker:
+    build: .
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
+      QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
+      QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+    entrypoint: ["npx", "--no-install", "tsx", "packages/ops/src/cli.ts"]
 
   api:
     build: .
@@ -94,6 +113,34 @@ services:
       # Andere poort op je computer: QBICLE_WEB_PORT=3300 (scripts/klantomgeving.sh kiest zelf een vrije).
       - "${QBICLE_WEB_PORT:-3000}:3000"
     entrypoint: ["npx", "--no-install", "tsx", "apps/web/src/server.ts"]
+
+  # Interne cockpit voor Qbicle-medewerkers (klanten, abonnementen, incasso's, gebruik, support, agents).
+  cockpit:
+    build: .
+    profiles: ["cockpit"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://qbicle:qbicle@db:5432/qbicle
+      # Moet het adres zijn dat je in de browser gebruikt (inloglinks en controle op herkomst).
+      QBICLE_COCKPIT_ORIGIN: ${QBICLE_COCKPIT_ORIGIN:-http://localhost:3100}
+      QBICLE_APP_ORIGIN: ${QBICLE_WEB_ORIGIN:-http://localhost:3000}
+      QBICLE_SECURE_COOKIES: "uit"
+      PORT: "3100"
+      # Lokaal: zonder Brevo-sleutel staan inloglinks in de terminal in plaats van in je mail.
+      NODE_ENV: development
+      QBICLE_BETAALPROVIDER: nep
+      # Versleuteling van MFA-geheimen; zonder waarde lokaal een vaste ontwikkelsleutel.
+      QBICLE_SECRETS_KEYS: ${QBICLE_SECRETS_KEYS:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      QBICLE_MAIL_FROM: ${QBICLE_MAIL_FROM:-}
+      QBICLE_MAIL_FROM_NAME: ${QBICLE_MAIL_FROM_NAME:-Qbicle}
+      QBICLE_MAIL_REPLY_TO: ${QBICLE_MAIL_REPLY_TO:-}
+      QBICLE_MAIL_SANDBOX: ${QBICLE_MAIL_SANDBOX:-}
+    ports:
+      - "${QBICLE_COCKPIT_PORT:-3100}:3100"
+    entrypoint: ["npx", "--no-install", "tsx", "apps/cockpit/src/server.ts"]
 
 volumes:
   qbicle-db:

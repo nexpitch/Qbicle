@@ -7,6 +7,8 @@ export interface Actor {
   email?: string;
   ip?: string | null;
   userAgent?: string | null;
+  /** 'medewerker' voor acties vanuit de interne cockpit (standaard: gebruiker). */
+  kind?: 'gebruiker' | 'medewerker';
 }
 
 export const SYSTEM_ACTOR: Actor = { userId: null };
@@ -43,7 +45,10 @@ export type AuditAction =
   | 'betaling.status'
   | 'factuur.uitgegeven'
   | 'factuurgegevens.gewijzigd'
-  | 'audit_opdracht.aangemaakt';
+  | 'audit_opdracht.aangemaakt'
+  // Interne cockpit (apps/cockpit) en operationele onderdelen (packages/ops).
+  | `cockpit.${string}`
+  | `ops.${string}`;
 
 export interface AuditEntry {
   organizationId: string | null;
@@ -58,7 +63,11 @@ export async function audit(q: Queryable, actor: Actor, entry: AuditEntry): Prom
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       entry.organizationId,
-      actor.userId ? `gebruiker:${actor.userId}` : 'systeem',
+      actor.kind === 'medewerker' && actor.userId
+        ? `medewerker:${actor.userId}`
+        : actor.userId
+          ? `gebruiker:${actor.userId}`
+          : 'systeem',
       actor.userId,
       entry.action,
       entry.subject ?? null,
