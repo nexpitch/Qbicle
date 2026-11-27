@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestPlatform, hasDb, type TestPlatform } from '../../../packages/platform/test/support/db.ts';
 import { createWeb } from '../../web/src/app.tsx';
 import { createCockpit } from '../src/app.tsx';
+import { MODULES } from '../src/modules/index.ts';
 import type { StaffRole } from '../src/core/roles.ts';
 import { addStaff, DEFAULT_COCKPIT_CONFIG, type Cockpit } from '../src/core/staff.ts';
 import { stepAt, totpCode } from '../src/core/totp.ts';
@@ -203,7 +204,8 @@ describe.skipIf(!hasDb)('cockpit', () => {
 
   it('placeholders voor onderdelen die nog komen', async () => {
     const c = await login('kijker@qbicle.test', 'lezer');
-    for (const path of ['/incasso']) {
+    // Alle menu-items die nog 'binnenkort' zijn, tonen een nette placeholder.
+    for (const path of MODULES.flatMap((m) => m.nav).filter((n) => n.soon).map((n) => n.href)) {
       const res = await get(path, c);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('Dit onderdeel wordt nu gebouwd');
