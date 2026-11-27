@@ -1,0 +1,121 @@
+{
+  "_uitleg": "Partijen waar MKB-domeinen vaak staan. Een partij herkennen we aan de naamservers (ns), de registrar-naam uit RDAP (registrar) of de mailservers (mx). Matching: naamserver of mailserver eindigt op een van de achtervoegsels; registrar bevat een van de namen (hoofdletterongevoelig). Voeg gerust partijen toe; stappen zijn in gewone taal, menunamen kunnen per partij iets verschillen.",
+  "providers": [
+    {
+      "id": "transip", "naam": "TransIP",
+      "ns": ["transip.net", "transip.nl", "transip.eu"], "registrar": ["TransIP"],
+      "inlog": "https://www.transip.nl/cp/",
+      "stappen": ["Log in op het controlepaneel van TransIP.", "Kies bij Domeinen je domein.", "Open het tabblad DNS en klik op Toevoegen.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "strato", "naam": "Strato",
+      "ns": ["rzone.de", "strato.de", "strato-hosting.eu"], "registrar": ["Strato"],
+      "inlog": "https://www.strato.nl/",
+      "stappen": ["Log in bij Strato.", "Ga naar Domeinen en kies Domeinbeheer.", "Klik bij je domein op het tandwiel en kies DNS.", "Beheer de TXT- en CNAME-records en voeg de regel hieronder toe."]
+    },
+    {
+      "id": "cloudflare", "naam": "Cloudflare",
+      "ns": ["ns.cloudflare.com"], "registrar": ["Cloudflare"],
+      "inlog": "https://dash.cloudflare.com/",
+      "stappen": ["Log in bij Cloudflare.", "Kies je domein.", "Ga naar DNS en dan Records, en klik op Add record.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "godaddy", "naam": "GoDaddy",
+      "ns": ["domaincontrol.com"], "registrar": ["GoDaddy"],
+      "inlog": "https://dcc.godaddy.com/",
+      "stappen": ["Log in bij GoDaddy.", "Open Mijn producten en kies bij je domein DNS.", "Klik op Nieuw record toevoegen.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "vimexx", "naam": "Vimexx",
+      "ns": ["vimexx.nl", "vimexx.com"], "registrar": ["Vimexx", "Realtime Register"],
+      "inlog": "https://www.vimexx.nl/",
+      "stappen": ["Log in bij Vimexx.", "Kies je domein en open DNS-beheer.", "Voeg een nieuw record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "hostnet", "naam": "Hostnet",
+      "ns": ["hostnet.nl"], "registrar": ["Hostnet"],
+      "inlog": "https://www.hostnet.nl/",
+      "stappen": ["Log in bij Hostnet.", "Kies je domein en open DNS-instellingen.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "antagonist", "naam": "Antagonist",
+      "ns": ["antagonist.nl"], "registrar": ["Antagonist"],
+      "inlog": "https://www.antagonist.nl/",
+      "stappen": ["Log in op Mijn Antagonist.", "Kies je domein en open DNS-beheer.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "versio", "naam": "Versio",
+      "ns": ["versio.nl", "versio.eu"], "registrar": ["Versio"],
+      "inlog": "https://www.versio.nl/",
+      "stappen": ["Log in bij Versio.", "Kies je domein en open DNS-beheer.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "mijndomein", "naam": "Mijndomein",
+      "ns": ["mijndomein.nl"], "registrar": ["Mijndomein"],
+      "inlog": "https://www.mijndomein.nl/",
+      "stappen": ["Log in bij Mijndomein.", "Kies je domein en open DNS-instellingen.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "one", "naam": "one.com",
+      "ns": ["one.com"], "registrar": ["one.com"],
+      "inlog": "https://www.one.com/",
+      "stappen": ["Log in bij one.com.", "Ga naar Geavanceerde instellingen en kies DNS-instellingen.", "Voeg een nieuw record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "hostinger", "naam": "Hostinger",
+      "ns": ["dns-parking.com", "hostinger.com", "hostinger.nl"], "registrar": ["Hostinger"],
+      "inlog": "https://hpanel.hostinger.com/",
+      "stappen": ["Log in op hPanel van Hostinger.", "Kies bij Domeinen je domein en open DNS / Naamservers.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "neostrada", "naam": "Neostrada",
+      "ns": ["neostrada.nl"], "registrar": ["Neostrada"],
+      "inlog": "https://www.neostrada.nl/",
+      "stappen": ["Log in bij Neostrada.", "Kies je domein en open DNS-beheer.", "Voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "ovh", "naam": "OVHcloud",
+      "ns": ["ovh.net", "anycast.me", "ovh.ca"], "registrar": ["OVH"],
+      "inlog": "https://www.ovh.com/manager/",
+      "stappen": ["Log in bij OVHcloud.", "Kies Domeinnamen en dan je domein.", "Open het tabblad DNS-zone en klik op Een record toevoegen.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "namecheap", "naam": "Namecheap",
+      "ns": ["registrar-servers.com"], "registrar": ["Namecheap"],
+      "inlog": "https://www.namecheap.com/",
+      "stappen": ["Log in bij Namecheap.", "Kies Domain List en klik bij je domein op Manage.", "Open Advanced DNS en klik op Add new record.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "microsoft", "naam": "Microsoft (Azure DNS of Microsoft 365)",
+      "ns": ["azure-dns.com", "azure-dns.net", "azure-dns.org", "azure-dns.info", "bdm.microsoftonline.com"], "registrar": [],
+      "mx": ["mail.protection.outlook.com"],
+      "inlog": "https://admin.microsoft.com/",
+      "stappen": ["Log in als beheerder bij Microsoft 365 of Azure.", "Ga naar Instellingen en dan Domeinen, en kies je domein.", "Open DNS-records en voeg een record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "google", "naam": "Google (Cloud DNS of Workspace)",
+      "ns": ["googledomains.com", "google.com"], "registrar": ["Google"],
+      "mx": ["google.com", "googlemail.com"],
+      "inlog": "https://console.cloud.google.com/net-services/dns",
+      "stappen": ["Log in bij Google Cloud.", "Ga naar Cloud DNS en kies je zone.", "Klik op Standaard toevoegen.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "squarespace", "naam": "Squarespace Domains",
+      "ns": ["squarespacedns.com"], "registrar": ["Squarespace"],
+      "inlog": "https://account.squarespace.com/domains",
+      "stappen": ["Log in bij Squarespace.", "Kies je domein en open DNS.", "Voeg een eigen record toe.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "aws", "naam": "Amazon Route 53",
+      "ns": ["awsdns-"], "registrar": ["Amazon"],
+      "inlog": "https://console.aws.amazon.com/route53/",
+      "stappen": ["Log in bij AWS.", "Open Route 53 en kies Hosted zones en dan je domein.", "Klik op Create record.", "Kies type TXT en vul de naam en waarde hieronder in."]
+    },
+    {
+      "id": "wix", "naam": "Wix",
+      "ns": ["wixdns.net"], "registrar": ["Wix"],
+      "inlog": "https://manage.wix.com/account/domains",
+      "stappen": ["Log in bij Wix.", "Ga naar Domeinen en kies bij je domein DNS-records beheren.", "Voeg een TXT-record toe.", "Vul de naam en waarde hieronder in."]
+    }
+  ]
+}

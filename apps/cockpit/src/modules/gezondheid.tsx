@@ -233,6 +233,12 @@ export const gezondheid: CockpitModule = {
               <Kpi label="Wachtrij" value={getal(h.scans.wachtrij)} sub={h.scans.oudsteWachtrijMinuten === null ? 'leeg' : `oudste ${h.scans.oudsteWachtrijMinuten} min`} />
               <Kpi label="Bezig" value={getal(h.scans.bezig)} sub={h.scans.vast ? `${h.scans.vast} vast` : 'niets vast'} tone={h.scans.vast ? 'warn' : 'ok'} />
               <Kpi
+                label="Scan-worker"
+                value={h.scans.workersActief ? 'draait' : 'stil'}
+                sub={h.scans.workerLaatstGezienMinuten === null ? 'nog nooit gezien' : h.scans.workersActief ? `${getal(h.scans.workersActief)} actief` : `${h.scans.workerLaatstGezienMinuten} min geleden`}
+                tone={h.scans.workersActief ? 'ok' : h.scans.wachtrij ? 'crit' : 'warn'}
+              />
+              <Kpi
                 label="Mislukt (24 uur)"
                 value={getal(h.scans.mislukt24u)}
                 sub={h.scans.foutPercentage24u === null ? 'nog geen scans' : `${h.scans.foutPercentage24u}% van ${h.scans.klaar24u + h.scans.mislukt24u}`}
