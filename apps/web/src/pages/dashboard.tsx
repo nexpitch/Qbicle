@@ -723,8 +723,8 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
               </div>
               <div class="stack-sm">
                 <h3>Via e-mail</h3>
-                <p class="small">We sturen een bevestigingslink naar een beheeradres van dit domein.</p>
-                <form data-api={`${api}/${d.id}/verificatie/email`} data-next={`/o/${org.id}/domeinen?mail=verstuurd`}>
+                <p class="small">We sturen een bevestigingslink naar een adres op @{d.name}. Kies een beheeradres of vul je eigen adres in.</p>
+                <form class="stack mail-verif" data-api={`${api}/${d.id}/verificatie/email`} data-next={`/o/${org.id}/domeinen?mail=verstuurd`}>
                   <FormError />
                   <label>
                     Adres
@@ -732,7 +732,13 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
                       {d.instructions.emailAddresses.map((e) => (
                         <option value={e}>{e}</option>
                       ))}
+                      <option value="ander">Ander adres op @{d.name}…</option>
                     </select>
+                  </label>
+                  <label class="eigen-adres">
+                    Jouw adres
+                    <span class="hint">Moet eindigen op @{d.name}.</span>
+                    <input type="email" name="eigenAdres" autocomplete="email" placeholder={`naam@${d.name}`} />
                   </label>
                   <button class="btn secondary" type="submit">
                     Stuur bevestigingslink

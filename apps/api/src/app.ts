@@ -102,7 +102,7 @@ const schemas = {
   createClient: z.object({ name: z.string().max(200) }),
   grantPartner: z.object({ partnerOrganizationId: id, access: z.enum(PARTNER_ACCESS).default('lezer') }),
   addDomain: z.object({ name: z.string().max(300) }),
-  emailVerify: z.object({ address: z.string().max(320) }),
+  emailVerify: z.object({ address: z.string().max(320), eigenAdres: z.string().max(320).optional() }),
   scan: z.object({ maxLevel: z.union([z.literal(0), z.literal(1)]).optional() }),
   signup: z.object({
     email,
@@ -347,7 +347,9 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     c.json(await verifyDomainByDns(p, user(c), param(c, 'org'), param(c, 'dom'))),
   );
   v1.post('/organisaties/:org/domeinen/:dom/verificatie/email', requireUser, async (c) => {
-    const { address } = await body(c, schemas.emailVerify);
+    const input = await body(c, schemas.emailVerify);
+    // De web-app stuurt "ander" plus het zelf ingevulde adres.
+    const address = input.address === 'ander' ? (input.eigenAdres ?? '') : input.address;
     await startEmailVerification(p, user(c), param(c, 'org'), param(c, 'dom'), address);
     return c.json({ bericht: `We hebben een bevestigingslink gestuurd naar ${address.trim().toLowerCase()}.` }, 202);
   });

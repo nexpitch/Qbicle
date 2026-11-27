@@ -36,11 +36,13 @@ describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
 
   it('normaliseert de invoer en geeft instructies voor het TXT-record', async () => {
     const d = await addDomain(p, anna, org, { name: 'https://www.Bakkerij-Dns.nl/contact' });
-    expect(d.name).toBe('www.bakkerij-dns.nl');
+    // www. wordt het hoofddomein, zodat DNS-regel en beheeradressen kloppen.
+    expect(d.name).toBe('bakkerij-dns.nl');
     expect(d.verified).toBe(false);
-    expect(d.instructions.dns.name).toBe('_qbicle-verificatie.www.bakkerij-dns.nl');
+    expect(d.instructions.dns.name).toBe('_qbicle-verificatie.bakkerij-dns.nl');
     expect(d.instructions.dns.value).toMatch(/^qbicle-verificatie=[0-9a-f]{32}$/);
-    expect(d.instructions.emailAddresses).toContain('postmaster@www.bakkerij-dns.nl');
+    expect(d.instructions.emailAddresses).toContain('postmaster@bakkerij-dns.nl');
+    await expect(addDomain(p, anna, org, { name: 'bakkerij-dns.nl' })).rejects.toMatchObject({ code: 'conflict' });
   });
 
   it('weigert interne namen en IP-adressen', async () => {
@@ -107,7 +109,9 @@ describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
   it('verificatie via een beheeradres op het domein', async () => {
     const d = await addDomain(p, anna, org, { name: 'mail-verificatie.nl' });
     await expect(startEmailVerification(p, anna, org, d.id, 'anna@gmail.com')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
-    await expect(startEmailVerification(p, anna, org, d.id, 'info@mail-verificatie.nl')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'info@sub.mail-verificatie.nl')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'info@mail-verificatie.nl.evil.com')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'geen-adres')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
 
     await startEmailVerification(p, anna, org, d.id, 'Postmaster@mail-verificatie.nl');
     const mail = p.mailer.last('postmaster@mail-verificatie.nl')!;
@@ -118,6 +122,21 @@ describe.skipIf(!hasDb)('domeinverificatie en scans', () => {
     await expect(confirmEmailVerification(p, token, { userId: null })).rejects.toMatchObject({ code: 'verlopen' });
     const after = await getDomain(p, anna.userId, org, d.id);
     expect(after).toMatchObject({ verified: true, verificationMethod: 'email' });
+  });
+
+  it('verificatie via een eigen adres op het domein zelf', async () => {
+    const d = await addDomain(p, anna, org, { name: 'eigen-adres.nl' });
+    await startEmailVerification(p, anna, org, d.id, ' Erik.de-Vries@Eigen-Adres.nl ');
+    const token = extractToken(p.mailer.last('erik.de-vries@eigen-adres.nl')!.text, 'qbd_')!;
+    expect(await confirmEmailVerification(p, token, { userId: null })).toEqual({ domain: 'eigen-adres.nl' });
+  });
+
+  it('geen eigen adres op een openbare maildienst', async () => {
+    const d = await addDomain(p, anna, org, { name: 'gmail.com' });
+    await expect(startEmailVerification(p, anna, org, d.id, 'anna@gmail.com')).rejects.toMatchObject({
+      code: 'ongeldige_invoer',
+      message: expect.stringMatching(/openbare maildienst/),
+    });
   });
 
   it('een andere klant kan niets met jouw domeinen', async () => {

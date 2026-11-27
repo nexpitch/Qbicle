@@ -296,3 +296,5 @@ ul.bevindingen b { display: block; }
 ul.logboek li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; }
 .testbox { border: 1.5px dashed var(--st-warn-dot); border-radius: 8px; padding: 12px 14px; }
 input.mono { font-family: var(--f-mono); font-size: .85rem; }
+.mail-verif .eigen-adres { display: none; }
+.mail-verif:has(option[value="ander"]:checked) .eigen-adres { display: grid; }
