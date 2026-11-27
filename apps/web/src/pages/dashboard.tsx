@@ -12,8 +12,8 @@ import type {
   Level,
   TrendPoint,
 } from '@qbicle/platform';
-import { ASSET_GROUPS, FOR_WHO_LABELS } from '@qbicle/platform';
-import { datum, euroKort, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { ASSET_GROUPS, FOR_WHO_LABELS, TXT_LABEL } from '@qbicle/platform';
+import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -51,12 +51,16 @@ function kort(d: Date | string): string {
   return new Date(d).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', timeZone: 'Europe/Amsterdam' });
 }
 
+/** Kalenderdag in Nederlandse tijd, voor "vandaag" en "gisteren". */
+function dag(d: Date | string): string {
+  return new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Europe/Amsterdam' });
+}
+
 function wanneer(d: Date | string, now = new Date()): string {
-  const days = Math.floor((now.getTime() - new Date(d).getTime()) / 86400000);
-  if (days <= 0) return 'vandaag';
-  if (days === 1) return 'gisteren';
-  if (days < 7) return `${days} dagen geleden`;
-  return kort(d);
+  const t = tijd(d);
+  if (dag(d) === dag(now)) return `vandaag ${t}`;
+  if (dag(d) === dag(new Date(now.getTime() - 86400000))) return `gisteren ${t}`;
+  return `${kort(d)} ${t}`;
 }
 
 // Dashboard ---------------------------------------------------------------------------------
@@ -547,7 +551,7 @@ function FindingCard(props: { f: AssetFindingDetail }) {
             {CERTAINTY_LABEL[f.certainty]}
           </span>
         </div>
-        <span class="small">Gezien sinds {datum(f.firstSeen)}</span>
+        <span class="small">Gezien sinds {datumTijd(f.firstSeen)}</span>
       </div>
       <h3>{f.title}</h3>
       <p>{f.detail}</p>
@@ -621,7 +625,7 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
                     <div class="stack-xs">
                       <p>{f.title}</p>
                       <p class="small">
-                        {f.resolvedAt ? `Opgelost ${datum(f.resolvedAt)}` : `Geaccepteerd ${datum(f.acceptedAt)}`}
+                        {f.resolvedAt ? `Opgelost ${datumTijd(f.resolvedAt)}` : `Geaccepteerd ${datumTijd(f.acceptedAt)}`}
                       </p>
                     </div>
                   </li>
@@ -639,9 +643,9 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
               <dt>Bereikbaar</dt>
               <dd>{EXPOSURE_LABEL[a.asset.exposure] ?? a.asset.exposure}</dd>
               <dt>Eerst gezien</dt>
-              <dd>{datum(a.asset.firstSeen)}</dd>
+              <dd>{datumTijd(a.asset.firstSeen)}</dd>
               <dt>Laatst gezien</dt>
-              <dd>{datum(a.asset.lastSeen)}</dd>
+              <dd>{datumTijd(a.asset.lastSeen)}</dd>
               <dt>Gevonden via</dt>
               <dd>{a.asset.source === 'demo' ? 'Voorbeelddata' : a.asset.source}</dd>
             </dl>
@@ -673,6 +677,53 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
         </div>
       </div>
     </Layout>
+  );
+}
+
+
+// Kopiëren ----------------------------------------------------------------------------------------
+
+/** Waarde met een kopieerknop erachter; app.js zet hem op het klembord en meldt "Gekopieerd". */
+export function Copy(props: { value: string; label: string }) {
+  return (
+    <span class="copy">
+      <code class="break">{props.value}</code>
+      <button type="button" class="copy-btn" data-kopieer={props.value} aria-label={`Kopieer ${props.label}`} title={`Kopieer ${props.label}`}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2" />
+          <path d="M5 15V5a2 2 0 0 1 2-2h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span class="copy-ok" aria-hidden="true">Gekopieerd</span>
+      </button>
+    </span>
+  );
+}
+
+/** De TXT-regel, met kopieerknoppen en de korte naam voor partijen die het domein zelf aanvullen. */
+function DnsRecord(props: { name: string; value: string; withType?: boolean; providerNaam?: string | null }) {
+  return (
+    <dl class="facts">
+      {props.withType ? (
+        <>
+          <dt>Type</dt>
+          <dd>
+            <Copy value="TXT" label="type" />
+          </dd>
+        </>
+      ) : null}
+      <dt>Naam</dt>
+      <dd class="stack-xs">
+        <Copy value={props.name} label="naam" />
+        <span class="small">
+          {props.providerNaam ? `Bij ${props.providerNaam} vul` : 'Vult je provider het domein zelf aan (zoals Wix, Strato of TransIP)? Vul'} je alleen in:{' '}
+        </span>
+        <Copy value={TXT_LABEL} label="korte naam" />
+      </dd>
+      <dt>Waarde</dt>
+      <dd>
+        <Copy value={props.value} label="waarde" />
+      </dd>
+    </dl>
   );
 }
 
@@ -720,7 +771,7 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
           </div>
           {d.verified ? (
             <>
-              <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+              <p class="small">Bevestigd op {datumTijd(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
               {(() => {
                 const sm = ov.summaries.get(d.id);
                 return sm ? (
@@ -731,7 +782,7 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
                     <span>
                       <b>{sm.openFindings}</b> open bevindingen
                     </span>
-                    <span class="small">{sm.lastScanAt ? `Laatste scan ${datum(sm.lastScanAt)}` : 'Nog niet gescand'}</span>
+                    <span class="small">{sm.lastScanAt ? `Laatste scan ${datumTijd(sm.lastScanAt)}` : 'Nog niet gescand'}</span>
                   </div>
                 ) : null;
               })()}
@@ -744,16 +795,7 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
                 <p class="small">
                   <a href={`/o/${org.id}/domeinen/${d.id}/waar`}>Weet je niet waar je domein staat? Wij zoeken het op.</a>
                 </p>
-                <dl class="facts">
-                  <dt>Naam</dt>
-                  <dd>
-                    <code>{d.instructions.dns.name}</code>
-                  </dd>
-                  <dt>Waarde</dt>
-                  <dd>
-                    <code class="break">{d.instructions.dns.value}</code>
-                  </dd>
-                </dl>
+                <DnsRecord name={d.instructions.dns.name} value={d.instructions.dns.value} withType />
                 <form data-api={`${api}/${d.id}/verificatie/dns`}>
                   <FormError />
                   <button class="btn" type="submit">
@@ -880,20 +922,7 @@ export function WaarStaatDomeinPage(props: Ctx & { domainId: string; r: DnsHostR
             <p class="small">Menunamen kunnen iets anders heten. Kom je er niet uit, stuur de regel dan door.</p>
           </div>
         ) : null}
-        <dl class="facts">
-          <dt>Type</dt>
-          <dd>
-            <code>TXT</code>
-          </dd>
-          <dt>Naam</dt>
-          <dd>
-            <code class="break">{r.instructions.dns.name}</code>
-          </dd>
-          <dt>Waarde</dt>
-          <dd>
-            <code class="break">{r.instructions.dns.value}</code>
-          </dd>
-        </dl>
+        <DnsRecord name={r.instructions.dns.name} value={r.instructions.dns.value} withType providerNaam={p?.naam ?? null} />
         <div class="row">
           {p ? (
             <a class="btn" href={p.inlog} rel="noopener noreferrer" target="_blank">

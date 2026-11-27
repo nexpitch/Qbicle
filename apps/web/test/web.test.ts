@@ -99,6 +99,11 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(await detail.text()).toContain('Bevindingen');
 
       expect(await (await get(`/o/${org}/domeinen`)).text()).toContain('voorbeeldbedrijf.example');
+      await json(`/api/v1/organisaties/${org}/domeinen/lijst`, { domeinen: 'kopieer-test.nl' }, cookie);
+      const dom = await (await get(`/o/${org}/domeinen`)).text();
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie.kopieer-test.nl"');
+      expect(dom).toContain('data-kopieer="_qbicle-verificatie"');
+      expect(dom).toMatch(/data-kopieer="qbicle-verificatie=[0-9a-f]{32}"/);
       expect((await get(`/o/${org}/assets/00000000-0000-0000-0000-000000000000`)).status).toBe(404);
     } finally {
       delete process.env.QBICLE_DEMODATA;
