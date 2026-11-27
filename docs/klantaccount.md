@@ -24,7 +24,11 @@ API: `GET /api/v1/organisaties/:org/contactpersonen`, `PUT|DELETE /api/v1/organi
   - upgrade tijdens een betaalde periode: meteen, na een bijbetaling naar rato voor de resterende dagen (`payment.plan_change`; het pakket verandert pas als die betaald is);
   - downgrade of andere betaaltermijn: gaat in bij de volgende periode (`subscription.pending_plan` / `pending_interval`), terug te draaien tot die datum.
 - **Let op voor de incassobatch (cockpit):** roep `applyScheduledChange(p, q, subscriptionId, periodeStart)` aan voordat je een verlenging klaarzet, anders wordt het oude pakket geïncasseerd.
-- **Opzeggen** (`/abonnement/opzeggen`) met uitleg wat er gebeurt en een reden (`subscription.cancel_reason`, `cancel_feedback`); opzegging intrekken kan tot het einde van de periode.
+- **Opzeggen** (`/abonnement/opzeggen`) met uitleg wat er gebeurt en een reden (`subscription.cancel_reason`, `cancel_feedback`); opzegging intrekken kan tot de einddatum.
+- **Opzegtermijn en stilzwijgende verlenging** (`opzegtermijnMaanden` in `config/abonnementen.json`, nu 1). Maand- en jaarcontracten verlengen automatisch met dezelfde termijn, tenzij de klant uiterlijk één opzegtermijn vóór het einde van de periode opzegt. Te laat opgezegd: het contract verlengt nog één keer (een maand of een jaar) en die laatste periode wordt nog geïncasseerd. De pagina toont vooraf "Je contract verlengt op … tenzij je uiterlijk op … opzegt" en na opzeggen "Opgezegd, eindigt op …".
+  - Datamodel: `subscription.ends_at` is de einddatum (exclusief). `cancel_at_period_end = true` betekent "de huidige periode is de laatste"; status `opgezegd` met `cancel_at_period_end = false` betekent dat er nog één verlenging betaald moet worden. Na die betaling zet `syncPayment` `cancel_at_period_end` op true.
+  - Incasso en betalen: gebruik `needsRenewal(sub)` om te bepalen of er een volgende periode geïncasseerd moet worden (ook in de incassobatch van de cockpit). `contractEnd()` rekent de einddatum uit.
+  - Juridisch: de algemene voorwaarden moeten deze regel bevatten (B2B, stilzwijgende verlenging). Laat een jurist dit nakijken.
 - **Betaalwijze**: incasso (standaard) met de machtiging uit de eerste geslaagde betaling (`payment_mandate`, alleen laatste 4 tekens van de rekening), intrekken kan. Op factuur betalen stelt alleen Qbicle in (cockpit); de klant kan het aanvragen en dat komt als notitie (`org_note`, bron `systeem`) bij de klant in de cockpit.
 - Migratie 0014.
 

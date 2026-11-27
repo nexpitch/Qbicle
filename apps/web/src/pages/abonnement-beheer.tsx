@@ -29,7 +29,7 @@ export function StatusBadge(props: { b: BillingOverview }) {
   const { b } = props;
   if (b.toegang === 'proef') return <Status kind="ok">Proef, nog {b.dagenOver} dagen</Status>;
   if (b.toegang === 'actief') {
-    return b.abonnement?.cancelAtPeriodEnd ? <Status kind="warn">Opgezegd</Status> : <Status kind="ok">Actief</Status>;
+    return b.abonnement?.status === 'opgezegd' ? <Status kind="warn">Opgezegd</Status> : <Status kind="ok">Actief</Status>;
   }
   if (b.toegang === 'betaling_nodig') return <Status kind="crit">Betaling nodig</Status>;
   return <Status kind="unk">Geen abonnement</Status>;
@@ -89,11 +89,25 @@ function MijnPakket(props: Ctx & { b: BillingOverview; extraDomeinCenten: number
       {sub && b.toegang === 'proef' ? (
         <p>Je proef loopt tot en met {datum(sub.trialEndsAt)}. Betaal je eerder, dan begint de betaalde periode pas daarna. Je verliest dus geen proefdagen.</p>
       ) : null}
-      {sub && b.toegang === 'actief' && !sub.cancelAtPeriodEnd ? <p>Betaald tot en met {totEnMet(sub.currentPeriodEnd)}.</p> : null}
-      {sub && b.toegang === 'actief' && sub.cancelAtPeriodEnd ? (
+      {sub && b.toegang === 'actief' && sub.status !== 'opgezegd' ? (
+        <p>
+          Betaald tot en met {totEnMet(sub.currentPeriodEnd)}.
+          {b.verlenging ? (
+            <>
+              {' '}
+              Je contract verlengt op {datum(b.verlenging.datum)} met een {b.verlenging.interval === 'jaar' ? 'jaar' : 'maand'}, tenzij je uiterlijk op{' '}
+              {datum(b.verlenging.opzeggenUiterlijk)} opzegt (opzegtermijn {b.opzegtermijnMaanden === 1 ? '1 maand' : `${b.opzegtermijnMaanden} maanden`}).
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {sub && b.toegang === 'actief' && sub.status === 'opgezegd' ? (
         <div class="melding warn stack tight">
           <span>
-            Je hebt opgezegd. Je houdt alles tot en met {totEnMet(sub.currentPeriodEnd)}; daarna stoppen de wekelijkse controles en de meldingen.
+            Opgezegd, eindigt op {totEnMet(b.eindigtOp)}. Tot en met die dag houd je alles; daarna stoppen de wekelijkse controles en de meldingen.
+            {b.volgendeBetaling
+              ? ` Je zegde op binnen de opzegtermijn, daarom loopt het contract nog een ${b.volgendeBetaling.interval === 'jaar' ? 'jaar' : 'maand'} door en volgt op ${datum(b.volgendeBetaling.datum)} nog één laatste betaling.`
+              : ' Er komt geen nieuwe betaling of incasso meer.'}
           </span>
           {b.magBeheren ? (
             <form data-api={`/api/v1/organisaties/${org.id}/abonnement/heractiveren`}>
@@ -179,7 +193,7 @@ function MijnPakket(props: Ctx & { b: BillingOverview; extraDomeinCenten: number
       {b.magBeheren && sub ? (
         <div class="row">
           {b.toegang !== 'actief' ? <PayButton orgId={org.id} label={b.toegang === 'proef' ? 'Nu betalen' : 'Betalen'} /> : null}
-          {b.toegang === 'actief' && !sub.cancelAtPeriodEnd && !b.openBetaling ? <PayButton orgId={org.id} label="Volgende periode vooruitbetalen" secondary /> : null}
+          {b.toegang === 'actief' && b.volgendeBetaling && !b.openBetaling ? <PayButton orgId={org.id} label="Volgende periode vooruitbetalen" secondary /> : null}
         </div>
       ) : null}
       {!b.magBeheren ? <p class="small">Alleen de eigenaar van het account kan betalen of het pakket wijzigen.</p> : null}
@@ -371,7 +385,7 @@ export function AbonnementPage(props: Ctx & { b: BillingOverview; catalog: Catal
       <PakketKiezen {...props} />
       {b.magBeheren || b.betaalwijze.mandaat ? <Betaalwijze {...props} /> : null}
       <LaatsteFacturen org={org} user={props.user} invoices={props.invoices} />
-      {b.magBeheren && sub && !sub.cancelAtPeriodEnd && b.toegang !== 'geen_abonnement' ? (
+      {b.magBeheren && sub && sub.status !== 'opgezegd' && b.toegang !== 'geen_abonnement' ? (
         <p class="small">
           Wil je stoppen? <a href={`/o/${org.id}/abonnement/opzeggen`}>Abonnement opzeggen</a>
         </p>
@@ -534,17 +548,41 @@ export function OpzeggenPage(props: Ctx & { b: BillingOverview; catalog: Catalog
       <a href={`/o/${org.id}/abonnement`}>← Terug naar abonnement</a>
       <section class="card narrow-wide">
         <h1>Abonnement opzeggen</h1>
-        {!sub || !b.magBeheren || sub.cancelAtPeriodEnd ? (
-          <p class="melding">{!b.magBeheren ? 'Alleen de eigenaar kan het abonnement opzeggen.' : 'Er is geen lopend abonnement om op te zeggen.'}</p>
+        {!sub || !b.magBeheren || sub.status === 'opgezegd' ? (
+          <p class="melding">
+            {!b.magBeheren
+              ? 'Alleen de eigenaar kan het abonnement opzeggen.'
+              : sub?.status === 'opgezegd'
+                ? `Je abonnement is al opgezegd en eindigt op ${totEnMet(b.eindigtOp)}.`
+                : 'Er is geen lopend abonnement om op te zeggen.'}
+          </p>
         ) : (
           <>
             <h3>Wat er gebeurt</h3>
             <ul class="uitleg">
               {proef ? (
                 <li>Je proef stopt direct. Je hebt niets betaald en betaalt ook niets.</li>
+              ) : b.opzeggen?.nogEenBetaling ? (
+                <>
+                  <li>
+                    Er geldt een opzegtermijn van {b.opzegtermijnMaanden === 1 ? '1 maand' : `${b.opzegtermijnMaanden} maanden`}. Je zegt op na{' '}
+                    {datum(b.verlenging!.opzeggenUiterlijk)}, daarom verlengt je contract op {datum(sub.currentPeriodEnd)} nog één keer met een{' '}
+                    {sub.interval === 'jaar' ? 'jaar' : 'maand'}.
+                  </li>
+                  <li>
+                    Je abonnement eindigt op {totEnMet(b.opzeggen.eindigtOp)}.
+                    {b.volgendeBetaling ? ` Voor die laatste periode betaal je nog ${euro(b.volgendeBetaling.inclCents)} incl. btw` : ' Voor die laatste periode volgt nog één betaling'}
+                    {b.betaalwijze.mandaat ? ', via de automatische incasso.' : '.'} Daarna komt er geen betaling of incasso meer.
+                  </li>
+                  <li>Daarna stoppen de wekelijkse controles en meldingen over nieuwe lekken.</li>
+                  <li>Tot die datum kun je de opzegging met één klik intrekken.</li>
+                </>
               ) : (
                 <>
-                  <li>Je houdt alles tot en met {totEnMet(sub.currentPeriodEnd)}. Daarvoor heb je al betaald; er komt geen nieuwe betaling of incasso meer.</li>
+                  <li>
+                    Je zegt op tijd op. Je houdt alles tot en met {totEnMet(b.opzeggen?.eindigtOp ?? sub.currentPeriodEnd)}. Daarvoor heb je al betaald; er komt geen
+                    nieuwe betaling of incasso meer.
+                  </li>
                   <li>Daarna stoppen de wekelijkse controles en meldingen over nieuwe lekken.</li>
                   <li>Tot die datum kun je de opzegging met één klik intrekken.</li>
                 </>
@@ -582,7 +620,7 @@ export function OpzeggenPage(props: Ctx & { b: BillingOverview; catalog: Catalog
               </label>
               <div class="row">
                 <button class="btn danger" type="submit">
-                  {proef ? 'Proef stoppen' : `Opzeggen per ${totEnMet(sub.currentPeriodEnd)}`}
+                  {proef ? 'Proef stoppen' : `Opzeggen per ${totEnMet(b.opzeggen?.eindigtOp ?? sub.currentPeriodEnd)}`}
                 </button>
                 <a class="btn secondary" href={`/o/${org.id}/abonnement`}>
                   Toch niet
