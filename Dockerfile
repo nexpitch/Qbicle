@@ -12,6 +12,7 @@ COPY packages/score/package.json packages/score/
 COPY packages/devices/package.json packages/devices/
 COPY packages/inventory/package.json packages/inventory/
 COPY packages/platform/package.json packages/platform/
+COPY packages/ops/package.json packages/ops/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 # tsx draait de TypeScript direct; een aparte build-stap volgt bij de web-app.
