@@ -212,8 +212,19 @@
       });
       var tekst = q('[data-scan-tekst]');
       var titel = document.querySelector('[data-scan-titel]');
+      var vast = q('[data-scan-vast]');
+      var isVast = s.status === 'wachtrij' && s.wacht && s.wacht.vast;
+      if (vast) {
+        vast.hidden = !isVast;
+        if (isVast) {
+          q('[data-scan-vast-tekst]').textContent = s.wacht.tekst;
+          var hulp = q('[data-scan-hulp]');
+          if (hulp) { hulp.textContent = s.wacht.hulp || ''; hulp.hidden = !s.wacht.hulp; }
+        }
+      }
+      tekst.hidden = Boolean(isVast);
       if (s.status === 'wachtrij') {
-        tekst.textContent = s.workerActief ? 'De scan begint over een paar seconden.' : 'De scanner draait op dit moment niet. De scan begint zodra hij weer draait.';
+        tekst.textContent = (s.wacht && s.wacht.tekst) || 'De scan begint over een paar seconden.';
       } else if (s.status === 'bezig') {
         tekst.textContent = 'Dit duurt meestal minder dan een minuut. Je kunt deze pagina open laten staan.';
         if (titel) titel.textContent = 'Qbicle scant ' + s.domain;

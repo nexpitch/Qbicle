@@ -101,7 +101,7 @@ export function ScanPage(props: Ctx & { s: ScanView }) {
           ? `Qbicle scant ${s.domain}`
           : `Scan van ${s.domain} staat klaar`;
   return (
-    <Layout title={titel} user={props.user} org={org} active="domeinen">
+    <Layout title={titel} user={props.user} org={org} active="domeinen" refreshSeconds={lopend ? 5 : undefined}>
       <div class="intro">
         <p class="small">
           <a href={`/o/${org.id}/overzicht`}>Overzicht</a> / <a href={`/o/${org.id}/domeinen`}>Domeinen</a> / Scan
@@ -135,11 +135,16 @@ export function ScanPage(props: Ctx & { s: ScanView }) {
         <div class="voortgang" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={s.pct} aria-label="Voortgang van de scan">
           <progress max={100} value={s.pct} data-scan-balk></progress>
         </div>
-        <p class="small" data-scan-tekst>
+        <div class="melding warn stack-sm" data-scan-vast hidden={!s.wacht?.vast}>
+          <strong>De scanner draait niet</strong>
+          <span data-scan-vast-tekst>{s.wacht?.vast ? s.wacht.tekst : ''}</span>
+          <span class="hint" data-scan-hulp hidden={!s.wacht?.hulp}>
+            {s.wacht?.hulp ?? ''}
+          </span>
+        </div>
+        <p class="small" data-scan-tekst hidden={Boolean(s.wacht?.vast)}>
           {s.status === 'wachtrij'
-            ? s.workerActief
-              ? 'De scan begint over een paar seconden.'
-              : 'De scanner draait op dit moment niet. De scan begint zodra hij weer draait.'
+            ? (s.wacht?.tekst ?? '')
             : s.status === 'bezig'
               ? 'Dit duurt meestal minder dan een minuut. Je kunt deze pagina open laten staan.'
               : s.status === 'klaar'
@@ -149,9 +154,11 @@ export function ScanPage(props: Ctx & { s: ScanView }) {
         <ol class="scan-stappen">
           {s.steps.map((st) => (
             <li data-stap={st.key} data-stap-status={st.status}>
-              <div>
-                <strong>{st.label}</strong>
-                <span class="hint">{st.uitleg}</span>
+              <div class="stap-tekst">
+                <div class="stap-titel">
+                  <strong>{st.label}</strong>
+                </div>
+                <div class="stap-uitleg">{st.uitleg}</div>
               </div>
               <span data-stap-badge>
                 <Status kind={STEP_KIND[st.status]}>{STEP_LABEL[st.status]}</Status>
