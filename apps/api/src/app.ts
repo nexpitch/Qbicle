@@ -37,6 +37,7 @@ import {
   logout,
   logoutEverywhere,
   authorize,
+  one,
   ORG_KINDS,
   PARTNER_ACCESS,
   PlatformError,
@@ -56,6 +57,7 @@ import {
 } from '@qbicle/platform';
 import { demoDataAllowed, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
+import { KoppelingFout, KOPPELINGEN, teststandVoor } from '@qbicle/koppelingen';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { secureHeaders } from 'hono/secure-headers';
@@ -125,6 +127,7 @@ const schemas = {
     btwNummer: z.string().max(30).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
+  testKoppeling: z.object({ uitkomst: z.enum(['gelukt', 'te_veel_rechten', 'mislukt']).default('gelukt') }),
 };
 
 function clientIp(c: Context, trustProxy: boolean): string | null {
@@ -429,6 +432,70 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const opts: { before?: string; limit?: number } = { limit: Number.isFinite(limit) ? limit : 50 };
     if (before && /^\d{1,18}$/.test(before)) opts.before = before;
     return c.json(await listAudit(p.pool, org, opts));
+  });
+
+  // Koppelingen (testmodus) ---------------------------------------------------------
+  // Alleen-lezen koppelingen met systemen van de klant. In deze versie wordt niets
+  // echt verbonden: de stand staat in het geheugen (zie @qbicle/koppelingen).
+  const koppelingen = teststandVoor(p);
+  const koppelingId = (c: Context) => {
+    const k = c.req.param('koppeling') ?? '';
+    if (!KOPPELINGEN.some((x) => x.id === k)) throw new PlatformError('niet_gevonden', 'Deze koppeling bestaat niet.');
+    return k;
+  };
+  const viaKoppeling = <T>(fn: () => T): T => {
+    try {
+      return fn();
+    } catch (err) {
+      if (!(err instanceof KoppelingFout)) throw err;
+      const code = err.code === 'niet_gevonden' ? 'niet_gevonden' : err.code === 'verlopen' ? 'verlopen' : err.code === 'verkeerde_stap' ? 'conflict' : 'geen_toegang';
+      throw new PlatformError(code, err.message);
+    }
+  };
+  const huidigPakket = async (org: string) =>
+    (await one<{ plan: string }>(
+      p.pool,
+      `SELECT plan FROM subscription WHERE organization_id = $1 AND status IN ('proef', 'actief', 'achterstallig', 'opgezegd') LIMIT 1`,
+      [org],
+    ))?.plan ?? null;
+
+  v1.get('/organisaties/:org/koppelingen', requireUser, async (c) => {
+    const org = param(c, 'org');
+    await authorize(p.pool, user(c).userId, org, 'org:lezen');
+    return c.json({ testmodus: true, pakket: await huidigPakket(org), koppelingen: koppelingen.lijst(org) });
+  });
+  v1.post('/organisaties/:org/koppelingen/:koppeling/starten', requireUser, async (c) => {
+    const org = param(c, 'org');
+    const k = koppelingId(c);
+    await authorize(p.pool, user(c).userId, org, 'domeinen:beheren');
+    const plan = await huidigPakket(org);
+    return c.json(viaKoppeling(() => koppelingen.starten(org, k, plan, user(c).email)));
+  });
+  v1.post('/organisaties/:org/koppelingen/:koppeling/deellink', requireUser, async (c) => {
+    const org = param(c, 'org');
+    const k = koppelingId(c);
+    await authorize(p.pool, user(c).userId, org, 'domeinen:beheren');
+    const link = viaKoppeling(() => koppelingen.deelLink(org, k, user(c).email));
+    return c.json({ link: `${p.config.appOrigin}/it/${link.token}`, verlooptOp: link.verlooptOp });
+  });
+  v1.post('/organisaties/:org/koppelingen/:koppeling/test-toestemming', requireUser, async (c) => {
+    const org = param(c, 'org');
+    const k = koppelingId(c);
+    await authorize(p.pool, user(c).userId, org, 'domeinen:beheren');
+    const { uitkomst } = await body(c, schemas.testKoppeling);
+    return c.json(viaKoppeling(() => koppelingen.testToestemming(org, k, uitkomst)));
+  });
+  v1.post('/organisaties/:org/koppelingen/:koppeling/intrekken', requireUser, async (c) => {
+    const org = param(c, 'org');
+    const k = koppelingId(c);
+    await authorize(p.pool, user(c).userId, org, 'domeinen:beheren');
+    return c.json(viaKoppeling(() => koppelingen.intrekken(org, k, user(c).email)));
+  });
+  v1.post('/organisaties/:org/koppelingen/:koppeling/interesse', requireUser, async (c) => {
+    const org = param(c, 'org');
+    const k = koppelingId(c);
+    await authorize(p.pool, user(c).userId, org, 'org:lezen');
+    return c.json(viaKoppeling(() => koppelingen.interesse(org, k)));
   });
 
   app.route('/api/v1', v1);
