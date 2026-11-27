@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
 import { domainToASCII } from 'node:url';
+import { getDomain } from 'tldts';
 
 /** TLD's en achtervoegsels die nooit een openbaar internetdomein zijn. */
 const INTERNAL_SUFFIXES = [
@@ -74,4 +75,15 @@ export function normalizeDomain(input: string): string {
 /** Is `host` gelijk aan `domain` of een subdomein ervan? */
 export function isSameOrSubdomain(host: string, domain: string): boolean {
   return host === domain || host.endsWith('.' + domain);
+}
+
+/**
+ * Het hoofddomein (organisatiedomein) volgens de Public Suffix List:
+ * www.voorbeeld.nl → voorbeeld.nl, portaal.bedrijf.co.uk → bedrijf.co.uk.
+ * Mail- en DNS-instellingen (SPF, DMARC, CAA, DNSSEC) staan meestal daar, niet
+ * op een subdomein. Private achtervoegsels (github.io) tellen mee: klant.github.io
+ * is zelf het hoofddomein.
+ */
+export function organizationalDomain(name: string): string {
+  return getDomain(name, { allowPrivateDomains: true }) ?? name;
 }
