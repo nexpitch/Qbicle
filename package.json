@@ -22,7 +22,9 @@
     "bewaker": "tsx packages/ops/src/cli.ts",
     "consent": "tsx packages/compliance/src/cli.ts",
     "apparaten": "tsx packages/devices/src/cli.ts",
-    "web": "tsx apps/web/src/server.ts"
+    "web": "tsx apps/web/src/server.ts",
+    "cockpit": "tsx apps/cockpit/src/server.ts",
+    "cockpit:beheer": "tsx apps/cockpit/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",

@@ -15,6 +15,7 @@ COPY packages/platform/package.json packages/platform/
 COPY packages/ops/package.json packages/ops/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
+COPY apps/cockpit/package.json apps/cockpit/
 # tsx draait de TypeScript direct; een aparte build-stap volgt bij de web-app.
 RUN npm ci --ignore-scripts && npm cache clean --force
 
