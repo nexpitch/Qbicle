@@ -13,7 +13,7 @@ import {
   securityTxtCheck,
   versionDisclosureCheck,
 } from './checks/web.ts';
-import { normalizeDomain } from './domain.ts';
+import { normalizeDomain, organizationalDomain } from './domain.ts';
 import { fingerprint } from './fingerprint.ts';
 import { isPublicIp } from './ip.ts';
 import { SCANNER_VERSION, type Net } from './net.ts';
@@ -174,6 +174,7 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     throw new DomainNotFoundError(`${domain} bestaat niet in DNS. Controleer de spelling.`);
   }
   const maxLevel: Level = opts.maxLevel ?? 1;
+  const orgDomain = organizationalDomain(domain);
   const now = opts.now ?? new Date();
   const startedAt = new Date().toISOString();
   const checks = (opts.checks ?? CHECKS).filter((c) => c.level <= maxLevel);
@@ -194,7 +195,7 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
   // Is DNSSEC kapot, dan geven gewone resolvers geen antwoord en lijkt alles
   // "ontbreekt". Alleen de DNSSEC-check is dan te vertrouwen.
   const dnssecStatus = checks.some((c) => c.key === 'dns.dnssec')
-    ? await memo(`dnssec:${domain}`, () => opts.net.dnssec(domain)).catch(() => null)
+    ? await memo(`dnssec:${orgDomain}`, () => opts.net.dnssec(orgDomain)).catch(() => null)
     : null;
   const bogus = dnssecStatus?.bogus === true;
 
@@ -203,9 +204,9 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
     if (bogus && check.key !== 'dns.dnssec') {
       jobs.push(Promise.resolve(bogusResult(check, domainAsset)));
     } else if (check.appliesTo === 'domein') {
-      jobs.push(runCheck(check, { domain, asset: domainAsset, net: opts.net, now, memo }));
+      jobs.push(runCheck(check, { domain, orgDomain, asset: domainAsset, net: opts.net, now, memo }));
     } else if (webAssets.length > 0) {
-      for (const asset of webAssets) jobs.push(runCheck(check, { domain, asset, net: opts.net, now, memo }));
+      for (const asset of webAssets) jobs.push(runCheck(check, { domain, orgDomain, asset, net: opts.net, now, memo }));
     } else {
       jobs.push(Promise.resolve(noWebsiteResult(check, domainAsset, websites)));
     }

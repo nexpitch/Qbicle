@@ -54,6 +54,31 @@ const daysFromNow = (d: number) => new Date(Date.parse('2026-11-26T12:00:00Z') +
 
 export const SCENARIOS: Scenario[] = [
   {
+    id: 'www-cname-hoofddomein-mailt',
+    waarom: 'Zoals www.nexpitch.com (27-11): www is een CNAME naar een websitebouwer, het hoofddomein mailt via Google zonder DMARC. Alleen DMARC (gewone variant), DNSSEC en CAA; geen SPF-bevinding en geen "zet dicht".',
+    domein: `www.${D}`,
+    net: make(D, (c) => {
+      c.txt = {
+        [D]: ['v=spf1 include:_spf.google.com ~all'],
+        '_spf.google.com': ['v=spf1 ip4:35.190.247.0/24 ~all'],
+        [`google._domainkey.${D}`]: ['v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A'],
+        'cdn1.websitebouwer.net': ['v=spf1 -all'],
+      };
+      c.mx = { [D]: [{ exchange: 'aspmx.l.google.com', priority: 1 }] };
+      c.caa = {};
+      c.cname = { [`www.${D}`]: 'cdn1.websitebouwer.net' };
+      c.dnssec = { [D]: { hasDs: false, validated: false, bogus: false } };
+    }),
+    verwacht: { band: ['aandacht', 'weinig'], moet: ['dmarc.missing', 'dnssec.missing', 'caa.missing'], magNiet: ['spf.missing', 'spf.missing_no_mail', 'dmarc.missing_no_mail'] },
+  },
+  {
+    id: 'subdomein-van-gezond-domein',
+    waarom: 'portaal.voorbeeld.nl van een goed ingericht domein: geen valse mail- of DNS-bevindingen.',
+    domein: `portaal.${D}`,
+    net: make(D, () => {}),
+    verwacht: { band: ['weinig'], magNiet: ['spf.missing', 'spf.missing_no_mail', 'dmarc.missing', 'dmarc.missing_no_mail', 'dnssec.missing', 'caa.missing'] },
+  },
+  {
     id: 'gezond',
     waarom: 'Alles goed ingericht: geen enkele melding.',
     domein: D,
@@ -218,6 +243,7 @@ export const SCENARIOS: Scenario[] = [
       c.mx = {};
       c.txt![D] = [];
       c.txt![`_dmarc.${D}`] = [];
+      delete c.txt![`selector1._domainkey.${D}`];
     }),
     verwacht: { band: ['aandacht'], moet: ['spf.missing_no_mail', 'dmarc.missing_no_mail'], magNiet: ['spf.missing', 'dmarc.missing'] },
   },
@@ -229,6 +255,7 @@ export const SCENARIOS: Scenario[] = [
       c.mx = {};
       c.txt![D] = [];
       c.txt![`_dmarc.${D}`] = [];
+      delete c.txt![`selector1._domainkey.${D}`];
       c.caa = {};
       c.dnssec = { [D]: { hasDs: false, validated: false, bogus: false } };
       site(c, { headers: { server: 'Apache/2.4.68' } });

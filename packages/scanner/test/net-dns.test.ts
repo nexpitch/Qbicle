@@ -87,3 +87,27 @@ describe('DNS-opzoeking met echte resolver', () => {
     expect(await net(true).domainExists('bestaatniet.test')).toBe(false);
   });
 });
+
+describe('DNSSEC via DoH (fout 4)', () => {
+  const realFetch = globalThis.fetch;
+  afterAll(() => {
+    globalThis.fetch = realFetch;
+  });
+  const answer = (map: Record<string, number>) =>
+    (async (u: URL) => {
+      const key = `${u.searchParams.get('type')}${u.searchParams.get('cd') ? '+cd' : ''}`;
+      return new Response(JSON.stringify({ Status: map[key] ?? 0, AD: false, Answer: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+  it('storing bij de validerende resolver (ook zonder controle) is "onbekend", niet "staat uit"', async () => {
+    globalThis.fetch = answer({ DS: 0, SOA: 2, 'SOA+cd': 2 });
+    expect(await createNodeNet({ fallbackDns: [] }).dnssec('voorbeeld.nl')).toBeNull();
+    globalThis.fetch = answer({ DS: 2 });
+    expect(await createNodeNet({ fallbackDns: [] }).dnssec('voorbeeld.nl')).toBeNull();
+  });
+
+  it('SERVFAIL met wel een antwoord zonder controle: DNSSEC is kapot', async () => {
+    globalThis.fetch = answer({ DS: 0, SOA: 2, 'SOA+cd': 0 });
+    expect(await createNodeNet({ fallbackDns: [] }).dnssec('voorbeeld.nl')).toMatchObject({ bogus: true });
+  });
+});

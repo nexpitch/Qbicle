@@ -14,6 +14,8 @@ export type CheckGroup = 'domein' | 'e-mail' | 'certificaat' | 'website';
 export interface CheckContext {
   /** Het opgegeven domein, genormaliseerd (kleine letters, punycode). */
   domain: string;
+  /** Het hoofddomein volgens de Public Suffix List (gelijk aan `domain` als dat al het hoofddomein is). */
+  orgDomain: string;
   /** Het asset waarop deze check draait. */
   asset: Asset;
   net: Net;

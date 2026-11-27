@@ -8,11 +8,15 @@ import { NetError } from '../src/net.ts';
 export interface FakeNetConfig {
   /** Namen die niet bestaan (NXDOMAIN); standaard bestaat alles. */
   nxdomain?: string[];
+  /**
+   * Doorverwijzingen (CNAME). Zoals een echte resolver volgen TXT, MX, CAA en
+   * adressen de doorverwijzing: een vraag naar de naam geeft de records van het doel.
+   */
+  cname?: Record<string, string>;
   txt?: Record<string, string[] | Error>;
   mx?: Record<string, { exchange: string; priority: number }[]>;
   caa?: Record<string, { tag: string; value: string; critical: number }[]>;
   addresses?: Record<string, string[] | Error>;
-  cname?: Record<string, string[]>;
   ptr?: Record<string, string[]>;
   dnssec?: Record<string, DnssecStatus | null>;
   tls?: Record<string, TlsInfo | Error>;
@@ -23,14 +27,19 @@ export function fakeNet(cfg: FakeNetConfig): Net & { requests: string[] } {
   const requests: string[] = [];
   const val = <T>(v: T | Error | undefined, fallback: T): Promise<T> =>
     v instanceof Error ? Promise.reject(v) : Promise.resolve(v ?? fallback);
+  /** Volgt CNAME's zoals een recursieve resolver (hooguit 8 stappen). */
+  const follow = (n: string): string => {
+    for (let i = 0; i < 8 && cfg.cname?.[n]; i++) n = cfg.cname[n]!;
+    return n;
+  };
   return {
     requests,
     domainExists: async (n) => !(cfg.nxdomain ?? []).includes(n),
-    resolveTxt: (n) => val(cfg.txt?.[n], []),
-    resolveMx: (n) => val(cfg.mx?.[n], []),
-    resolveCaa: (n) => val(cfg.caa?.[n], []),
-    resolveAddresses: (n) => val(cfg.addresses?.[n], []),
-    resolveCname: (n) => val(cfg.cname?.[n], []),
+    resolveTxt: (n) => val(cfg.txt?.[follow(n)], []),
+    resolveMx: (n) => val(cfg.mx?.[follow(n)], []),
+    resolveCaa: (n) => val(cfg.caa?.[follow(n)], []),
+    resolveAddresses: (n) => val(cfg.addresses?.[follow(n)], []),
+    resolveCname: async (n) => (cfg.cname?.[n] ? [cfg.cname[n]!] : []),
     reverse: (ip) => val(cfg.ptr?.[ip], []),
     dnssec: async (n) => (cfg.dnssec && n in cfg.dnssec ? cfg.dnssec[n]! : { hasDs: true, validated: true, bogus: false }),
     tlsHandshake: (host) => {

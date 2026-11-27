@@ -109,7 +109,7 @@ export const ACTIONS: Record<string, ActionDef> = {
   },
   'dmarc-instellen': {
     title: 'Zet DMARC aan, zodat anderen niet uit jouw naam kunnen mailen',
-    why: 'DMARC vertelt ontvangers wat ze moeten doen met nepmail uit jouw naam. Nu staat het niet aan.',
+    why: 'DMARC vertelt ontvangers wat ze moeten doen met nepmail uit jouw naam. Nu staat het niet aan. Begin met meekijken (p=none) en zet het stap voor stap strenger, dan loopt je eigen mail geen risico.',
     forWho: 'it-partner',
   },
   'dmarc-aanscherpen': {
@@ -148,8 +148,8 @@ export const ACTIONS: Record<string, ActionDef> = {
     forWho: 'hosting',
   },
   'mail-dichtzetten': {
-    title: 'Zet je domein dicht voor nepmail (SPF en DMARC op "weigeren")',
-    why: 'Je mailt niet vanaf dit domein, maar anderen kunnen het wel als afzender misbruiken. Twee DNS-regels voorkomen dat.',
+    title: 'Mail je niet vanaf dit domein? Zet het dan dicht voor nepmail',
+    why: 'We zien geen tekenen dat er vanaf dit domein gemaild wordt, maar anderen kunnen het wel als afzender misbruiken. Verstuur je er echt geen mail mee (ook geen nieuwsbrief of factuurmail), dan voorkomen twee DNS-regels dat. Twijfel je, begin dan met DMARC op meekijken.',
     forWho: 'it-partner',
   },
   'dnssec-aanzetten': {

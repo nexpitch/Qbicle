@@ -11,8 +11,9 @@
     "qbicle-scan": "src/cli.ts"
   },
   "dependencies": {
+    "@qbicle/devices": "*",
     "@qbicle/score": "*",
-    "@qbicle/devices": "*"
+    "tldts": "^7.0.19"
   },
   "scripts": {
     "meetset": "tsx meetset/cli.ts"
