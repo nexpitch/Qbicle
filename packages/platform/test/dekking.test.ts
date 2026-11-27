@@ -45,6 +45,18 @@ describe('eerlijke dekking per onderdeel', () => {
     expect(r.onvolledig).toBe(true);
   });
 
+  it('servers van buiten: claimt geen poortcontrole die de scanner niet doet', () => {
+    const d = dash([
+      { type: 'domein', group: 'domeinen', label: 'nexpitch.com' },
+      { type: 'host', group: 'servers', label: 'vpn.nexpitch.com' },
+    ]);
+    const servers = dekkingVoor(d, [], '/o/x').onderdelen.find((o) => o.key === 'servers')!;
+    expect(servers.dekking).toBe('deels');
+    expect(servers.gekeken).not.toMatch(/welke poorten open staan/);
+    expect(servers.nietGekeken).toMatch(/andere poorten open staan/);
+    expect(servers.actie).toEqual({ label: 'Router koppelen', href: '/o/x/koppelingen' });
+  });
+
   it('met de koppeling wordt mail volledig gecontroleerd', () => {
     const d = dash([{ type: 'mailserver', group: 'mail', label: 'aspmx.l.google.com' }]);
     const r = dekkingVoor(d, ['google-workspace'], '/o/x');

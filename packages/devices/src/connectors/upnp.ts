@@ -54,6 +54,7 @@ export class UpnpIgdConnector implements RouterConnector {
     const wanIps: string[] = [];
     const portForwards: PortForward[] = [];
     let privateWanIp: string | undefined;
+    let portForwardsRead = false;
     if (!service?.controlURL || !service.serviceType) {
       warnings.push('Geen WAN-verbinding in de UPnP-beschrijving; mogelijk staat UPnP voor internet uit');
     } else {
@@ -78,7 +79,13 @@ export class UpnpIgdConnector implements RouterConnector {
 
       for (let i = 0; i < MAX_MAPPINGS; i++) {
         const r = await call('GetGenericPortMappingEntry', `<NewPortMappingIndex>${i}</NewPortMappingIndex>`);
-        if (r.status !== 200) break; // 713 SpecifiedArrayIndexInvalid: einde van de lijst
+        if (r.status !== 200) {
+          // 713 SpecifiedArrayIndexInvalid (of 714 NoSuchEntryInArray): einde van de lijst.
+          // Elke andere fout (bijvoorbeeld 401 of 606) betekent: niet uitgelezen.
+          if (/^71[34]$/.test(r.fields.errorCode ?? '')) portForwardsRead = true;
+          else warnings.push('Doorgezette poorten niet uitgelezen: het modem gaf een fout');
+          break;
+        }
         const f = r.fields;
         const ext = Number(f.NewExternalPort);
         const int = Number(f.NewInternalPort);
@@ -116,6 +123,7 @@ export class UpnpIgdConnector implements RouterConnector {
       wanIps,
       privateWanIp,
       portForwards,
+      portForwardsRead,
       upnpEnabled: Boolean(service),
       warnings: [
         ...warnings,

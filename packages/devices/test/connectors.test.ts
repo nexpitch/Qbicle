@@ -62,13 +62,16 @@ describe('FRITZ!Box', () => {
     expect(r.clients.find((c) => c.hostname === 'DiskStation')?.active).toBe(false);
   });
 
-  it('stuurt alleen de vier leesacties en haalt de lijst op het opgegeven pad', async () => {
+  it('stuurt alleen leesacties en haalt de lijst op het opgegeven pad', async () => {
     const { connector, transport } = demoConnector('fritzbox', NOW);
     await connector.read();
     expect(transport.requests.map((q) => q.headers?.SOAPAction ?? `${q.method} ${q.path}`)).toEqual([
       '"urn:dslforum-org:service:DeviceInfo:1#GetInfo"',
       '"urn:dslforum-org:service:UserInterface:1#GetInfo"',
       '"urn:dslforum-org:service:WANIPConnection:1#GetExternalIPAddress"',
+      '"urn:dslforum-org:service:WANIPConnection:1#GetPortMappingNumberOfEntries"',
+      '"urn:dslforum-org:service:WANIPConnection:1#GetGenericPortMappingEntry"',
+      '"urn:dslforum-org:service:WANIPConnection:1#GetGenericPortMappingEntry"',
       '"urn:dslforum-org:service:Hosts:1#X_AVM-DE_GetHostListPath"',
       'GET /devicehostlist.lua?sid=0123456789abcdef',
     ]);

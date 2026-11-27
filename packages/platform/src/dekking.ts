@@ -110,9 +110,11 @@ export function dekkingVoor(d: Pick<Dashboard, 'groups' | 'assets' | 'lastScanAt
           ? {
               key: g.key,
               dekking: 'deels',
-              gekeken: 'Van buiten: welke poorten open staan en welke software erop draait.',
-              nietGekeken: 'Niet de instellingen en updates op de server zelf, en geen servers die niet aan je domein hangen.',
-              actie: { label: 'Server toevoegen', href: k('connector') },
+              // Eerlijk (27-11): de scanner kijkt van buiten alleen naar de websites (poort 80 en 443).
+              // Andere open poorten zien we alleen via de router- of firewallkoppeling.
+              gekeken: 'Van buiten: alleen de websites op poort 80 en 443, en de software die daar zichtbaar is.',
+              nietGekeken: 'Niet of er andere poorten open staan, zoals extern bureaublad of een camera. Dat lezen we uit je router of firewall. Ook niet de instellingen en updates op de server zelf.',
+              actie: { label: 'Router koppelen', href: `${base}/koppelingen` },
             }
           : {
               key: g.key,

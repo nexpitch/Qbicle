@@ -5,7 +5,7 @@ import { shortVendor } from './classify.ts';
 import { componentsFor, type Component } from './vulns/cpe.ts';
 import type { ComponentVuln, VulnDb } from './vulns/db.ts';
 import type { EolDb } from './eol.ts';
-import type { Readout } from './types.ts';
+import type { PortForward, Readout } from './types.ts';
 
 /** Zelfde vorm als de vingerafdruk van de scanner: zelfde fout op hetzelfde asset = zelfde waarde. */
 export function fingerprint(assetType: string, assetValue: string, key: string, discriminator = ''): string {
@@ -171,15 +171,47 @@ export const RISKY_PORTS: Record<number, string> = {
   23: 'Telnet',
   139: 'Windows-bestandsdeling (NetBIOS)',
   445: 'Windows-bestandsdeling (SMB)',
+  554: 'camerabeelden (RTSP)',
   1433: 'SQL Server',
+  1723: 'verouderde VPN (PPTP)',
+  2049: 'bestandsdeling (NFS)',
   3306: 'MySQL',
   3389: 'Extern bureaublad (RDP)',
+  5000: 'NAS-beheer (Synology DSM)',
+  5001: 'NAS-beheer (Synology DSM)',
   5432: 'PostgreSQL',
   5900: 'VNC',
+  6379: 'Redis-database',
+  8000: 'camerasysteem (Hikvision)',
   8291: 'MikroTik Winbox',
+  9200: 'Elasticsearch-database',
+  27017: 'MongoDB-database',
+  37777: 'camerasysteem (Dahua)',
 };
 const WEB_ADMIN = new Set([80, 443, 8080, 8443]);
 const SENSITIVE = new Set(['router', 'firewall', 'camera', 'nas', 'alarmsysteem', 'zonnepanelen', 'laadpaal', 'iot', 'printer']);
+
+/** Waar je een doorgezette poort uitzet, per router. Gewone taal, menunamen zoals de fabrikant ze noemt. */
+const CLOSE_STEPS: Record<Readout['product'], string> = {
+  upnp: 'Open de beheerpagina van je modem, zoek "Port forwarding" (of "Poorten doorsturen") en verwijder de regel.',
+  fritzbox: 'Open de FRITZ!Box (fritz.box), ga naar Internet > Freigaben > Portfreigaben (Engels: Internet > Permit Access > Port Sharing) en verwijder de regel.',
+  unifi: 'Open UniFi Network, zoek in de instellingen "Port Forwarding" en zet de regel uit.',
+  meraki: 'Open het Meraki-dashboard, ga naar Security & SD-WAN > Configure > Firewall en verwijder de regel onder "Port forwarding" of "1:1 NAT".',
+  mikrotik: 'Open Winbox of WebFig, ga naar IP > Firewall > NAT en schakel de regel met actie "dst-nat" uit.',
+  snmp: 'Zet de regel uit in de beheeromgeving van je router.',
+  tabel: 'Zet de regel uit in de beheeromgeving van je router.',
+};
+
+function closeSteps(product: Readout['product'], f: PortForward): string {
+  const steps = [
+    f.origin === 'upnp'
+      ? 'Het apparaat opende deze poort zelf via UPnP. Zet in het apparaat "toegang op afstand" of "P2P" uit, of zet UPnP uit in je modem; daarna verdwijnt de poort vanzelf.'
+      : CLOSE_STEPS[product],
+    'Heb je wel toegang van buitenaf nodig? Gebruik dan een VPN of de app van de fabrikant in plaats van een open poort.',
+    'Klik daarna op "Opnieuw controleren"; we lezen de router opnieuw uit.',
+  ];
+  return steps.map((t, i) => `${i + 1}. ${t}`).join(' ');
+}
 
 /**
  * Bevindingen uit wat de router zelf over doorgezette poorten meldt (UPnP en NAT-regels).
@@ -195,25 +227,33 @@ export function forwardFindings(readouts: Readout[], assets: InventoryAsset[]): 
       const target = known ?? router;
       if (!target) continue;
       const sa = scoreAsset(target);
-      const risky = RISKY_PORTS[f.internalPort] ?? RISKY_PORTS[f.externalPort];
+      // De dienst zit op de interne poort; de buitenpoort zegt alleen iets als binnen geen webpagina draait.
+      const risky = f.allPorts ? 'alle poorten' : (RISKY_PORTS[f.internalPort] ?? (WEB_ADMIN.has(f.internalPort) ? undefined : RISKY_PORTS[f.externalPort]));
       // Een beheerpagina (80/443/...) telt alleen zwaar als we weten dat het een gevoelig apparaat is.
       const admin = risky !== undefined || (known !== undefined && WEB_ADMIN.has(f.internalPort) && SENSITIVE.has(known.category));
       const key = admin ? 'apparaat.beheerpoort_open_naar_internet' : 'apparaat.poort_open_naar_internet';
       const what = known ? (known === router ? 'router' : label(known)) : `apparaat op ${f.internalIp}`;
+      const limited = f.allowedFrom && f.allowedFrom.length > 0;
+      const how = f.allPorts
+        ? `De router stuurt al het verkeer van internet door naar ${f.internalIp} (1:1 NAT of DMZ)`
+        : `De router zet ${f.protocol.toUpperCase()}-poort ${f.externalPort} door naar ${f.internalIp}:${f.internalPort}`;
       out.push({
         key,
         checkKey: 'inventaris.doorgezette_poorten',
         asset: sa,
+        // Beperkt tot bepaalde adressen: open, maar niet voor iedereen. Dat weten we zeker, het risico is kleiner.
         certainty: 'vastgesteld',
         title: admin
-          ? `${known ? 'Je ' : 'Een '}${what} is vanaf internet bereikbaar via ${risky ?? 'de beheerpagina'}`
-          : `Een poort van ${known ? 'je ' : 'een '}${what} staat open naar internet`,
+          ? `${known ? 'Je ' : 'Een '}${what} is vanaf internet bereikbaar via ${risky ?? 'de beheerpagina'}${limited ? ' (voor een beperkt aantal adressen)' : ''}`
+          : `Een poort van ${known ? 'je ' : 'een '}${what} staat open naar internet${limited ? ' (voor een beperkt aantal adressen)' : ''}`,
         detail:
-          `De router zet ${f.protocol.toUpperCase()}-poort ${f.externalPort} door naar ${f.internalIp}:${f.internalPort}` +
-          `${f.description ? ` ("${f.description}")` : ''}, ${f.origin === 'upnp' ? 'zelf geopend door het apparaat via UPnP' : 'ingesteld als regel in de router'}.` +
-          (admin ? ' Dit soort toegang is een van de meest misbruikte ingangen; gebruik een VPN in plaats van een open poort.' : ''),
-        fingerprint: fingerprint(sa.type, sa.value, key, `${f.protocol}/${f.externalPort}`),
-        z: 1.0, // Direct bereikbaar vanaf internet.
+          `${how}${f.description ? ` ("${f.description}")` : ''}, ${f.origin === 'upnp' ? 'zelf geopend door het apparaat via UPnP' : 'ingesteld als regel in de router'}.` +
+          (limited ? ` Alleen bereikbaar vanaf ${f.allowedFrom!.join(', ')}.` : ' Iedereen op internet kan deze poort bereiken.') +
+          (admin ? ' Dit soort toegang is een van de meest misbruikte ingangen.' : '') +
+          ` Zo sluit je hem: ${closeSteps(r.product, f)}`,
+        fingerprint: fingerprint(sa.type, sa.value, key, f.allPorts ? 'alle' : `${f.protocol}/${f.externalPort}`),
+        // Direct bereikbaar vanaf internet; beperkt tot vaste adressen telt half zo zwaar.
+        z: limited ? 0.5 : 1.0,
       });
     }
     if (r.upnpEnabled && router) {
@@ -232,4 +272,42 @@ export function forwardFindings(readouts: Readout[], assets: InventoryAsset[]): 
     }
   }
   return out;
+}
+
+export type ForwardStatus = 'gecontroleerd' | 'deels' | 'niet_gecontroleerd';
+
+export interface ForwardCoverage {
+  status: ForwardStatus;
+  /** In gewone taal: wat we wel en niet weten over open poorten. */
+  uitleg: string;
+  /** Routers waarvan de lijst niet (volledig) uit te lezen was. */
+  nietUitgelezen: Readout['product'][];
+}
+
+/**
+ * Eerlijke status voor "open poorten naar internet" (Erik, 27-11: "niet
+ * gecontroleerd" is iets anders dan "geen problemen"). Alleen als élke router de
+ * lijst met doorgezette poorten volledig gaf, mag het overzicht zeggen dat er
+ * niets open staat. Een router achter een ander modem (dubbele NAT) telt als
+ * deels: het modem ervoor kan ook poorten doorzetten.
+ */
+export function forwardCoverage(readouts: Readout[]): ForwardCoverage {
+  if (readouts.length === 0) {
+    return { status: 'niet_gecontroleerd', uitleg: 'Niet gecontroleerd: er is geen router gekoppeld. Koppel je router, dan lezen we uit welke poorten open staan naar internet.', nietUitgelezen: [] };
+  }
+  const missing = readouts.filter((r) => r.portForwardsRead !== true).map((r) => r.product);
+  const behindNat = readouts.some((r) => r.privateWanIp);
+  if (missing.length === readouts.length) {
+    return { status: 'niet_gecontroleerd', uitleg: 'Niet gecontroleerd: de router gaf de lijst met doorgezette poorten niet. Zie de melding bij de koppeling.', nietUitgelezen: missing };
+  }
+  if (missing.length > 0 || behindNat) {
+    return {
+      status: 'deels',
+      uitleg: behindNat && missing.length === 0
+        ? 'Deels gecontroleerd: je router staat achter het modem van je provider. Koppel ook het modem, want ook dat kan poorten doorzetten.'
+        : 'Deels gecontroleerd: niet elke router gaf de lijst met doorgezette poorten.',
+      nietUitgelezen: missing,
+    };
+  }
+  return { status: 'gecontroleerd', uitleg: 'Gecontroleerd: we lazen bij je router uit welke poorten hij van internet naar binnen doorzet.', nietUitgelezen: [] };
 }

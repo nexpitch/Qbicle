@@ -52,6 +52,13 @@ export interface PortForward {
   enabled: boolean;
   /** upnp: een apparaat heeft de poort zelf geopend; regel: door een beheerder ingesteld. */
   origin: 'upnp' | 'regel';
+  /**
+   * Alleen bereikbaar vanaf deze adressen (zoals de router het meldt). Leeg of
+   * ontbrekend = vanaf heel internet.
+   */
+  allowedFrom?: string[];
+  /** Het apparaat staat met álle poorten open naar internet (1:1 NAT of DMZ). */
+  allPorts?: boolean;
 }
 
 /** Een apparaat dat de router kent (client). */
@@ -87,6 +94,12 @@ export interface Readout {
   wanIps: string[];
   /** Poorten die vanaf internet naar binnen worden doorgezet, als de router dat meldt. */
   portForwards?: PortForward[];
+  /**
+   * De lijst met doorgezette poorten is volledig uitgelezen (ook als hij leeg is).
+   * Ontbreekt dit of is het false, dan weten we het niet: "niet gecontroleerd",
+   * nooit "geen open poorten".
+   */
+  portForwardsRead?: boolean;
   /**
    * WAN-adres van de router zelf als dat een privé-adres is: dan staat deze router
    * achter een andere router, meestal het modem van de provider (dubbele NAT).
