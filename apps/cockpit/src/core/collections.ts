@@ -171,8 +171,10 @@ export async function prepareRun(
       q,
       `SELECT s.id, s.organization_id, s.plan, s.billing_interval, s.monthly_price_cents, s.current_period_end, s.pending_plan, s.pending_interval
          FROM subscription s JOIN organization o ON o.id = s.organization_id
-        WHERE s.status IN ('actief', 'achterstallig')
-          AND NOT s.cancel_at_period_end
+        -- Zelfde regel als needsRenewal() in billing.ts: ook een opgezegd abonnement binnen
+        -- de opzegtermijn krijgt nog één verlenging.
+        WHERE ((s.status IN ('actief', 'achterstallig') AND NOT s.cancel_at_period_end)
+               OR (s.status = 'opgezegd' AND NOT s.cancel_at_period_end AND s.ends_at > s.current_period_end))
           AND o.payment_method = 'incasso'
           AND s.current_period_end IS NOT NULL
           AND s.current_period_end <= $1
@@ -189,7 +191,8 @@ export async function prepareRun(
     const skipped = await one<{ n: number }>(
       q,
       `SELECT count(*)::int AS n FROM subscription s JOIN organization o ON o.id = s.organization_id
-        WHERE s.status IN ('actief', 'achterstallig') AND NOT s.cancel_at_period_end
+        WHERE ((s.status IN ('actief', 'achterstallig') AND NOT s.cancel_at_period_end)
+               OR (s.status = 'opgezegd' AND NOT s.cancel_at_period_end AND s.ends_at > s.current_period_end))
           AND o.payment_method = 'factuur' AND s.current_period_end <= $1`,
       [date],
     );
@@ -443,8 +446,7 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
     id: string;
     organization_id: string;
     same_period: boolean;
-    sub_status: string;
-    cancel_at_period_end: boolean;
+    renews: boolean;
     payment_method: string;
     mandate_revoked: boolean;
     already_paid: boolean;
@@ -455,7 +457,9 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
     q,
     `SELECT i.id, i.organization_id,
             s.current_period_end = i.period_start AS same_period,
-            s.status AS sub_status, s.cancel_at_period_end, o.payment_method,
+            ((s.status IN ('actief', 'achterstallig') AND NOT s.cancel_at_period_end)
+                OR (s.status = 'opgezegd' AND NOT s.cancel_at_period_end AND s.ends_at > s.current_period_end)) AS renews,
+            o.payment_method,
             coalesce((SELECT bool_or(m.status = 'ingetrokken') AND NOT bool_or(m.status = 'geldig')
                         FROM payment_mandate m WHERE m.organization_id = i.organization_id), false) AS mandate_revoked,
             EXISTS (SELECT 1 FROM payment pm WHERE pm.subscription_id = i.subscription_id AND pm.status = 'betaald'
@@ -482,7 +486,7 @@ async function recheckItems(p: Platform, q: Queryable, runId: string, actor: Act
         ? 'De klant is zelf aan het betalen (open betaling).'
         : r.mandate_revoked
           ? 'Machtiging ingetrokken door de klant; zie Mislukt voor het betaalverzoek.'
-          : r.cancel_at_period_end || !['actief', 'achterstallig'].includes(r.sub_status)
+          : !r.renews
             ? 'Het abonnement is opgezegd of gestopt.'
             : r.payment_method !== 'incasso'
               ? 'Deze klant betaalt nu op factuur.'

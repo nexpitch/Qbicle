@@ -208,3 +208,36 @@ describe.skipIf(!hasDb)('cockpit: hercontrole (N1 t/m N4, N7)', () => {
     expect((await h.p.pool.query('SELECT status FROM collection_run WHERE id = $1', [r.batch])).rows[0].status).toBe('afgerond');
   });
 });
+
+describe.skipIf(!hasDb)('cockpit: incasso en opzegtermijn van 1 maand', () => {
+  let h: Awaited<ReturnType<typeof cockpitHarness>>;
+  let fin: string;
+  const LAAT = '20000000-0000-4000-8000-000000000001'; // te laat opgezegd: nog één verlenging
+  const OP_TIJD = '20000000-0000-4000-8000-000000000002'; // op tijd opgezegd: huidige periode is de laatste
+  beforeAll(async () => {
+    h = await cockpitHarness();
+    const q = h.p.pool;
+    await q.query(`INSERT INTO organization (id, name, kind, payment_method) VALUES ($1, 'Te Laat BV', 'klant', 'incasso'), ($2, 'Op Tijd BV', 'klant', 'incasso')`, [LAAT, OP_TIJD]);
+    await q.query(
+      `INSERT INTO subscription (organization_id, plan, billing_interval, monthly_price_cents, status, current_period_start, current_period_end, cancel_at_period_end, ends_at, canceled_at) VALUES
+        ($1, 'mkb', 'maand', 5900, 'opgezegd', now() - interval '1 month', now() - interval '1 hour', false, now() - interval '1 hour' + interval '1 month', now()),
+        ($2, 'mkb', 'maand', 5900, 'opgezegd', now() - interval '1 month', now() - interval '1 hour', true, now() - interval '1 hour', now() - interval '2 months')`,
+      [LAAT, OP_TIJD],
+    );
+    fin = await h.login('fin@qbicle.test', 'financieel');
+  });
+  afterAll(async () => h?.close());
+
+  it('incasseert de laatste verlenging binnen de opzegtermijn, daarna niet meer', async () => {
+    const res = await h.post('/api/incasso', { incassodatum: amsterdamDate(new Date()) }, fin);
+    const run = ((await res.json()) as { batch: string; regels: number });
+    expect(run.regels).toBe(1);
+    const items = (await h.p.pool.query('SELECT id, organization_id FROM collection_item WHERE run_id = $1', [run.batch])).rows;
+    expect(items.map((i) => i.organization_id)).toEqual([LAAT]);
+    expect((await h.post(`/api/incasso/${run.batch}/valideren`, {}, fin)).status).toBe(200);
+    expect(await (await h.post(`/api/incasso/${run.batch}/indienen`, {}, fin)).json()).toEqual({ ingediend: 1, automatischUitgesloten: 0 });
+    await h.post(`/api/incasso/regels/${items[0].id}/testuitkomst`, { uitkomst: 'betaald' }, fin);
+    const sub = (await h.p.pool.query('SELECT status, cancel_at_period_end FROM subscription WHERE organization_id = $1', [LAAT])).rows[0];
+    expect(sub).toEqual({ status: 'opgezegd', cancel_at_period_end: true });
+  });
+});
