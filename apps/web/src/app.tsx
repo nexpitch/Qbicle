@@ -25,13 +25,14 @@ import { fileURLToPath } from 'node:url';
 import {
   can,
   demoDataAllowed,
+  findDnsHost,
   getAssetDetail,
   getDashboard,
   listDomains,
   resolveAccess,
 } from '@qbicle/platform';
 import { Layout } from './layout.tsx';
-import { AssetPage, AssetsPage, DashboardPage, DomeinenPage } from './pages/dashboard.tsx';
+import { AssetPage, AssetsPage, DashboardPage, DomeinenPage, WaarStaatDomeinPage } from './pages/dashboard.tsx';
 import { AanmeldenPage, CheckMailPage, InloggenPage, TokenPage } from './pages/aanmelden.tsx';
 import {
   AbonnementPage,
@@ -205,6 +206,13 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
     const [domains, access] = await Promise.all([listDomains(p, ctx.s.user.id, ctx.org.id), resolveAccess(p.pool, ctx.s.user.id, ctx.org.id)]);
     const magBeheren = Boolean(access && can(access, 'domeinen:beheren'));
     return c.html(<DomeinenPage user={ctx.user} org={ctx.org} domains={domains} magBeheren={magBeheren} sent={c.req.query('mail') === 'verstuurd'} />);
+  });
+
+  app.get('/o/:org/domeinen/:dom/waar', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const r = await findDnsHost(p, ctx.s.user.id, ctx.org.id, c.req.param('dom'));
+    return c.html(<WaarStaatDomeinPage user={ctx.user} org={ctx.org} domainId={c.req.param('dom')} r={r} />);
   });
 
   app.get('/o/:org/welkom', async (c) => {

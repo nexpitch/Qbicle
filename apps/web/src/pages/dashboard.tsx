@@ -6,6 +6,7 @@ import type {
   Dashboard,
   DashboardAction,
   DashboardAsset,
+  DnsHostResult,
   Domain,
   Level,
   TrendPoint,
@@ -704,6 +705,9 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
               <div class="stack-sm">
                 <h3>Via DNS (aangeraden)</h3>
                 <p class="small">Zet deze TXT-regel bij je domeinbeheerder, of stuur hem naar je IT-partner. Het kan een uur duren voor hij zichtbaar is.</p>
+                <p class="small">
+                  <a href={`/o/${org.id}/domeinen/${d.id}/waar`}>Weet je niet waar je domein staat? Wij zoeken het op.</a>
+                </p>
                 <dl class="facts">
                   <dt>Naam</dt>
                   <dd>
@@ -767,6 +771,106 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
           </form>
         </section>
       ) : null}
+    </Layout>
+  );
+}
+
+// Waar staat mijn domein? ----------------------------------------------------------------------
+
+const ZEKERHEID_KIND: Record<string, Level> = { waarschijnlijk: 'ok', mogelijk: 'warn', onbekend: 'unk' };
+const ZEKERHEID_LABEL: Record<string, string> = { waarschijnlijk: 'Waarschijnlijk', mogelijk: 'Mogelijk', onbekend: 'Niet gevonden' };
+
+function doorstuurMail(r: DnsHostResult, orgName: string): string {
+  const subject = `Graag een DNS-regel toevoegen voor ${r.domain}`;
+  const body = [
+    'Hoi,',
+    '',
+    `Wil je voor ${r.domain} deze TXT-regel toevoegen in de DNS${r.dnsBeheer.naam ? ` (die lijkt bij ${r.dnsBeheer.naam} te staan)` : ''}?`,
+    '',
+    `Type: TXT`,
+    `Naam: ${r.instructions.dns.name}`,
+    `Waarde: ${r.instructions.dns.value}`,
+    '',
+    `Hiermee bevestigen we bij Qbicle dat ${r.domain} van ${orgName} is, zodat Qbicle de beveiliging van onze internetsystemen kan bewaken. De regel verandert niets aan de website of de mail.`,
+    '',
+    'Dank je wel!',
+  ].join('\n');
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+export function WaarStaatDomeinPage(props: Ctx & { domainId: string; r: DnsHostResult }) {
+  const { r, org } = props;
+  const p = r.dnsBeheer.provider;
+  return (
+    <Layout title={`Waar staat ${r.domain}?`} user={props.user} org={org} active="domeinen">
+      <div class="intro">
+        <p class="small">
+          <a href={`/o/${org.id}/overzicht`}>Overzicht</a> / <a href={`/o/${org.id}/domeinen`}>Domeinen</a>
+        </p>
+        <h1 class="break">Waar staat {r.domain}?</h1>
+        <p class="lead">We hebben openbare gegevens opgezocht: de naamservers, de registratie van de domeinnaam en de mailservers. We hebben niets bij je domein veranderd.</p>
+      </div>
+      <section class="card next-step">
+        <div class="row between">
+          <p class="eyebrow">DNS-beheer</p>
+          <Status kind={ZEKERHEID_KIND[r.dnsBeheer.zekerheid]!}>{ZEKERHEID_LABEL[r.dnsBeheer.zekerheid]}</Status>
+        </div>
+        <h2>{r.dnsBeheer.naam ? `Je DNS staat ${r.dnsBeheer.zekerheid === 'waarschijnlijk' ? 'waarschijnlijk' : 'mogelijk'} bij ${r.dnsBeheer.naam}` : 'We weten niet zeker waar je DNS staat'}</h2>
+        <p class="muted">{r.dnsBeheer.reden}</p>
+        {p ? (
+          <div class="stack-sm">
+            <h3>Zo zet je de regel erin bij {p.naam}</h3>
+            <ol class="steps-plain">
+              {p.stappen.map((st) => (
+                <li>{st}</li>
+              ))}
+            </ol>
+            <p class="small">Menunamen kunnen iets anders heten. Kom je er niet uit, stuur de regel dan door.</p>
+          </div>
+        ) : null}
+        <dl class="facts">
+          <dt>Type</dt>
+          <dd>
+            <code>TXT</code>
+          </dd>
+          <dt>Naam</dt>
+          <dd>
+            <code class="break">{r.instructions.dns.name}</code>
+          </dd>
+          <dt>Waarde</dt>
+          <dd>
+            <code class="break">{r.instructions.dns.value}</code>
+          </dd>
+        </dl>
+        <div class="row">
+          {p ? (
+            <a class="btn" href={p.inlog} rel="noopener noreferrer" target="_blank">
+              Inloggen bij {p.naam}
+            </a>
+          ) : null}
+          <a class={p ? 'btn secondary' : 'btn'} href={doorstuurMail(r, org.name)}>
+            Stuur de regel naar je IT-partner of webbouwer
+          </a>
+          <a class="btn secondary" href={`/o/${org.id}/domeinen`}>
+            Terug naar domeinen
+          </a>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Wat we vonden</h2>
+        <dl class="facts">
+          <dt>Naamservers</dt>
+          <dd>{r.nameservers.length ? r.nameservers.join(', ') : 'Niet gevonden'}</dd>
+          <dt>Domeinnaam geregistreerd via</dt>
+          <dd>
+            {r.registrar.naam ?? 'Niet gevonden'}
+            {r.registrar.naam ? <span class="small"> · hier betaal je meestal voor de domeinnaam</span> : null}
+          </dd>
+          <dt>Mail loopt via</dt>
+          <dd>{r.mail.provider ? r.mail.provider.naam : r.mail.servers.length ? r.mail.servers.join(', ') : 'Geen mailservers gevonden'}</dd>
+        </dl>
+        <p class="small">Registratie en DNS-beheer kunnen bij verschillende partijen liggen. De DNS pas je aan bij de partij van de naamservers.</p>
+      </section>
     </Layout>
   );
 }

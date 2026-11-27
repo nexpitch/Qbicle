@@ -19,3 +19,4 @@ export * from './payments.ts';
 export * from './billing.ts';
 export * from './dashboard.ts';
 export * from './demo.ts';
+export * from './dnshost.ts';

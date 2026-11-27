@@ -55,7 +55,7 @@ import {
   type Platform,
   type Session,
 } from '@qbicle/platform';
-import { demoDataAllowed, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
+import { demoDataAllowed, findDnsHost, getAssetDetail, getDashboard, seedDemoData } from '@qbicle/platform';
 import { recordUsage } from '@qbicle/ops';
 import { KoppelingFout, KOPPELINGEN, teststandVoor } from '@qbicle/koppelingen';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
@@ -343,6 +343,9 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     await removeDomain(p, user(c), param(c, 'org'), param(c, 'dom'));
     return c.body(null, 204);
   });
+  v1.get('/organisaties/:org/domeinen/:dom/dns-beheer', requireUser, async (c) =>
+    c.json(await findDnsHost(p, user(c).userId, param(c, 'org'), param(c, 'dom'))),
+  );
   v1.post('/organisaties/:org/domeinen/:dom/verificatie/dns', requireUser, async (c) =>
     c.json(await verifyDomainByDns(p, user(c), param(c, 'org'), param(c, 'dom'))),
   );
