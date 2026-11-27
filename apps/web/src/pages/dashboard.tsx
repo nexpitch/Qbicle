@@ -20,6 +20,7 @@ import type { Child } from 'hono/jsx';
 import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
+import { WebProfielSectie } from './webprofiel.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -797,6 +798,7 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
               <p class="melding ok">Op dit asset staat niets open.</p>
             )}
           </section>
+          {a.webProfiel ? <WebProfielSectie p={a.webProfiel} /> : null}
           {a.closed.length ? (
             <section class="card" aria-labelledby="opgelost-kop">
               <h2 id="opgelost-kop">Eerder opgelost</h2>

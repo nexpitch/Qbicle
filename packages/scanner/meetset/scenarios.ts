@@ -103,7 +103,7 @@ export const SCENARIOS: Scenario[] = [
     }),
     verwacht: {
       band: ['weinig'],
-      magNiet: ['web.hsts_missing', 'web.csp_missing', 'web.no_https_redirect', 'web.software_kwetsbaar'],
+      magNiet: ['web.hsts_missing', 'web.csp_missing', 'web.no_https_redirect', 'web.server_kwetsbaar'],
       dekkingWaarschuwing: true,
       uitkomst: { 'web.headers': 'unknown' },
     },
@@ -250,7 +250,7 @@ export const SCENARIOS: Scenario[] = [
     net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'Apache/2.4.49 (Unix)' } })),
     verwacht: {
       band: ['hoog', 'direct'],
-      moet: [{ key: 'web.software_kwetsbaar', zekerheid: 'vastgesteld' }, 'web.version_disclosed'],
+      moet: [{ key: 'web.server_kwetsbaar', zekerheid: 'vastgesteld' }, 'web.version_disclosed'],
     },
   },
   {
@@ -262,8 +262,8 @@ export const SCENARIOS: Scenario[] = [
     ),
     verwacht: {
       band: ['weinig', 'aandacht'],
-      moet: [{ key: 'web.software_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
-      magNiet: ['web.software_kwetsbaar', 'web.software_einde_ondersteuning'],
+      moet: [{ key: 'web.server_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
+      magNiet: ['web.server_kwetsbaar', 'web.server_einde_ondersteuning'],
     },
   },
   {
@@ -273,7 +273,7 @@ export const SCENARIOS: Scenario[] = [
     net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'nginx/1.24.0 (Ubuntu)' } })),
     verwacht: {
       band: ['weinig'],
-      moet: [{ key: 'web.software_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
+      moet: [{ key: 'web.server_einde_distro', zekerheid: 'mogelijk' }, 'web.version_disclosed'],
       verderSchoon: true,
       maxUrgentie: 5,
     },
@@ -283,20 +283,20 @@ export const SCENARIOS: Scenario[] = [
     waarom: 'PHP 7.4 krijgt sinds november 2022 geen updates meer: vastgesteld en Aandacht nodig.',
     domein: D,
     net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, 'x-powered-by': 'PHP/7.4.33' } })),
-    verwacht: { band: ['aandacht'], moet: [{ key: 'web.software_einde_ondersteuning', zekerheid: 'vastgesteld' }] },
+    verwacht: { band: ['aandacht'], moet: [{ key: 'web.server_einde_ondersteuning', zekerheid: 'vastgesteld' }] },
   },
   {
     id: 'iis-8.5-windows-2012',
     waarom: 'IIS 8.5 hoort bij Windows Server 2012 R2, sinds oktober 2023 zonder updates.',
     domein: D,
     net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'Microsoft-IIS/8.5', 'x-powered-by': 'ASP.NET' } })),
-    verwacht: { band: ['aandacht'], moet: [{ key: 'web.software_einde_ondersteuning', zekerheid: 'vastgesteld' }] },
+    verwacht: { band: ['aandacht'], moet: [{ key: 'web.server_einde_ondersteuning', zekerheid: 'vastgesteld' }] },
   },
   {
     id: 'versie-zonder-bekend-probleem',
     waarom: 'Een actuele versie tonen is hygiëne, geen lek: alleen de lichte melding.',
     domein: D,
-    net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'nginx/1.27.3' } })),
+    net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, server: 'nginx/1.30.8' } })),
     verwacht: { band: ['weinig'], moet: ['web.version_disclosed'], verderSchoon: true },
   },
   {
@@ -310,5 +310,36 @@ export const SCENARIOS: Scenario[] = [
       delete c.http![`https://${D}/.well-known/security.txt`];
     }),
     verwacht: { band: ['weinig', 'aandacht'], moet: ['web.no_https_redirect'], dekkingWaarschuwing: true },
+  },
+  {
+    id: 'wordpress-achter-met-plugins',
+    waarom: 'WordPress 6.8.2 terwijl 6.8.13 er is (versie afgeleid uit ?ver=): mogelijk, voor de webbouwer, geen Hoge urgentie.',
+    domein: D,
+    net: make(D, (c) =>
+      site(c, {
+        headers: { ...GOOD_HEADERS, server: 'nginx' },
+        body: '<link rel="stylesheet" href="/wp-includes/css/dist/block-library/style.min.css?ver=6.8.2"><link rel="stylesheet" href="/wp-content/plugins/woocommerce/assets/css/woocommerce.css?ver=9.8.5">',
+      }),
+    ),
+    verwacht: { band: ['weinig'], moet: [{ key: 'web.software_update_achter', zekerheid: 'mogelijk' }], verderSchoon: true },
+  },
+  {
+    id: 'joomla-3-einde',
+    waarom: 'Joomla 3 (herkend aan /media/jui/) krijgt sinds augustus 2023 geen updates; versie afgeleid, dus mogelijk.',
+    domein: D,
+    net: make(D, (c) =>
+      site(c, {
+        headers: { ...GOOD_HEADERS },
+        body: '<meta name="generator" content="Joomla! - Open Source Content Management" /><script src="/media/jui/js/jquery.min.js"></script>',
+      }),
+    ),
+    verwacht: { band: ['weinig', 'aandacht'], moet: [{ key: 'web.software_einde_ondersteuning', zekerheid: 'mogelijk' }], verderSchoon: true },
+  },
+  {
+    id: 'shopify-beheerd',
+    waarom: 'Een webwinkel op Shopify: de leverancier werkt bij, dus geen softwaremeldingen.',
+    domein: D,
+    net: make(D, (c) => site(c, { headers: { ...GOOD_HEADERS, 'x-shopid': '1' }, body: '<script src="https://cdn.shopify.com/s/x.js"></script>' })),
+    verwacht: { band: ['weinig'], verderSchoon: true },
   },
 ];

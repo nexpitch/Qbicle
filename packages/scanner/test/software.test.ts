@@ -31,7 +31,8 @@ describe('softwareherkenning', () => {
     expect(at('Microsoft-IIS/8.5')).toMatchObject({ status: 'einde' });
     expect(at('Microsoft-IIS/10.0')).toMatchObject({ status: 'ondersteund' });
     expect(at('nginx/1.18.0')).toMatchObject({ status: 'einde', cycle: '1.18' });
-    expect(at('nginx/1.27.3')).toBeNull();
+    expect(at('nginx/1.27.3')).toMatchObject({ status: 'einde', cycle: '1.27' }); // uit de endoflife.date-snapshot
+    expect(at('nginx/1.30.8')).toMatchObject({ status: 'ondersteund', cycle: '1.30' });
     expect(at('OpenSSL/1.1.1w')).toMatchObject({ status: 'einde', cycle: '1.1.1' });
     expect(at('Apache/2.2.15')).toMatchObject({ status: 'einde' });
   });
@@ -46,7 +47,7 @@ function siteWith(headers: Record<string, string>) {
 describe('softwarecheck', () => {
   it('Apache 2.4.49: actief misbruikt lek, vastgesteld, met bronnen', async () => {
     const { keys, out } = await keysOf(softwareCheck, siteWith({ server: 'Apache/2.4.49 (Unix)' }));
-    expect(keys).toEqual(['web.software_kwetsbaar']);
+    expect(keys).toEqual(['web.server_kwetsbaar']);
     const f = out.findings![0]!;
     expect(f.certainty).toBe('vastgesteld');
     expect(f.vulns!.map((v) => v.cveId).sort()).toEqual(['CVE-2021-41773', 'CVE-2021-42013']);
@@ -62,25 +63,33 @@ describe('softwarecheck', () => {
 
   it('einde ondersteuning op een Ubuntu-server: getoond, telt niet mee', async () => {
     const { keys, out } = await keysOf(softwareCheck, siteWith({ server: 'nginx/1.24.0 (Ubuntu)' }));
-    expect(keys).toEqual(['web.software_einde_distro']);
+    expect(keys).toEqual(['web.server_einde_distro']);
     expect(out.findings![0]!.certainty).toBe('mogelijk');
   });
 
   it('lek met voorwaarde (PHP-CGI op Windows) is mogelijk', async () => {
     const { keys, out } = await keysOf(softwareCheck, siteWith({ 'x-powered-by': 'PHP/8.3.4' }));
-    expect(keys).toEqual(['web.software_kwetsbaar']);
+    expect(keys).toEqual(['web.server_kwetsbaar']);
     expect(out.findings![0]!.certainty).toBe('mogelijk');
   });
 
   it('PHP 7.4 zonder distributie: einde ondersteuning, vastgesteld, met bron', async () => {
     const { keys, out } = await keysOf(softwareCheck, siteWith({ 'x-powered-by': 'PHP/7.4.33' }));
-    expect(keys).toEqual(['web.software_einde_ondersteuning']);
+    expect(keys).toEqual(['web.server_einde_ondersteuning']);
     expect(out.findings![0]!.certainty).toBe('vastgesteld');
     expect(out.findings![0]!.sources![0]!.url).toContain('php.net');
   });
 
-  it('geen versies zichtbaar: niet van toepassing, telt niet als onbekend', async () => {
-    const { outcome } = await keysOf(softwareCheck, siteWith({ server: 'nginx' }));
+  it('versie verborgen: wel in het profiel, geen bevinding', async () => {
+    const { outcome, keys, out } = await keysOf(softwareCheck, siteWith({ server: 'nginx' }));
+    expect(outcome).toBe('ok');
+    expect(keys).toEqual([]);
+    const p = (out.evidence!.profiel as { key: string; versieZekerheid: string; status: string }[])[0]!;
+    expect(p).toMatchObject({ key: 'nginx', versieZekerheid: 'verborgen', status: 'onbekend' });
+  });
+
+  it('niets zichtbaar: niet van toepassing, telt niet als onbekend', async () => {
+    const { outcome } = await keysOf(softwareCheck, siteWith({}));
     expect(outcome).toBe('not_applicable');
   });
 

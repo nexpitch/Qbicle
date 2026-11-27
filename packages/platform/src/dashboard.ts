@@ -11,6 +11,7 @@ import {
   type Source,
   type Visibility,
 } from '@qbicle/score';
+import type { WebProfiel } from '@qbicle/scanner';
 import type { Platform } from './context.ts';
 import { many, one } from './db.ts';
 import { SCAN_INTERVAL_DAYS } from './scanstatus.ts';
@@ -61,6 +62,7 @@ export const FOR_WHO_LABELS: Record<ForWho, string> = {
   zelf: 'Kun je zelf',
   'it-partner': 'Voor je IT-partner',
   webbouwer: 'Voor je webbouwer',
+  hosting: 'Voor je hostingpartij',
 };
 
 /** Vanaf dit gewicht (na alle factoren) is een bevinding rood. */
@@ -556,7 +558,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     const a = actions[0];
     nextStep = {
       title: a.title,
-      text: `${a.why} ${a.forWho === 'zelf' ? 'Dit kun je zelf doen.' : a.forWho === 'webbouwer' ? 'Stuur dit door naar je webbouwer.' : 'Stuur dit door naar je IT-partner.'}`,
+      text: `${a.why} ${a.forWho === 'zelf' ? 'Dit kun je zelf doen.' : a.forWho === 'webbouwer' ? 'Stuur dit door naar je webbouwer.' : a.forWho === 'hosting' ? 'Stuur dit door naar je hostingpartij.' : 'Stuur dit door naar je IT-partner.'}`,
       href: a.assets[0] ? `${base}/assets/${a.assets[0].id}` : `${base}/overzicht#acties`,
       label: a.assets.length === 1 ? 'Bekijk wat we zagen' : 'Bekijk de details',
     };
@@ -608,6 +610,14 @@ async function scanPlanFor(p: Platform, organizationId: string, domains: { total
   return { status: 'gepland', volgende: new Date(r.oudste.getTime() + SCAN_INTERVAL_DAYS * DAY) };
 }
 
+/** Het opgeslagen webprofiel, als het er is en de vorm klopt. */
+export function webProfielUit(attrs: { key: string; value: unknown; observed_at: Date }[]): (WebProfiel & { gezienOp: Date }) | null {
+  const a = attrs.find((x) => x.key === 'web.profiel');
+  const v = a?.value as Partial<WebProfiel> | undefined;
+  if (!a || !v || v.versie !== 1 || !Array.isArray(v.onderdelen) || !Array.isArray(v.maatregelen)) return null;
+  return { ...(v as WebProfiel), gezienOp: a.observed_at };
+}
+
 // Detail per asset ------------------------------------------------------------------------
 
 export interface AssetFindingDetail {
@@ -629,6 +639,8 @@ export interface AssetDetail {
   asset: DashboardAsset & { source: string; managed: string; status: string };
   attributes: { key: string; value: unknown; certainty: Certainty; observedAt: Date }[];
   components: { kind: string; vendor: string | null; product: string; version: string | null; eolDate: Date | null }[];
+  /** Software en server van een website, uit de laatste scan (zie buildWebProfiles in de scanner). */
+  webProfiel: (WebProfiel & { gezienOp: Date }) | null;
   open: AssetFindingDetail[];
   closed: AssetFindingDetail[];
 }
@@ -718,8 +730,9 @@ export async function getAssetDetail(p: Platform, userId: string, organizationId
       managed: a.managed,
       status: a.status,
     },
-    attributes: attributes.map((r) => ({ key: r.key, value: r.value, certainty: r.certainty, observedAt: r.observed_at })),
+    attributes: attributes.filter((r) => r.key !== 'web.profiel').map((r) => ({ key: r.key, value: r.value, certainty: r.certainty, observedAt: r.observed_at })),
     components: components.map((c) => ({ kind: c.kind, vendor: c.vendor, product: c.product, version: c.version, eolDate: c.eol_date })),
+    webProfiel: webProfielUit(attributes),
     open,
     closed: findings.filter((f) => f.resolved_at || f.accepted_at).map(detail),
   };

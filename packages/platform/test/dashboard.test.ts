@@ -92,6 +92,26 @@ describe.skipIf(!hasDb)('klantdashboard', () => {
     expect((await getAssetDetail(p, eigenaar.userId, org, nas.id)).components[0]).toMatchObject({ product: 'DSM' });
   });
 
+  it('website-detail: software en server met zekerheid, wie het bijwerkt en maatregelen', async () => {
+    const d = await getDashboard(p, eigenaar.userId, org);
+    const shop = d.assets.find((a) => a.label.includes('webshop.') && a.type === 'website')!;
+    const detail = await getAssetDetail(p, lezer.userId, org, shop.id);
+    const prof = detail.webProfiel!;
+    expect(prof.kennisStand).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const php = prof.onderdelen.find((o) => o.key === 'php')!;
+    expect(php).toMatchObject({ versie: '7.4.33', versieZekerheid: 'zeker', status: 'einde', wie: 'hosting' });
+    expect(php.uitleg).toMatch(/geen beveiligingsupdates meer/);
+    expect(prof.onderdelen.find((o) => o.key === 'jquery')).toMatchObject({ status: 'einde', wie: 'webbouwer', versieZekerheid: 'waarschijnlijk' });
+    expect(prof.maatregelen.find((m) => m.key === 'hsts')).toMatchObject({ ok: false });
+    expect(prof.hosting).toMatchObject({ naam: 'Hetzner', soort: 'cloud', zekerheid: 'waarschijnlijk' });
+    // Het profiel is geen los kenmerk in de lijst.
+    expect(detail.attributes.some((a) => a.key === 'web.profiel')).toBe(false);
+    const www = d.assets.find((a) => a.label === 'www.voorbeeldbedrijf.example' || a.label.startsWith('https://www.'))!;
+    const wp = (await getAssetDetail(p, eigenaar.userId, org, www.id)).webProfiel!.onderdelen;
+    expect(wp.find((o) => o.key === 'wordpress')).toMatchObject({ versie: '6.8.2', versieZekerheid: 'waarschijnlijk', status: 'achter' });
+    expect(wp.filter((o) => o.categorie === 'plugin').map((o) => o.naam).sort()).toEqual(['Contact Form 7', 'Elementor', 'WooCommerce']);
+  });
+
   it('een lezer mag kijken maar geen voorbeelddata vullen; een buitenstaander ziet niets', async () => {
     await expect(getDashboard(p, lezer.userId, org)).resolves.toBeTruthy();
     await expect(seedDemoData(p, lezer, org)).rejects.toMatchObject({ code: 'geen_toegang' });
