@@ -36,6 +36,7 @@ const LABELS: Record<string, string> = {
   'mandaat.afgegeven': 'Machtiging voor incasso afgegeven',
   'mandaat.ingetrokken': 'Machtiging voor incasso ingetrokken',
   'betaalwijze.factuur_aangevraagd': 'Betalen op factuur aangevraagd',
+  'betaalwijze.terug_naar_incasso': 'Factuur teruggezet naar incasso (pakket of termijn gewijzigd)',
   'uitnodiging.ingetrokken': 'Uitnodiging ingetrokken',
   'partner.klant_aangemaakt': 'Partner heeft klant aangemaakt',
   'partner.toegang_verleend': 'Partnertoegang verleend',

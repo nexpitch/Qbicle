@@ -51,6 +51,7 @@ export type AuditAction =
   | 'mandaat.afgegeven'
   | 'mandaat.ingetrokken'
   | 'betaalwijze.factuur_aangevraagd'
+  | 'betaalwijze.terug_naar_incasso'
   | 'audit_opdracht.aangemaakt'
   | 'systeem.toegevoegd'
   | 'systeem.gewijzigd'

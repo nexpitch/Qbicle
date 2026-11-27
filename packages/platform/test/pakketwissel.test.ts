@@ -115,6 +115,8 @@ describe.skipIf(!hasDb)('pakket wijzigen, opzeggen en betaalwijze', () => {
     await expect(revokeMandate(p, eigenaar, org)).rejects.toMatchObject({ code: 'conflict' });
 
     await expect(requestInvoicePayment(p, eigenaar, org, 'nee')).rejects.toMatchObject({ code: 'ongeldige_invoer' });
+    // Factuur kan alleen bij Corporate met jaarcontract (zie factuurregel.test.ts).
+    await p.pool.query(`UPDATE subscription SET plan = 'business', billing_interval = 'jaar' WHERE organization_id = $1 AND status <> 'beeindigd'`, [org]);
     await requestInvoicePayment(p, eigenaar, org, 'Wij hebben een inkoopordernummer nodig');
     const note = await p.pool.query(`SELECT body, source FROM org_note WHERE organization_id = $1`, [org]);
     expect(note.rows[0]).toMatchObject({ source: 'systeem' });

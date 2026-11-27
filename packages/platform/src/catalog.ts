@@ -136,6 +136,21 @@ export function findPlan(c: Catalog, id: string): Plan | undefined {
   return c.plans.find((p) => p.id === id);
 }
 
+/**
+ * Betalen op factuur (Erik, 27-11-2026): standaard alleen bij het Corporate-pakket
+ * met een jaarcontract. Maandelijks, en bij MKB (ook jaarlijks), is het altijd
+ * automatische incasso. Een medewerker kan in de cockpit wel een uitzondering
+ * (maatwerk) instellen.
+ */
+export function invoiceAllowed(plan: Pick<Plan, 'product'> | null | undefined, interval: BillingInterval | string | null | undefined): boolean {
+  return !!plan && plan.product === 'corporate' && interval === 'jaar';
+}
+
+/** Naam van het pakket waarbij betalen op factuur kan (voor teksten). */
+export function invoicePlanName(c: Catalog): string {
+  return c.plans.find((p) => p.product === 'corporate')?.naam ?? 'Corporate';
+}
+
 export function findAuditPackage(c: Catalog, id: string): AuditPackage | undefined {
   return c.auditPackages.find((p) => p.id === id);
 }
