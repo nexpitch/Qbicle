@@ -14,6 +14,7 @@ export * from './members.ts';
 export * from './partners.ts';
 export * from './domains.ts';
 export * from './scans.ts';
+export * from './scanstatus.ts';
 export * from './catalog.ts';
 export * from './payments.ts';
 export * from './billing.ts';

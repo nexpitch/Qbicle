@@ -23,7 +23,9 @@ CREATE UNIQUE INDEX finding_open_scan_fp_idx ON finding (asset_id, scan_fingerpr
 -- Welke worker een scan oppakte. Een worker rondt alleen af wat hij zelf claimde,
 -- zodat een scan die de Bewaker opnieuw in de wachtrij zette niet dubbel wordt opgeslagen.
 ALTER TABLE scan
-  ADD COLUMN claimed_by text CHECK (char_length(claimed_by) <= 100);
+  ADD COLUMN claimed_by text CHECK (char_length(claimed_by) <= 100),
+  -- Voortgang per stap tijdens het scannen, voor de live weergave bij de klant.
+  ADD COLUMN progress jsonb;
 
 CREATE INDEX scan_domain_recent_idx ON scan (domain_id, created_at DESC);
 

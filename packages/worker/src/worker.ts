@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import type pg from 'pg';
-import { many, one, withTransaction, type Mailer } from '@qbicle/platform';
+import { many, one, withTransaction, type Mailer, type ScanProgress } from '@qbicle/platform';
 import { recordError } from '@qbicle/ops';
-import { DomainNotFoundError, OptOutError, scanDomain, type Net, type ScanReport } from '@qbicle/scanner';
+import { CHECKS, DomainNotFoundError, OptOutError, scanDomain, type CheckResult, type Net, type ScanReport } from '@qbicle/scanner';
 import { StaleScanError, storeScanReport, type ScanJob, type StoreResult } from './store.ts';
 
 /**
@@ -63,6 +63,56 @@ export async function claimNextScan(pool: pg.Pool, workerId: string): Promise<Sc
   };
 }
 
+/**
+ * Houdt scan.progress bij: per stap (groep checks) hoeveel er klaar zijn. De klant
+ * ziet dat live. Updates gaan na elkaar (in volgorde) en een fout stopt de scan niet.
+ */
+class ProgressWriter {
+  private readonly totals = new Map<string, Set<string>>();
+  private readonly done = new Map<string, Set<string>>();
+  private chain: Promise<unknown> = Promise.resolve();
+  private opslaan = false;
+
+  constructor(
+    private readonly pool: pg.Pool,
+    private readonly job: ScanJob,
+  ) {
+    for (const c of CHECKS.filter((c) => c.level <= job.maxLevel)) {
+      if (!this.totals.has(c.group)) this.totals.set(c.group, new Set());
+      this.totals.get(c.group)!.add(c.key);
+      this.done.set(c.group, new Set());
+    }
+  }
+
+  private snapshot(): ScanProgress {
+    const stappen: ScanProgress['stappen'] = {};
+    for (const [g, keys] of this.totals) stappen[g] = { totaal: keys.size, klaar: this.done.get(g)?.size ?? 0 };
+    return { stappen, opslaan: this.opslaan };
+  }
+
+  private write(): Promise<unknown> {
+    const json = JSON.stringify(this.snapshot());
+    this.chain = this.chain
+      .then(() => this.pool.query('UPDATE scan SET progress = $3 WHERE id = $1 AND claimed_by = $2', [this.job.id, this.job.claimedBy, json]))
+      .catch(() => {});
+    return this.chain;
+  }
+
+  start(): Promise<unknown> {
+    return this.write();
+  }
+
+  checkDone(r: CheckResult): void {
+    this.done.get(r.group)?.add(r.checkKey);
+    void this.write();
+  }
+
+  saving(): Promise<unknown> {
+    this.opslaan = true;
+    return this.write();
+  }
+}
+
 /** Fout die we aan de klant kunnen uitleggen; geen storing van Qbicle zelf. */
 class ExpectedScanError extends Error {}
 
@@ -98,10 +148,13 @@ export async function runScanJob(ctx: WorkerContext, job: ScanJob): Promise<JobO
     if (d.opted_out || ctx.optOut?.has(job.domainName)) throw new ExpectedScanError('Voor dit domein is gevraagd het niet te scannen.');
 
     const run = ctx.scan ?? scanDomain;
+    const progress = new ProgressWriter(ctx.pool, job);
+    await progress.start();
     const report: ScanReport = await withTimeout(
-      run(job.domainName, { net: ctx.net, maxLevel: job.maxLevel, optOut: ctx.optOut }),
+      run(job.domainName, { net: ctx.net, maxLevel: job.maxLevel, optOut: ctx.optOut, onCheck: (r) => progress.checkDone(r) }),
       ctx.timeoutMinutes,
     );
+    await progress.saving();
     const result = await withTransaction(ctx.pool, (client) => storeScanReport(client, job, report));
     log(`Scan ${job.domainName} klaar: urgentie ${result.urgency}, ${result.nieuw} nieuw, ${result.opgelost} opgelost.`);
     if (result.eerste) await mailFirstScan(ctx, job, result);

@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 import {
   can,
   demoDataAllowed,
+  domainScanInfo,
+  getScan,
   getAssetDetail,
   getDashboard,
   listDomains,
@@ -42,6 +44,7 @@ import {
   TestBetaalPage,
   WelkomPage,
 } from './pages/abonnement.tsx';
+import { ScanPage } from './pages/scan.tsx';
 import { ItStappenplanPage, KoppelingDetailPage, KoppelingenPage } from './pages/koppelingen.tsx';
 
 /**
@@ -202,9 +205,31 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
   app.get('/o/:org/domeinen', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
-    const [domains, access] = await Promise.all([listDomains(p, ctx.s.user.id, ctx.org.id), resolveAccess(p.pool, ctx.s.user.id, ctx.org.id)]);
+    const [domains, access, scans] = await Promise.all([
+      listDomains(p, ctx.s.user.id, ctx.org.id),
+      resolveAccess(p.pool, ctx.s.user.id, ctx.org.id),
+      domainScanInfo(p, ctx.s.user.id, ctx.org.id),
+    ]);
     const magBeheren = Boolean(access && can(access, 'domeinen:beheren'));
-    return c.html(<DomeinenPage user={ctx.user} org={ctx.org} domains={domains} magBeheren={magBeheren} sent={c.req.query('mail') === 'verstuurd'} />);
+    const magScannen = Boolean(access && can(access, 'scans:starten'));
+    return c.html(
+      <DomeinenPage
+        user={ctx.user}
+        org={ctx.org}
+        domains={domains}
+        magBeheren={magBeheren}
+        magScannen={magScannen}
+        scans={scans}
+        sent={c.req.query('mail') === 'verstuurd'}
+      />,
+    );
+  });
+
+  app.get('/o/:org/scans/:scan', async (c) => {
+    const ctx = await withOrg(c);
+    if (!ctx) return c.redirect('/inloggen');
+    const s = await getScan(p, ctx.s.user.id, ctx.org.id, c.req.param('scan'));
+    return c.html(<ScanPage user={ctx.user} org={ctx.org} s={s} />);
   });
 
   app.get('/o/:org/welkom', async (c) => {

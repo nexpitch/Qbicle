@@ -4,6 +4,7 @@ import { one } from './db.ts';
 import { notFound, PlatformError } from './errors.ts';
 import { authorize, isUuid } from './organizations.ts';
 import { hit, LIMITS } from './ratelimit.ts';
+import { SCAN_COOLDOWN_MINUTES } from './scanstatus.ts';
 
 type UserActor = Actor & { userId: string };
 
@@ -47,6 +48,18 @@ export async function requestScan(
   );
   if (running) return { id: running.id, domainId: d.id, status: running.status, createdAt: running.created_at };
 
+  const recent = await one<{ wacht: number }>(
+    p.pool,
+    `SELECT ceil(extract(epoch FROM max(created_at) + make_interval(mins => $2) - now()) / 60)::int AS wacht
+       FROM scan WHERE domain_id = $1 HAVING max(created_at) > now() - make_interval(mins => $2)`,
+    [d.id, SCAN_COOLDOWN_MINUTES],
+  );
+  if (recent) {
+    throw new PlatformError(
+      'te_veel_verzoeken',
+      `Dit domein is net gescand. Over ${Math.max(1, recent.wacht)} ${recent.wacht === 1 ? 'minuut' : 'minuten'} kun je opnieuw een scan starten.`,
+    );
+  }
   await hit(p.pool, LIMITS.scanPerDomein, d.id);
   const s = await one<{ id: string; status: string; created_at: Date }>(
     p.pool,

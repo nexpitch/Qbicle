@@ -52,6 +52,16 @@ Staan er scans klaar en draait er geen worker, dan is het oordeel "storing". Onv
 (geen "domein bestaat niet") komen in de foutenlijst met de klant erbij. Vastgelopen scans zet
 de Bewaker opnieuw in de wachtrij, zoals al bestond.
 
+## Wat de klant ziet
+
+- **Domeinen**: per bevestigd domein de laatste scan en de volgende geplande scan (dag, datum en tijd, Nederlandse tijd),
+  met uitleg ("De eerste scan start binnen een minuut", "We scannen elke week automatisch opnieuw"). Draait de scanner
+  niet, dan staat dat er ook.
+- **Scan nu starten**: start direct een scan. Daarna kan dat pas weer na 5 minuten, en hooguit 6 keer per dag per domein.
+- **Scanpagina** (`/o/<org>/scans/<id>`): live voortgang per stap (Domein en DNS, E-mail, Certificaat, Website en software).
+  De worker schrijft de voortgang in `scan.progress`; de pagina vraagt die elke 2 seconden op. Na afloop toont hij de
+  urgentie en gaat hij vanzelf door naar het overzicht met de resultaten. Een mislukte scan zegt waarom (zonder technische details).
+
 ## Lokaal
 
 ```bash

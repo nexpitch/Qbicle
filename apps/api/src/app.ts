@@ -46,6 +46,7 @@ import {
   renameOrganization,
   requestLoginLink,
   requestScan,
+  getScan,
   revokeInvitation,
   revokePartnerAccess,
   ROLES,
@@ -363,6 +364,9 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const opts = input.maxLevel === undefined ? {} : { maxLevel: input.maxLevel };
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
   });
+
+  // Live voortgang van één scan (de scanpagina vraagt dit elke paar seconden op).
+  v1.get('/organisaties/:org/scans/:scan', requireUser, async (c) => c.json(await getScan(p, user(c).userId, param(c, 'org'), param(c, 'scan'))));
 
   // Dashboard -------------------------------------------------------------------------
   v1.get('/organisaties/:org/dashboard', requireUser, async (c) => c.json(await getDashboard(p, user(c).userId, param(c, 'org'))));

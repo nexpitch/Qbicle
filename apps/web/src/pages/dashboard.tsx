@@ -7,11 +7,13 @@ import type {
   DashboardAction,
   DashboardAsset,
   Domain,
+  DomainScanInfo,
   Level,
   TrendPoint,
 } from '@qbicle/platform';
 import { ASSET_GROUPS, FOR_WHO_LABELS } from '@qbicle/platform';
 import { datum, FormError, Layout, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { DomeinScanBlok } from './scan.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -676,7 +678,9 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
 
 // Domeinen -------------------------------------------------------------------------------------
 
-export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean }) {
+export function DomeinenPage(
+  props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> }; magScannen?: boolean },
+) {
   const { org } = props;
   const api = `/api/v1/organisaties/${org.id}/domeinen`;
   return (
@@ -698,7 +702,18 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
             {d.verified ? <Status kind="ok">Bevestigd</Status> : <Status kind="warn">Nog bevestigen</Status>}
           </div>
           {d.verified ? (
-            <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+            <>
+              <p class="small">Bevestigd op {datum(d.verifiedAt)} via {d.verificationMethod === 'email' ? 'e-mail' : 'DNS'}.</p>
+              {props.scans ? (
+                <DomeinScanBlok
+                  orgId={org.id}
+                  domainId={d.id}
+                  info={props.scans.domains.get(d.id)}
+                  magScannen={Boolean(props.magScannen)}
+                  workerActief={props.scans.workerActief}
+                />
+              ) : null}
+            </>
           ) : props.magBeheren ? (
             <div class="grid">
               <div class="stack-sm">
