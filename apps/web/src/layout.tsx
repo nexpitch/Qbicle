@@ -79,6 +79,7 @@ export function Layout(props: {
               <nav aria-label="Hoofdmenu">
                 {org ? <span class="org-name hide-sm">{org.name}</span> : null}
                 {org ? link(`/o/${org.id}/overzicht`, 'Overzicht', 'overzicht') : null}
+                {org ? link(`/o/${org.id}/acties`, 'Acties', 'acties') : null}
                 {org ? link(`/o/${org.id}/assets`, 'Assets', 'assets') : null}
                 {org ? link(`/o/${org.id}/domeinen`, 'Domeinen', 'domeinen') : null}
                 {org ? link(`/o/${org.id}/systemen`, 'Systemen', 'systemen') : null}

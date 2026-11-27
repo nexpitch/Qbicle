@@ -1,4 +1,7 @@
 import {
+  getChecklist,
+  updateTask,
+  USER_TASK_STATUSES,
   cancelSubscription,
   checkoutSubscription,
   completeSignup,
@@ -156,6 +159,14 @@ const schemas = {
     kvk: z.string().max(20).nullish(),
     btwNummer: z.string().max(30).nullish(),
     referentie: z.string().max(100).nullish(),
+  }),
+  actie: z.object({
+    status: z.enum(USER_TASK_STATUSES).optional(),
+    note: z.string().max(2000).nullish(),
+    reason: z.string().max(2000).nullish(),
+    // Een leeg keuzeveld in een formulier is "niemand".
+    assignedTo: z.enum(['zelf', 'it-partner', 'webbouwer', 'hosting', '']).nullish(),
+    assigneeName: z.string().max(200).nullish(),
   }),
   testPayment: z.object({ uitkomst: z.enum(['betaald', 'mislukt', 'geannuleerd']) }),
   systeem: z.object({
@@ -447,6 +458,16 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
 
   // Live voortgang van één scan (de scanpagina vraagt dit elke paar seconden op).
   v1.get('/organisaties/:org/scans/:scan', requireUser, async (c) => c.json(await getScan(p, user(c).userId, param(c, 'org'), param(c, 'scan'))));
+
+  // Checklist: acties afvinken (zie packages/platform/src/acties.ts).
+  v1.get('/organisaties/:org/acties', requireUser, async (c) => c.json(await getChecklist(p, user(c).userId, param(c, 'org'))));
+  v1.post('/organisaties/:org/acties/:actie', requireUser, async (c) => {
+    const key = c.req.param('actie');
+    if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(key)) throw new PlatformError('niet_gevonden', 'Deze actie bestaat niet.');
+    const { assignedTo, ...rest } = await body(c, schemas.actie);
+    await updateTask(p, user(c), param(c, 'org'), key, { ...rest, ...(assignedTo === undefined ? {} : { assignedTo: assignedTo || null }) });
+    return c.json({ ok: true });
+  });
 
   // Dashboard -------------------------------------------------------------------------
   v1.get('/organisaties/:org/dashboard', requireUser, async (c) => c.json(await getDashboard(p, user(c).userId, param(c, 'org'))));

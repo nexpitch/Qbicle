@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import type pg from 'pg';
-import { many, one, withTransaction, type Mailer, type ScanProgress } from '@qbicle/platform';
+import { many, one, withTransaction, type Mailer, type ScanControle, type ScanProgress } from '@qbicle/platform';
 import { recordError } from '@qbicle/ops';
 import { CHECKS, DomainNotFoundError, OptOutError, scanDomain, type CheckResult, type Net, type ScanReport } from '@qbicle/scanner';
 import { StaleScanError, storeScanReport, type ScanJob, type StoreResult } from './store.ts';
@@ -72,6 +72,7 @@ class ProgressWriter {
   private readonly done = new Map<string, Set<string>>();
   private chain: Promise<unknown> = Promise.resolve();
   private opslaan = false;
+  private readonly controles: ScanControle[] = [];
 
   constructor(
     private readonly pool: pg.Pool,
@@ -87,7 +88,7 @@ class ProgressWriter {
   private snapshot(): ScanProgress {
     const stappen: ScanProgress['stappen'] = {};
     for (const [g, keys] of this.totals) stappen[g] = { totaal: keys.size, klaar: this.done.get(g)?.size ?? 0 };
-    return { stappen, opslaan: this.opslaan };
+    return { stappen, opslaan: this.opslaan, controles: this.controles };
   }
 
   private write(): Promise<unknown> {
@@ -104,6 +105,14 @@ class ProgressWriter {
 
   checkDone(r: CheckResult): void {
     this.done.get(r.group)?.add(r.checkKey);
+    this.controles.push({
+      key: r.checkKey,
+      titel: r.title,
+      groep: r.group,
+      asset: r.asset.value.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+      uitkomst: r.outcome,
+      bevindingen: r.findings.length,
+    });
     void this.write();
   }
 

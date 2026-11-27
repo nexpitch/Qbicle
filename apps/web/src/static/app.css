@@ -455,3 +455,27 @@ label.vink input { width: 18px; height: 18px; accent-color: var(--petrol); }
 .scan-stappen .stap-uitleg { color: var(--muted); font-size: .84rem; font-weight: 400; }
 [data-scan-vast] strong { display: block; }
 [data-scan-vast] .hint { display: block; color: inherit; opacity: .85; font-size: .84rem; }
+.scan-nu { font-weight: 600; color: var(--petrol); }
+.scan-nu::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--aqua); margin-right: 8px; vertical-align: middle; animation: scan-puls 1s ease-in-out infinite; }
+.scan-controles { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.scan-controles li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface-2); animation: controle-in .3s ease-out; }
+.scan-controles .stap-tekst { display: grid; gap: 2px; min-width: 0; }
+.scan-controles .stap-uitleg { color: var(--muted); font-size: .84rem; overflow-wrap: anywhere; }
+.scan-controles li[data-bezig] .status i { animation: scan-puls 1s ease-in-out infinite; }
+@keyframes controle-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .scan-nu::before, .scan-controles li, .scan-controles li .status i { animation: none; } }
+
+/* Checklist: acties afvinken */
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.checklist-item { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; background: var(--surface); }
+.checklist-item.is-klaar { background: var(--surface-2); }
+.checklist-item h3 { margin: 0; }
+.checklist-item form { display: grid; gap: 6px; }
+.checklist-item .row form { display: inline-grid; }
+.checklist-item .notitie { border-left: 3px solid var(--line-strong); padding-left: 10px; }
+.checklist-item fieldset { border: 0; padding: 0; margin: 0; }
+.checklist-item legend { font-weight: 600; margin-bottom: 4px; }
+.checklist-item .radio { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.checklist-voortgang { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.logboek { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.logboek li { display: grid; gap: 2px; font-size: .92rem; border-left: 2px solid var(--line); padding-left: 10px; }
