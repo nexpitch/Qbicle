@@ -62,6 +62,7 @@ const LABELS: Record<string, string> = {
   'domein.toegevoegd': 'Domein toegevoegd',
   'domein.geverifieerd': 'Domein geverifieerd',
   'scan.aangevraagd': 'Scan aangevraagd',
+  'scan.hercontrole': 'Hercontrole van een bevinding',
   'registratie.afgerond': 'Registratie afgerond',
   'abonnement.gestart': 'Abonnement gestart',
   'abonnement.gewijzigd': 'Abonnement gewijzigd',

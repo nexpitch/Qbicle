@@ -364,7 +364,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
     p.pool,
     `SELECT DISTINCT ON (s.domain_id) s.id, d.name AS domain_name, s.finished_at
        FROM scan s JOIN domain d ON d.id = s.domain_id
-      WHERE d.organization_id = $1 AND s.status = 'klaar' AND s.finished_at IS NOT NULL
+      WHERE d.organization_id = $1 AND s.status = 'klaar' AND s.finished_at IS NOT NULL AND s.check_keys IS NULL
       ORDER BY s.domain_id, s.finished_at DESC`,
     [organizationId],
   );
@@ -532,7 +532,7 @@ export async function getDashboard(p: Platform, userId: string, organizationId: 
   const finished = await many<{ name: string; finished_at: Date }>(
     p.pool,
     `SELECT d.name, s.finished_at FROM scan s JOIN domain d ON d.id = s.domain_id
-      WHERE d.organization_id = $1 AND s.status = 'klaar' AND s.finished_at IS NOT NULL ORDER BY s.finished_at DESC LIMIT 6`,
+      WHERE d.organization_id = $1 AND s.status = 'klaar' AND s.finished_at IS NOT NULL AND s.check_keys IS NULL ORDER BY s.finished_at DESC LIMIT 6`,
     [organizationId],
   );
   const activity: ActivityItem[] = [
@@ -597,7 +597,7 @@ async function scanPlanFor(p: Platform, organizationId: string, domains: { total
             bool_or(ok.last_ok IS NULL) AS nooit,
             min(ok.last_ok) AS oudste
        FROM domain d
-       LEFT JOIN LATERAL (SELECT max(k.finished_at) AS last_ok FROM scan k WHERE k.domain_id = d.id AND k.status = 'klaar') ok ON true
+       LEFT JOIN LATERAL (SELECT max(k.finished_at) AS last_ok FROM scan k WHERE k.domain_id = d.id AND k.status = 'klaar' AND k.check_keys IS NULL) ok ON true
        LEFT JOIN scan s ON s.domain_id = d.id AND s.status IN ('wachtrij', 'bezig')
       WHERE d.organization_id = $1 AND d.verified_at IS NOT NULL`,
     [organizationId],

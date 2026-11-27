@@ -38,11 +38,11 @@ export async function planScans(pool: pg.Pool, opts: PlannerOptions = DEFAULT_PL
       q,
       `WITH stats AS (
          SELECT d.id, d.name,
-                (SELECT max(s.finished_at) FROM scan s WHERE s.domain_id = d.id AND s.status = 'klaar') AS last_ok,
-                (SELECT max(s.created_at) FROM scan s WHERE s.domain_id = d.id) AS last_any,
-                (SELECT count(*) FROM scan s WHERE s.domain_id = d.id AND s.status = 'mislukt'
-                    AND s.created_at > coalesce((SELECT max(k.finished_at) FROM scan k WHERE k.domain_id = d.id AND k.status = 'klaar'), '-infinity')) AS failures,
-                (SELECT s.status FROM scan s WHERE s.domain_id = d.id ORDER BY s.created_at DESC LIMIT 1) AS last_status,
+                (SELECT max(s.finished_at) FROM scan s WHERE s.domain_id = d.id AND s.status = 'klaar' AND s.check_keys IS NULL) AS last_ok,
+                (SELECT max(s.created_at) FROM scan s WHERE s.domain_id = d.id AND s.check_keys IS NULL) AS last_any,
+                (SELECT count(*) FROM scan s WHERE s.domain_id = d.id AND s.status = 'mislukt' AND s.check_keys IS NULL
+                    AND s.created_at > coalesce((SELECT max(k.finished_at) FROM scan k WHERE k.domain_id = d.id AND k.status = 'klaar' AND k.check_keys IS NULL), '-infinity')) AS failures,
+                (SELECT s.status FROM scan s WHERE s.domain_id = d.id AND s.check_keys IS NULL ORDER BY s.created_at DESC LIMIT 1) AS last_status,
                 EXISTS (SELECT 1 FROM subscription sub WHERE sub.organization_id = d.organization_id
                          AND sub.status IN ('proef', 'actief', 'achterstallig', 'opgezegd')) AS subscribed
            FROM domain d

@@ -2,6 +2,8 @@
 import type {
   AssetDetail,
   AssetFindingDetail,
+  AssetOplossingen,
+  FindingOplossing,
   BillingOverview,
   Dashboard,
   DashboardAction,
@@ -20,6 +22,7 @@ import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { KoppelingStatusBadge } from './koppelingen.tsx';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
 import { DomeinScanBlok } from './scan.tsx';
+import { OplosBlok } from './oplossen.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -632,8 +635,8 @@ export function AssetsPage(props: Ctx & { d: Dashboard; soort: string | undefine
 
 // Detail per asset --------------------------------------------------------------------------
 
-function FindingCard(props: { f: AssetFindingDetail }) {
-  const { f } = props;
+function FindingCard(props: { f: AssetFindingDetail; o?: FindingOplossing; orgId: string; assetId: string; open?: boolean }) {
+  const { f, o } = props;
   return (
     <article class={`finding lvl-${f.level}`}>
       <div class="row between">
@@ -648,7 +651,9 @@ function FindingCard(props: { f: AssetFindingDetail }) {
       <h3>{f.title}</h3>
       <p>{f.detail}</p>
       {f.certainty === 'mogelijk' || f.certainty === 'onbekend' ? <p class="small">{CERTAINTY_UITLEG[f.certainty]}</p> : null}
-      {f.action ? (
+      {f.action && o?.gids ? (
+        <OplosBlok f={{ id: f.id, action: f.action }} o={o} orgId={props.orgId} assetId={props.assetId} open={props.open} />
+      ) : f.action ? (
         <div class="todo">
           <p class="kpi-label">Wat te doen · {FOR_WHO_LABELS[f.action.forWho]}</p>
           <p>
@@ -682,7 +687,7 @@ function FindingCard(props: { f: AssetFindingDetail }) {
   );
 }
 
-export function AssetPage(props: Ctx & { a: AssetDetail }) {
+export function AssetPage(props: Ctx & { a: AssetDetail; opl?: AssetOplossingen }) {
   const { a, org } = props;
   const base = `/o/${org.id}`;
   const group = ASSET_GROUPS.find((g) => g.key === a.asset.group);
@@ -701,8 +706,15 @@ export function AssetPage(props: Ctx & { a: AssetDetail }) {
         <div class="stack-lg">
           <section class="card" aria-labelledby="bev-kop">
             <h2 id="bev-kop">Bevindingen</h2>
+            {props.opl?.netOpgelost.map((n) => (
+              <p class="melding ok" role="status">
+                ✓ Opgelost: {n.title}. Goed gedaan!
+              </p>
+            ))}
             {a.open.length ? (
-              a.open.map((f) => <FindingCard f={f} />)
+              a.open.map((f, i) => (
+                <FindingCard f={f} o={props.opl?.perBevinding.get(f.id)} orgId={org.id} assetId={a.asset.id} open={a.open.length === 1 || i === 0} />
+              ))
             ) : (
               <p class="melding ok">Op dit asset staat niets open.</p>
             )}

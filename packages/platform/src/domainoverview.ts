@@ -85,7 +85,7 @@ export async function domainOverview(p: Platform, userId: string, organizationId
             (SELECT count(*)::int FROM asset a WHERE a.domain_id = d.id AND a.status = 'actief') AS assets,
             (SELECT count(*)::int FROM finding f JOIN asset a ON a.id = f.asset_id
               WHERE a.domain_id = d.id AND f.resolved_at IS NULL AND f.accepted_at IS NULL) AS open_findings,
-            (SELECT max(s.finished_at) FROM scan s WHERE s.domain_id = d.id AND s.status = 'klaar') AS last_scan_at
+            (SELECT max(s.finished_at) FROM scan s WHERE s.domain_id = d.id AND s.status = 'klaar' AND s.check_keys IS NULL) AS last_scan_at
        FROM domain d WHERE d.organization_id = $1`,
     [organizationId],
   );

@@ -3,7 +3,7 @@ import { hostname } from 'node:os';
 import type pg from 'pg';
 import { many, one, withTransaction, type Mailer, type ScanProgress } from '@qbicle/platform';
 import { recordError } from '@qbicle/ops';
-import { CHECKS, DomainNotFoundError, OptOutError, scanDomain, type CheckResult, type Net, type ScanReport } from '@qbicle/scanner';
+import { CHECKS, DomainNotFoundError, OptOutError, scanDomain, type Check, type CheckResult, type Net, type ScanReport } from '@qbicle/scanner';
 import { StaleScanError, storeScanReport, type ScanJob, type StoreResult } from './store.ts';
 
 /**
@@ -40,7 +40,7 @@ export function newWorkerId(): string {
 
 /** Pakt de oudste scan uit de wachtrij; twee workers pakken nooit dezelfde. */
 export async function claimNextScan(pool: pg.Pool, workerId: string): Promise<ScanJob | null> {
-  const r = await one<{ id: string; domain_id: string; domain_name: string; organization_id: string; max_level: number; attempts: number }>(
+  const r = await one<{ id: string; domain_id: string; domain_name: string; organization_id: string; max_level: number; attempts: number; check_keys: string[] | null }>(
     pool,
     `WITH next AS (
        SELECT id FROM scan WHERE status = 'wachtrij' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
@@ -48,7 +48,7 @@ export async function claimNextScan(pool: pg.Pool, workerId: string): Promise<Sc
      UPDATE scan s SET status = 'bezig', started_at = now(), finished_at = NULL, claimed_by = $1
        FROM next, domain d
       WHERE s.id = next.id AND d.id = s.domain_id
-     RETURNING s.id, s.domain_id, d.name AS domain_name, d.organization_id, s.max_level, s.attempts`,
+     RETURNING s.id, s.domain_id, d.name AS domain_name, d.organization_id, s.max_level, s.attempts, s.check_keys`,
     [workerId],
   );
   if (!r) return null;
@@ -60,6 +60,7 @@ export async function claimNextScan(pool: pg.Pool, workerId: string): Promise<Sc
     maxLevel: r.max_level === 0 ? 0 : 1,
     attempts: r.attempts,
     claimedBy: workerId,
+    checkKeys: r.check_keys?.length ? r.check_keys : null,
   };
 }
 
@@ -77,7 +78,7 @@ class ProgressWriter {
     private readonly pool: pg.Pool,
     private readonly job: ScanJob,
   ) {
-    for (const c of CHECKS.filter((c) => c.level <= job.maxLevel)) {
+    for (const c of checksFor(job)) {
       if (!this.totals.has(c.group)) this.totals.set(c.group, new Set());
       this.totals.get(c.group)!.add(c.key);
       this.done.set(c.group, new Set());
@@ -111,6 +112,12 @@ class ProgressWriter {
     this.opslaan = true;
     return this.write();
   }
+}
+
+/** De checks voor deze scan: alles, of bij een hercontrole alleen de genoemde. */
+export function checksFor(job: Pick<ScanJob, 'maxLevel' | 'checkKeys'>): Check[] {
+  const all = CHECKS.filter((c) => c.level <= job.maxLevel);
+  return job.checkKeys ? all.filter((c) => job.checkKeys!.includes(c.key)) : all;
 }
 
 /** Fout die we aan de klant kunnen uitleggen; geen storing van Qbicle zelf. */
@@ -151,12 +158,18 @@ export async function runScanJob(ctx: WorkerContext, job: ScanJob): Promise<JobO
     const progress = new ProgressWriter(ctx.pool, job);
     await progress.start();
     const report: ScanReport = await withTimeout(
-      run(job.domainName, { net: ctx.net, maxLevel: job.maxLevel, optOut: ctx.optOut, onCheck: (r) => progress.checkDone(r) }),
+      run(job.domainName, {
+        net: ctx.net,
+        maxLevel: job.maxLevel,
+        optOut: ctx.optOut,
+        onCheck: (r) => progress.checkDone(r),
+        ...(job.checkKeys ? { checks: checksFor(job) } : {}),
+      }),
       ctx.timeoutMinutes,
     );
     await progress.saving();
     const result = await withTransaction(ctx.pool, (client) => storeScanReport(client, job, report));
-    log(`Scan ${job.domainName} klaar: urgentie ${result.urgency}, ${result.nieuw} nieuw, ${result.opgelost} opgelost.`);
+    log(`${job.checkKeys ? 'Hercontrole' : 'Scan'} ${job.domainName} klaar: urgentie ${result.urgency}, ${result.nieuw} nieuw, ${result.opgelost} opgelost.`);
     if (result.eerste) await mailFirstScan(ctx, job, result);
     return { status: 'klaar', result };
   } catch (err) {

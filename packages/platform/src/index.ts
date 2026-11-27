@@ -24,3 +24,5 @@ export * from './dashboard.ts';
 export * from './demo.ts';
 export * from './dnshost.ts';
 export * from './domainoverview.ts';
+export * from './oplossen.ts';
+export * from './hercontrole.ts';

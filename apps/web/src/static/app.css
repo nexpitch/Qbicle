@@ -432,3 +432,50 @@ label.vink input { width: 18px; height: 18px; accent-color: var(--petrol); }
 .scan-stappen .stap-uitleg { color: var(--muted); font-size: .84rem; font-weight: 400; }
 [data-scan-vast] strong { display: block; }
 [data-scan-vast] .hint { display: block; color: inherit; opacity: .85; font-size: .84rem; }
+
+/* Zo los je het op: icoon per soort ingreep, stappen, DNS-regel, hercontrole */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.btn.klein { padding: 8px 12px; font-size: .88rem; }
+.oplos { gap: 10px; padding: 14px 16px; }
+.oplos-kop { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: start; }
+.ingreep-icoon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; background: #E3F1F0; color: var(--accent); }
+.ingreep-dns-aanpassen { background: #E8EEF8; color: #2C5E91; }
+.ingreep-instelling { background: #E1F2EA; color: var(--st-ok); }
+.ingreep-bijwerken { background: #FBEFDC; color: var(--st-warn); }
+.ingreep-bestand { background: #EEEAFB; color: #5B4FB0; }
+.ingreep-aanvragen { background: #EDF1F3; color: var(--petrol); }
+.oplos .wie { margin: 0; padding-left: 60px; }
+.oplos-stappen { border-top: 1px solid var(--line); padding-top: 8px; }
+.oplos-stappen > summary, .doorsturen > summary { cursor: pointer; font-weight: 600; color: var(--petrol); padding: 4px 0; }
+.oplos-stappen[open] > summary { margin-bottom: 8px; }
+.stappen { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; }
+.stappen li::marker { font-weight: 700; color: var(--accent); }
+.dns-regel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; min-width: 0; }
+.dns-regel.voorbeeld { border-style: dashed; }
+.dns-rij { display: grid; gap: 4px; font-size: .92rem; }
+.dns-kop, .dns-data { display: grid; grid-template-columns: 72px minmax(90px, 1fr) minmax(0, 2.4fr); gap: 10px; align-items: center; }
+.dns-kop { color: var(--muted); font: 600 .72rem/1 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; }
+.dns-data code { background: var(--surface-2); padding: 3px 6px; border-radius: 4px; }
+.wijziging { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.wijziging .van { text-decoration: line-through; color: var(--st-crit); background: var(--st-crit-bg); padding: 3px 6px; border-radius: 4px; }
+.wijziging .copy code { color: var(--st-ok); background: var(--st-ok-bg); padding: 3px 6px; border-radius: 4px; }
+pre.bestand { margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font: .85rem/1.5 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.let-op { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
+.voorwaarde > summary { list-style: none; cursor: pointer; display: grid; gap: 8px; }
+.voorwaarde > summary::-webkit-details-marker { display: none; }
+.voorwaarde-knop { justify-self: start; font-weight: 600; color: var(--petrol); text-decoration: underline; }
+.voorwaarde[open] .voorwaarde-knop { display: none; }
+.voorwaarde[open] > summary { margin-bottom: 8px; }
+.oplos-acties { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.doorsturen { flex: 1 1 260px; }
+.doorsturen[open] { flex-basis: 100%; }
+.hercontrole { display: flex; gap: 10px; align-items: center; margin: 0; }
+.spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: draai 0.9s linear infinite; }
+@keyframes draai { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+@media (max-width: 640px) {
+  .oplos .wie { padding-left: 0; }
+  .dns-kop { display: none; }
+  .dns-data { grid-template-columns: 1fr; gap: 6px; }
+  .dns-data [data-label]::before { content: attr(data-label); display: block; color: var(--muted); font: 600 .7rem/1.4 var(--f-ui); letter-spacing: .04em; text-transform: uppercase; }
+}

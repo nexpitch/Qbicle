@@ -70,6 +70,8 @@ import {
   renameOrganization,
   requestLoginLink,
   requestScan,
+  requestRecheck,
+  getRecheck,
   getScan,
   revokeInvitation,
   revokePartnerAccess,
@@ -435,6 +437,12 @@ export function createApi(p: Platform, opts: ApiOptions): Hono<Env> {
     const opts = input.maxLevel === undefined ? {} : { maxLevel: input.maxLevel };
     return c.json(await requestScan(p, user(c), param(c, 'org'), param(c, 'dom'), opts), 202);
   });
+
+  // "Ik heb het gedaan, controleer nu": alleen de check van deze ene bevinding opnieuw.
+  v1.post('/organisaties/:org/bevindingen/:finding/hercontrole', requireUser, async (c) =>
+    c.json(await requestRecheck(p, user(c), param(c, 'org'), param(c, 'finding')), 202),
+  );
+  v1.get('/organisaties/:org/hercontroles/:scan', requireUser, async (c) => c.json(await getRecheck(p, user(c).userId, param(c, 'org'), param(c, 'scan'))));
 
   // Live voortgang van één scan (de scanpagina vraagt dit elke paar seconden op).
   v1.get('/organisaties/:org/scans/:scan', requireUser, async (c) => c.json(await getScan(p, user(c).userId, param(c, 'org'), param(c, 'scan'))));
