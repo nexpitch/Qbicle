@@ -114,6 +114,24 @@ describe.skipIf(!hasDb)('API v1', () => {
     expect((await call('GET', '/organisaties/niet-een-id', { cookie: kees })).status).toBe(404);
   });
 
+  it('telt geslaagde API-aanroepen per klant en route, geweigerde niet', async () => {
+    const anna = await signIn('anna@bakkerij.nl');
+    const org = (await (await call('GET', '/ik', { cookie: anna })).json()).organisaties[0];
+    const count = async () =>
+      (await p.pool.query("SELECT feature, quantity::int FROM usage_daily WHERE organization_id = $1 AND metric = 'api' ORDER BY feature", [org.id])).rows;
+    const before = (await count()).find((r) => r.feature === 'GET /organisaties/:org/leden')?.quantity ?? 0;
+    await call('GET', `/organisaties/${org.id}/leden`, { cookie: anna });
+    const kees = await signIn('kees@garage.nl');
+    await call('GET', `/organisaties/${org.id}/leden`, { cookie: kees }); // 404: telt niet
+    for (let i = 0; i < 50; i++) {
+      const n = (await count()).find((r) => r.feature === 'GET /organisaties/:org/leden')?.quantity ?? 0;
+      if (n > before) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    expect((await count()).find((r) => r.feature === 'GET /organisaties/:org/leden')?.quantity).toBe(before + 1);
+  });
+
   it('uitnodiging via de API, accepteren en rol', async () => {
     const anna = await signIn('anna@bakkerij.nl');
     const org = (await (await call('GET', '/ik', { cookie: anna })).json()).organisaties[0];

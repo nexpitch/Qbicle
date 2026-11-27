@@ -1,0 +1,28 @@
+{
+  "_uitleg": "Gebruikslimieten per pakket, kosten per eenheid en drempels voor waarschuwingen in de cockpit. null = onbeperkt. Pakketnamen komen uit config/abonnementen.json; 'proef' en 'gratis' gelden zonder lopend betaald abonnement. Afwijkende limieten per klant zet je in de cockpit (usage_limit_override). Herstart de app na een wijziging.",
+  "limieten": {
+    "gratis": { "scans_maand": 4, "api_dag": 200, "ai_tokens_maand": 50000, "ai_kosten_maand": 0.5 },
+    "proef": { "scans_maand": 20, "api_dag": 1000, "ai_tokens_maand": 300000, "ai_kosten_maand": 2 },
+    "mkb": { "scans_maand": 40, "api_dag": 2000, "ai_tokens_maand": 1000000, "ai_kosten_maand": 5 },
+    "business": { "scans_maand": 200, "api_dag": 10000, "ai_tokens_maand": 5000000, "ai_kosten_maand": 25 }
+  },
+  "_uitleg_kosten": "Kosten voor Qbicle zelf, om marge per klant te berekenen. AI-prijzen in dollars per miljoen tokens (Anthropic API, november 2026); omgerekend met dollarNaarEuro. cacheSchrijven is 1,25 x invoer.",
+  "kosten": {
+    "dollarNaarEuro": 0.92,
+    "perScanEuro": 0.002,
+    "perMailEuro": 0.0008,
+    "aiModellen": {
+      "claude-opus-5-5": { "invoer": 4.0, "uitvoer": 20.0, "cacheLezen": 0.2, "cacheSchrijven": 5.0 },
+      "claude-sonnet-5-5": { "invoer": 2.0, "uitvoer": 10.0, "cacheLezen": 0.1, "cacheSchrijven": 2.5 },
+      "claude-haiku-5-5": { "invoer": 0.1, "uitvoer": 0.5, "cacheLezen": 0.01, "cacheSchrijven": 0.125 }
+    }
+  },
+  "signalen": {
+    "_uitleg": "Afwijkend gebruik: vandaag meer dan 'factor' keer het daggemiddelde van de 28 dagen ervoor, en minstens 'minimum'. Limietwaarschuwing vanaf 'limietWaarschuwingProcent'.",
+    "factor": 3,
+    "minimum": { "api": 300, "ai_tokens": 50000, "scans": 10 },
+    "limietWaarschuwingProcent": 80,
+    "scanVastNaMinuten": 30,
+    "scanWachtrijTeLangNaMinuten": 60
+  }
+}
