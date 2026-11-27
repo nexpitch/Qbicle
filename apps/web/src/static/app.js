@@ -171,4 +171,74 @@
       });
     }
   }
+  // Live voortgang van een scan: elke 2 seconden de stand ophalen en de stappen bijwerken.
+  // Na afloop door naar het overzicht met de resultaten.
+  var scanBox = document.querySelector('[data-scan]');
+  if (scanBox && /^(wachtrij|bezig)$/.test(scanBox.dataset.scanStatus || '')) {
+    var LABEL = { wachten: ['Wacht', 'unk'], bezig: ['Bezig', 'warn'], klaar: ['Klaar', 'ok'] };
+    var BADGE = { wachtrij: ['In de wachtrij', 'unk'], bezig: ['Bezig', 'warn'], klaar: ['Klaar', 'ok'], mislukt: ['Niet gelukt', 'crit'] };
+    var badge = function (el, pair) {
+      if (!el) return;
+      el.innerHTML = '';
+      var span = document.createElement('span');
+      span.className = 'status st-' + pair[1];
+      var dot = document.createElement('i');
+      dot.setAttribute('aria-hidden', 'true');
+      span.appendChild(dot);
+      span.appendChild(document.createTextNode(pair[0]));
+      el.appendChild(span);
+    };
+    var q = function (sel) { return scanBox.querySelector(sel); };
+    var fouten = 0;
+    var tick = async function () {
+      var r;
+      try { r = await send(scanBox.dataset.scan, 'GET'); } catch (e) { r = null; }
+      if (!r || !r.ok) {
+        if (r && r.status === 401) { location.href = '/inloggen'; return; }
+        if (++fouten > 5) { q('[data-scan-tekst]').textContent = 'We kunnen de voortgang nu niet ophalen. Ververs de pagina over een minuut.'; return; }
+        setTimeout(tick, 4000);
+        return;
+      }
+      fouten = 0;
+      var s = r.json;
+      badge(q('[data-scan-badge]'), BADGE[s.status] || BADGE.wachtrij);
+      var balk = q('[data-scan-balk]');
+      if (balk) { balk.value = s.pct; balk.parentNode.setAttribute('aria-valuenow', String(s.pct)); }
+      (s.steps || []).forEach(function (st) {
+        var li = scanBox.querySelector('[data-stap="' + st.key + '"]');
+        if (!li || li.dataset.stapStatus === st.status) return;
+        li.dataset.stapStatus = st.status;
+        badge(li.querySelector('[data-stap-badge]'), LABEL[st.status]);
+      });
+      var tekst = q('[data-scan-tekst]');
+      var titel = document.querySelector('[data-scan-titel]');
+      if (s.status === 'wachtrij') {
+        tekst.textContent = s.workerActief ? 'De scan begint over een paar seconden.' : 'De scanner draait op dit moment niet. De scan begint zodra hij weer draait.';
+      } else if (s.status === 'bezig') {
+        tekst.textContent = 'Dit duurt meestal minder dan een minuut. Je kunt deze pagina open laten staan.';
+        if (titel) titel.textContent = 'Qbicle scant ' + s.domain;
+      }
+      if (s.status === 'klaar') {
+        if (titel) titel.textContent = 'Scan van ' + s.domain + ' is klaar';
+        tekst.textContent = 'Klaar. Je resultaten staan in het overzicht.';
+        var res = q('[data-scan-resultaat]');
+        if (res && s.result) {
+          res.textContent = 'Urgentie ' + s.result.urgency + ', ' + (s.result.openFindings === 1 ? 'één punt' : s.result.openFindings + ' punten') +
+            ' om naar te kijken. We sturen je zo door naar het overzicht.';
+          res.hidden = false;
+        }
+        scanBox.querySelectorAll('[hidden]').forEach(function (el) { if (el.matches('a')) el.hidden = false; });
+        setTimeout(function () { location.href = scanBox.dataset.scanKlaar; }, 4000);
+        return;
+      }
+      if (s.status === 'mislukt') {
+        if (titel) titel.textContent = 'Scan van ' + s.domain + ' is niet gelukt';
+        tekst.textContent = s.error || 'De scan is niet gelukt.';
+        scanBox.querySelectorAll('a[hidden]').forEach(function (el) { if (!el.hasAttribute('data-scan-naar')) el.hidden = false; });
+        return;
+      }
+      setTimeout(tick, 2000);
+    };
+    setTimeout(tick, 1500);
+  }
 })();

@@ -412,3 +412,19 @@ label.vink input { width: 18px; height: 18px; accent-color: var(--petrol); }
   .sect-status { grid-column: 2 / -1; grid-row: 2; }
   .sect-name .small { display: none; }
 }
+
+/* Scans: blok per domein en live voortgang */
+.scan-blok { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
+.scan-blok .hint, .scan-stappen .hint, .scan-blok form .hint { display: block; color: var(--muted); font-size: .84rem; font-weight: 400; }
+.scan-blok form { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.scan-blok .row { align-items: flex-start; }
+.voortgang progress { width: 100%; height: 10px; appearance: none; border: 0; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.voortgang progress::-webkit-progress-bar { background: var(--surface-2); border-radius: 6px; }
+.voortgang progress::-webkit-progress-value { background: var(--accent); border-radius: 6px; transition: width .4s ease; }
+.voortgang progress::-moz-progress-bar { background: var(--accent); border-radius: 6px; }
+.scan-stappen { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.scan-stappen li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.scan-stappen li[data-stap-status="bezig"] { border-color: var(--aqua); }
+.scan-stappen li[data-stap-status="bezig"] .status i { animation: scan-puls 1s ease-in-out infinite; }
+@keyframes scan-puls { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .scan-stappen li .status i { animation: none; } .voortgang progress::-webkit-progress-value { transition: none; } }

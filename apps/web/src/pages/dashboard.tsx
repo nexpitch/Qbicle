@@ -9,6 +9,7 @@ import type {
   DnsHostResult,
   Domain,
   DomainOverview,
+  DomainScanInfo,
   Level,
   SysteemRegister,
   TrendPoint,
@@ -18,6 +19,7 @@ import type { Child } from 'hono/jsx';
 import { KOPPELINGEN, type KoppelingStand } from '@qbicle/koppelingen';
 import { KoppelingStatusBadge } from './koppelingen.tsx';
 import { datum, datumTijd, euroKort, FormError, Layout, tijd, Status, type NavOrg, type PageUser } from '../layout.tsx';
+import { DomeinScanBlok } from './scan.tsx';
 
 /**
  * Het klantdashboard (Licht-stijl): eerst één heldere volgende stap, dan vier
@@ -819,7 +821,17 @@ function DnsRecord(props: { name: string; value: string; withType?: boolean; pro
 
 // Domeinen -------------------------------------------------------------------------------------
 
-export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boolean; sent?: boolean; overview: DomainOverview; added?: { aantal: number; bestaatAl: number; ongeldig: string } }) {
+export function DomeinenPage(
+  props: Ctx & {
+    domains: Domain[];
+    magBeheren: boolean;
+    sent?: boolean;
+    overview: DomainOverview;
+    added?: { aantal: number; bestaatAl: number; ongeldig: string };
+    scans?: { workerActief: boolean; domains: Map<string, DomainScanInfo> };
+    magScannen?: boolean;
+  },
+) {
   const ov = props.overview;
   const over = ov.gebruikt > ov.limiet;
   const { org } = props;
@@ -872,10 +884,18 @@ export function DomeinenPage(props: Ctx & { domains: Domain[]; magBeheren: boole
                     <span>
                       <b>{sm.openFindings}</b> open bevindingen
                     </span>
-                    <span class="small">{sm.lastScanAt ? `Laatste scan ${datumTijd(sm.lastScanAt)}` : 'Nog niet gescand'}</span>
                   </div>
                 ) : null;
               })()}
+              {props.scans ? (
+                <DomeinScanBlok
+                  orgId={org.id}
+                  domainId={d.id}
+                  info={props.scans.domains.get(d.id)}
+                  magScannen={Boolean(props.magScannen)}
+                  workerActief={props.scans.workerActief}
+                />
+              ) : null}
             </>
           ) : props.magBeheren ? (
             <div class="grid">

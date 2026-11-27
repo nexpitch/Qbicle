@@ -43,6 +43,8 @@ export interface ScanOptions {
   /** Domeinen die niet gescand willen worden. */
   optOut?: Set<string>;
   checks?: Check[];
+  /** Wordt aangeroepen zodra een check klaar is (voor live voortgang). Mag niet gooien. */
+  onCheck?: (result: CheckResult) => void;
 }
 
 export interface WebsiteNote {
@@ -205,7 +207,18 @@ export async function scanDomain(input: string, opts: ScanOptions): Promise<Scan
       jobs.push(Promise.resolve(noWebsiteResult(check, domainAsset, websites)));
     }
   }
-  const results = await Promise.all(jobs);
+  const results = await Promise.all(
+    jobs.map((j) =>
+      j.then((r) => {
+        try {
+          opts.onCheck?.(r);
+        } catch {
+          // voortgang is bijzaak; de scan gaat door
+        }
+        return r;
+      }),
+    ),
+  );
   const findings = results.flatMap((r) => r.findings);
 
   return {
