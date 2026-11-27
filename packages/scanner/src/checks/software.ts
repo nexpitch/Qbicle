@@ -197,19 +197,27 @@ export function makeSoftwareCheck(db: () => VulnDb = sharedVulnDb): Check {
         const seenVia = `De website meldt ${name}${vz} (${sw.bronUitleg})`;
 
         if (hits.length > 0) {
-          const conditional = hits.every((h) => h.condition);
-          const certainty = sw.backportDistro || conditional || guessed ? 'mogelijk' : 'vastgesteld';
-          const list = hits
+          // Alleen een actief misbruikt lek (KEV) zonder voorwaarde, op een versie die de website zelf
+          // meldt en zonder distributie, is vastgesteld. Een lek dat alleen op het versienummer berust
+          // is "mogelijk": de maker kan het met een configuratie of losse patch hebben gedicht.
+          const kevHard = hits.some((h) => h.inKev && !h.condition);
+          const certainty = kevHard && !sw.backportDistro && !guessed ? 'vastgesteld' : 'mogelijk';
+          // Eén bevinding per product, met de belangrijkste lekken eerst (KEV, dan CVSS).
+          const sorted = [...hits].sort((a, b) => Number(b.inKev) - Number(a.inKev) || (b.cvss ?? 0) - (a.cvss ?? 0));
+          const MAX_LIST = 5;
+          const more = sorted.length > MAX_LIST ? `; en nog ${sorted.length - MAX_LIST} andere` : '';
+          const list = sorted
+            .slice(0, MAX_LIST)
             .map((h) => `${h.cveId}${h.cvss ? ` (CVSS ${h.cvss})` : ''}${h.inKev ? ', wordt actief misbruikt' : ''}${h.condition ? `; ${h.condition}` : ''}`)
-            .join('; ');
+            .join('; ') + more;
           findings.push({
             key: `${prefix}_kwetsbaar`,
             certainty,
             discriminator: p.key,
             title: hits.some((h) => h.inKev) ? `${name} heeft een lek dat aanvallers actief misbruiken` : `${name} heeft bekende lekken`,
             detail: `${seenVia}. Voor die versie zijn deze lekken bekend: ${list}.${backport}`,
-            vulns: hits.map((h) => h.linked),
-            sources: vulnSources(hits),
+            vulns: sorted.map((h) => h.linked),
+            sources: vulnSources(sorted.slice(0, MAX_LIST)),
           });
         }
 

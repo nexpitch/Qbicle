@@ -41,6 +41,9 @@ updates), websitelevering (Netlify, Vercel), beschermlaag. Niet herkend: dat zeg
 - **Zeker**: de website meldt het zelf (header, generator-tag).
 - **Waarschijnlijk**: afgeleid uit een pad, bestandsnaam of `?ver=`. Bevindingen hierop zijn altijd "mogelijk" (telt half).
 - **Versie verborgen**: goed; dan zeggen we niets over updates ("niet te beoordelen"), nooit "in orde".
+- **Lekken**: alleen een actief misbruikt lek (CISA KEV) zonder voorwaarde, op een versie die de website zelf meldt en
+  zonder distributie, is "vastgesteld". Een lek dat alleen op het versienummer berust is "mogelijk". Per product één
+  bevinding met de vijf belangrijkste lekken (KEV, dan CVSS), zodat volledige NVD-lijsten geen tientallen meldingen geven.
 - **Distributie**: Ubuntu/Debian/Red Hat zetten fixes terug zonder het versienummer te verhogen. Dan tonen we het,
   maar tellen we einde-ondersteuning niet mee (`*_einde_distro`, gewicht 0). Meldt de server Red Hat, dan geldt dat
   ook voor PHP zonder eigen distributietekst (Red Hat zet die er niet in, Ubuntu en Debian wel).

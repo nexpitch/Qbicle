@@ -181,6 +181,25 @@ describe('profiel per website', () => {
   });
 });
 
+describe('zekerheid van lekken (alleen KEV zonder voorwaarde is vastgesteld)', () => {
+  it('lek zonder KEV op alleen het versienummer is mogelijk; KEV zonder voorwaarde vastgesteld', async () => {
+    const { VulnDb } = await import('@qbicle/devices');
+    const { makeSoftwareCheck } = await import('../src/checks/software.ts');
+    const db = new VulnDb();
+    db.addNvd({
+      vulnerabilities: [
+        { cve: { id: 'CVE-2099-0001', metrics: { cvssMetricV31: [{ cvssData: { baseScore: 9.8 } }] }, configurations: [{ nodes: [{ cpeMatch: [{ vulnerable: true, criteria: 'cpe:2.3:a:f5:nginx:1.30.1:*:*:*:*:*:*:*' }] }] }] } },
+      ],
+    });
+    const check = makeSoftwareCheck(() => db);
+    const a = await keysOf(check, site({ server: 'nginx/1.30.1' }));
+    expect(a.out.findings!.find((f) => f.key === 'web.server_kwetsbaar')!.certainty).toBe('mogelijk');
+    db.addKev({ vulnerabilities: [{ cveID: 'CVE-2099-0001', dateAdded: '2099-01-01' }] });
+    const b = await keysOf(check, site({ server: 'nginx/1.30.1' }));
+    expect(b.out.findings!.find((f) => f.key === 'web.server_kwetsbaar')!.certainty).toBe('vastgesteld');
+  });
+});
+
 describe('hostingpartij', () => {
   it('platform uit de website zelf is zeker; CNAME of servernaam is waarschijnlijk', () => {
     expect(detectHosting({ cnames: [], ptrs: [], platform: { naam: 'Shopify', categorie: 'platform' } })).toMatchObject({ naam: 'Shopify', soort: 'platform', zekerheid: 'zeker' });
