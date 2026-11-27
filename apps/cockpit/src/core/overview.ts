@@ -40,7 +40,7 @@ export async function getKpis(q: Queryable): Promise<Kpis> {
 
 /** Wat vandaag aandacht vraagt. Later vullen agents deze lijst ook met voorstellen. */
 export interface AttentionItem {
-  kind: 'betaling_mislukt' | 'proef_loopt_af' | 'achterstallig';
+  kind: 'betaling_mislukt' | 'proef_loopt_af' | 'achterstallig' | 'btw_verlegd_gestopt';
   organizationId: string;
   organizationName: string;
   at: Date;
@@ -61,6 +61,10 @@ export async function getAttention(q: Queryable, limit = 12): Promise<AttentionI
      (SELECT 'proef_loopt_af', o.id, o.name, s.trial_ends_at, s.plan
         FROM subscription s JOIN organization o ON o.id = s.organization_id
        WHERE s.status = 'proef' AND s.trial_ends_at BETWEEN now() AND now() + interval '3 days')
+     UNION ALL
+     -- Btw verlegd gestopt: btw-nummer ongeldig geworden of VIES te lang niet bereikbaar (zie btw.ts).
+     (SELECT 'btw_verlegd_gestopt', o.id, o.name, o.vat_alert_at, coalesce(o.vat_alert, '')
+        FROM organization o WHERE o.vat_alert_at IS NOT NULL AND o.vat_alert_at > now() - interval '60 days')
      ORDER BY at DESC LIMIT $1`,
     [limit],
   );

@@ -248,9 +248,9 @@ async function newPaymentFor(p: Platform, q: Queryable, itemId: string, prefix: 
   const pay = await one<{ id: string; amount_incl_cents: number; description: string }>(
     q,
     `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                          amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by)
+                          amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, vat_code, vat_rate, vat_check_id)
      SELECT organization_id, subscription_id, $2 || description, period_start, period_end,
-            amount_excl_cents, vat_cents, amount_incl_cents, 'open', $3, $4
+            amount_excl_cents, vat_cents, amount_incl_cents, 'open', $3, $4, vat_code, vat_rate, vat_check_id
        FROM collection_item WHERE id = $1
      RETURNING id, amount_incl_cents, description`,
     [itemId, prefix, p.payments.name, actor.userId],

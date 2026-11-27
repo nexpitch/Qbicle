@@ -1,4 +1,4 @@
-import type { Invoice } from '@qbicle/platform';
+import { supplierLines, type Invoice } from '@qbicle/platform';
 
 /**
  * Factuur als echte pdf, zonder externe bibliotheek. Eén A4-pagina met de
@@ -73,7 +73,7 @@ export function invoicePdf(inv: Invoice, opts: { status: string; test: boolean }
     c.adres ?? '',
     [c.postcode, c.plaats].filter(Boolean).join(' ') + (c.land && c.land !== 'NL' ? `  ${c.land}` : ''),
     c.kvk ? `KvK ${c.kvk}` : '',
-    c.btwNummer ? `Btw ${c.btwNummer}` : '',
+    inv.customerVatNumber ?? c.btwNummer ? `Btw ${inv.customerVatNumber ?? c.btwNummer}` : '',
   ].filter((s) => s.trim());
   klant.forEach((s, i) => text(M, y - 14 - i * 13, s.slice(0, 80)));
   const meta: [string, string][] = [
@@ -105,17 +105,25 @@ export function invoicePdf(inv: Invoice, opts: { status: string; test: boolean }
   right(440, y, 'Subtotaal');
   right(W - M, y, euro(inv.amountExclCents));
   y -= 16;
-  right(440, y, `Btw ${inv.vatRate.toLocaleString('nl-NL')}%`);
+  right(440, y, inv.reverseCharge ? 'Btw verlegd (0%)' : `Btw ${inv.vatRate.toLocaleString('nl-NL')}%`);
   right(W - M, y, euro(inv.vatCents));
   y -= 20;
   right(440, y, 'Totaal', 11, true);
   right(W - M, y, euro(inv.amountInclCents), 11, true);
 
+  if (inv.reverseCharge) {
+    y -= 30;
+    text(M, y, 'Btw verlegd / reverse charge (art. 196 Btw-richtlijn 2006/112/EG). De afnemer voldoet de btw.', 9, true);
+    text(M, y - 13, `Btw-nummer afnemer: ${inv.customerVatNumber ?? ''}   Btw-nummer ${inv.supplier?.naam ?? 'leverancier'}: ${inv.supplierVatNumber ?? 'nog niet ingesteld'}`.slice(0, 110), 9);
+  }
+
   // Voet
   ops.push('0.31 0.41 0.46 rg');
-  if (opts.test) {
-    text(M, M + 28, 'Testfactuur: gegevens van Qbicle als leverancier (bedrijfsnaam, adres, KvK, btw-nummer)', 8);
-    text(M, M + 17, 'volgen zodra de BV is opgericht. Er is geen geld afgeschreven.', 8);
+  if (opts.test) text(M, M + 30, 'Testfactuur: er is geen geld afgeschreven.', 8);
+  if (inv.supplier) {
+    const sl = supplierLines(inv.supplier);
+    text(M, M + 14, sl.regels.join('  ·  ').slice(0, 120), 8);
+    if (sl.ontbreekt.length) text(M, M + 22, `Nog in te stellen: ${sl.ontbreekt.join(', ')}`, 8);
   }
   text(M, M, 'Qbicle - gegevens opgeslagen in de EU', 8);
 

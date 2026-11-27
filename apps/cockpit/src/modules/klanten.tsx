@@ -1,5 +1,5 @@
 /** @jsxImportSource hono/jsx */
-import { PlatformError } from '@qbicle/platform';
+import { checkVatNumber, EU_VAT_FORMATS, PlatformError, vatStatus } from '@qbicle/platform';
 import { z } from 'zod';
 import { can } from '../core/roles.ts';
 import { addNote, getOrganizationDetail, listNotes, listOrganizations, orgTimeline, SUB_FILTERS, type SubFilter } from '../core/customers.ts';
@@ -139,6 +139,7 @@ export const klanten: CockpitModule = {
       const tab: Tab = (TABS as readonly string[]).includes(t ?? '') ? (t as Tab) : 'overzicht';
       const q = ctx.cockpit.p.pool;
       const d = await getOrganizationDetail(q, id);
+      const btw = await vatStatus(ctx.cockpit.p, q, id);
       const staff = c.get('staff');
       const s = d.subscription;
       const lopend = s && ['proef', 'actief', 'achterstallig', 'opgezegd'].includes(s.status) ? s : null;
@@ -219,9 +220,47 @@ export const klanten: CockpitModule = {
                   </dd>
                   <dt>KvK</dt>
                   <dd>{d.org.kvk_number || '—'}</dd>
+                  <dt>Land</dt>
+                  <dd>
+                    {EU_VAT_FORMATS[d.org.billing_country]?.naam ?? d.org.billing_country}
+                    {d.org.billing_country === 'NL' ? '' : EU_VAT_FORMATS[d.org.billing_country] ? ' (EU)' : ' (buiten de EU)'}
+                  </dd>
                   <dt>Btw-nummer</dt>
                   <dd>{d.org.vat_number || '—'}</dd>
+                  <dt>Btw</dt>
+                  <dd>
+                    {btw.verlegd ? <Status kind="ok">Verlegd, 0%</Status> : <Status kind={btw.vanToepassing && d.org.vat_number ? 'warn' : 'info'}>{`${ctx.cockpit.p.catalog.btwPercentage}%`}</Status>}
+                  </dd>
+                  {btw.vanToepassing ? (
+                    <>
+                      <dt>VIES</dt>
+                      <dd>
+                        {btw.laatsteControle ? (
+                          <>
+                            {btw.laatsteControle.status === 'geldig' ? 'Geldig' : btw.laatsteControle.status === 'ongeldig' ? 'Ongeldig' : 'Storing'} op{' '}
+                            {datumTijd(btw.laatsteControle.checkedAt)}
+                            {btw.laatsteControle.requestIdentifier ? ` · consultatienummer ${btw.laatsteControle.requestIdentifier}` : ' · geen consultatienummer (btw-nummer Qbicle ontbreekt)'}
+                            {btw.laatsteControle.traderName ? ` · ${btw.laatsteControle.traderName}` : ''}
+                            {btw.laatsteControle.error ? ` · ${btw.laatsteControle.error}` : ''}
+                          </>
+                        ) : (
+                          'Nog niet gecontroleerd'
+                        )}
+                      </dd>
+                    </>
+                  ) : null}
                 </dl>
+                {btw.melding ? <p class="melding warn">{datum(btw.melding.at)}: {btw.melding.tekst}</p> : null}
+                {btw.vanToepassing && d.org.vat_number && can(staff.role, 'facturatie.beheren') ? (
+                  <form class="stack" data-api={`/api/klanten/${id}/btw-controle`}>
+                    <FormError />
+                    <div>
+                      <button class="btn secondary" type="submit">
+                        Opnieuw controleren bij VIES
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
               </section>
             </div>
           </>
@@ -493,6 +532,13 @@ export const klanten: CockpitModule = {
       );
       await setPaymentSettings(ctx.cockpit.p.pool, idParam(c.req.param('id')), b, c.get('actor'));
       return c.json({ ok: true });
+    });
+
+    api.post('/klanten/:id/btw-controle', async (c) => {
+      ctx.require(c, 'facturatie.beheren');
+      const check = await checkVatNumber(ctx.cockpit.p, idParam(c.req.param('id')), 'cockpit', c.get('actor'));
+      if (!check) throw new PlatformError('conflict', 'Btw verleggen is voor deze klant niet van toepassing (geen btw-nummer, of land is NL of buiten de EU).');
+      return c.json({ uitslag: check.status });
     });
 
     api.post('/klanten/:id/notities', async (c) => {
