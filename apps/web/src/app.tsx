@@ -201,18 +201,24 @@ export function createWeb(p: Platform, opts: ApiOptions): Hono<{ Variables: Vars
       resolveAccess(p.pool, ctx.s.user.id, ctx.org.id),
     ]);
     const demo = demoDataAllowed() && Boolean(access && can(access, 'org:wijzigen'));
+    const standen = koppelingen.lijst(ctx.org.id);
+    const gekoppeld = standen.filter((k) => k.status === 'actief' || k.status === 'let_op').map((k) => k.id);
     const extra = [
-      koppelingenSectie(koppelingen.lijst(ctx.org.id), await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
+      koppelingenSectie(standen, await huidigPakket(ctx.org.id), `/o/${ctx.org.id}`),
       systemenSectie(await listSystemen(p, ctx.s.user.id, ctx.org.id), `/o/${ctx.org.id}`),
     ];
-    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} />);
+    return c.html(<DashboardPage user={ctx.user} org={ctx.org} d={d} b={b} demo={demo} extra={extra} gekoppeld={gekoppeld} />);
   });
 
   app.get('/o/:org/assets', async (c) => {
     const ctx = await withOrg(c);
     if (!ctx) return c.redirect('/inloggen');
     const d = await getDashboard(p, ctx.s.user.id, ctx.org.id);
-    return c.html(<AssetsPage user={ctx.user} org={ctx.org} d={d} soort={c.req.query('soort')} />);
+    const gekoppeld = koppelingen
+      .lijst(ctx.org.id)
+      .filter((k) => k.status === 'actief' || k.status === 'let_op')
+      .map((k) => k.id);
+    return c.html(<AssetsPage user={ctx.user} org={ctx.org} d={d} soort={c.req.query('soort')} gekoppeld={gekoppeld} />);
   });
 
   app.get('/o/:org/assets/:asset', async (c) => {
