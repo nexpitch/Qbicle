@@ -1,3 +1,4 @@
+import type pg from 'pg';
 import { DomainInputError, isSameOrSubdomain, normalizeDomain } from '@qbicle/scanner';
 import { audit, SYSTEM_ACTOR, type Actor } from './audit.ts';
 import type { Platform } from './context.ts';
@@ -165,11 +166,99 @@ export async function getDomain(p: Platform, userId: string, organizationId: str
   return toDomain(await loadDomain(p, organizationId, domainId));
 }
 
-export async function removeDomain(p: Platform, actor: UserActor, organizationId: string, domainId: string): Promise<void> {
+/** Wat er gebeurt als je dit domein verwijdert of hernoemt: voor de waarschuwing vooraf. */
+export interface DomainImpact {
+  domain: Domain;
+  /** Actieve assets die bij dit domein horen (worden gearchiveerd). */
+  assets: number;
+  /** Open bevindingen op die assets (tellen daarna niet meer mee). */
+  openFindings: number;
+  /** Scans van dit domein (worden bij verwijderen gewist). */
+  scans: number;
+  lastScanAt: Date | null;
+}
+
+export async function domainImpact(p: Platform, userId: string, organizationId: string, domainId: string): Promise<DomainImpact> {
+  await authorize(p.pool, userId, organizationId, 'domeinen:lezen');
+  const row = await loadDomain(p, organizationId, domainId);
+  const r = (await one<{ assets: number; open: number; scans: number; last: Date | null }>(
+    p.pool,
+    `SELECT (SELECT count(*)::int FROM asset WHERE domain_id = $1 AND status = 'actief') AS assets,
+            (SELECT count(*)::int FROM finding f JOIN asset a ON a.id = f.asset_id
+              WHERE a.domain_id = $1 AND a.status = 'actief' AND f.resolved_at IS NULL AND f.accepted_at IS NULL) AS open,
+            (SELECT count(*)::int FROM scan WHERE domain_id = $1) AS scans,
+            (SELECT max(finished_at) FROM scan WHERE domain_id = $1 AND status = 'klaar') AS last`,
+    [row.id],
+  ))!;
+  return { domain: toDomain(row), assets: r.assets, openFindings: r.open, scans: r.scans, lastScanAt: r.last };
+}
+
+/** Assets van dit domein archiveren: ze blijven in de geschiedenis, maar tellen niet meer mee. */
+async function archiveAssets(q: pg.PoolClient, domainId: string): Promise<number> {
+  const r = await q.query(`UPDATE asset SET status = 'verdwenen' WHERE domain_id = $1 AND status = 'actief'`, [domainId]);
+  return r.rowCount ?? 0;
+}
+
+/**
+ * Domein verwijderen (alleen eigenaar en beheerder). Als bewuste tweede stap
+ * moet de naam van het domein worden ingetypt. Scans van het domein worden
+ * gewist, assets gearchiveerd (ze verdwijnen uit het overzicht), en het
+ * domein wordt niet meer gescand. Het logboek houdt bij wie het deed.
+ */
+export async function removeDomain(p: Platform, actor: UserActor, organizationId: string, domainId: string, input: { bevestiging: string }): Promise<{ gearchiveerd: number }> {
   await authorize(p.pool, actor.userId, organizationId, 'domeinen:beheren');
   const row = await loadDomain(p, organizationId, domainId);
-  await p.pool.query('DELETE FROM domain WHERE id = $1', [row.id]);
-  await audit(p.pool, actor, { organizationId, action: 'domein.verwijderd', subject: row.id, detail: { domein: row.name } });
+  const typed = String(input.bevestiging ?? '').trim().toLowerCase().replace(/\.$/, '');
+  if (typed !== row.name) {
+    throw new PlatformError('ongeldige_invoer', `Typ ${row.name} om te bevestigen dat je dit domein wilt verwijderen.`);
+  }
+  return withTransaction(p.pool, async (q) => {
+    const gearchiveerd = await archiveAssets(q, row.id);
+    const scans = await q.query('DELETE FROM scan WHERE domain_id = $1', [row.id]);
+    await q.query('DELETE FROM domain WHERE id = $1', [row.id]);
+    await audit(q, actor, {
+      organizationId,
+      action: 'domein.verwijderd',
+      subject: row.id,
+      detail: { domein: row.name, bevestigd: Boolean(row.verified_at), assets_gearchiveerd: gearchiveerd, scans_gewist: scans.rowCount ?? 0 },
+    });
+    return { gearchiveerd };
+  });
+}
+
+/**
+ * Naam van een domein aanpassen (bijv. een tikfout). Het is daarna een ander
+ * domein: de bevestiging vervalt, er komt een nieuwe code, openstaande
+ * bevestigingsmails werken niet meer en de assets van de oude naam worden
+ * gearchiveerd. De scangeschiedenis blijft bewaard.
+ */
+export async function renameDomain(p: Platform, actor: UserActor, organizationId: string, domainId: string, input: { name: string }): Promise<Domain> {
+  await authorize(p.pool, actor.userId, organizationId, 'domeinen:beheren');
+  const row = await loadDomain(p, organizationId, domainId);
+  const name = withoutWww(parseDomain(input.name));
+  if (name === row.name) return toDomain(row);
+  try {
+    return await withTransaction(p.pool, async (q) => {
+      const gearchiveerd = await archiveAssets(q, row.id);
+      await q.query('DELETE FROM domain_email_challenge WHERE domain_id = $1 AND used_at IS NULL', [row.id]);
+      const updated = await one<DomainRow>(
+        q,
+        `UPDATE domain SET name = $2, verified_at = NULL, verification_method = NULL, verified_by = NULL, verification_checked_at = NULL, verification_token = $3
+          WHERE id = $1 RETURNING ${COLS}`,
+        [row.id, name, newVerificationCode()],
+      );
+      await audit(q, actor, {
+        organizationId,
+        action: 'domein.gewijzigd',
+        subject: row.id,
+        detail: { van: row.name, naar: name, was_bevestigd: Boolean(row.verified_at), assets_gearchiveerd: gearchiveerd },
+      });
+      return toDomain(updated!);
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new PlatformError('conflict', 'Dit domein staat al in je organisatie.');
+    throw err;
+  }
 }
 
 /** Staat het juiste TXT-record er? Kijkt op _qbicle-verificatie.<domein> en op het domein zelf. */

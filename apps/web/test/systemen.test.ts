@@ -57,8 +57,10 @@ describe.skipIf(!hasDb)('register systemen (web)', () => {
     expect(lijst).toContain('Nu oppakken');
 
     const overzicht = await (await page(`/o/${org}/overzicht`)).text();
-    expect(overzicht).toContain('1 met aandacht');
-    expect(overzicht).toContain(`/o/${org}/systemen/${s.id}`);
+    const tegel = overzicht.match(/id="tegel-systemen".*?<\/article>/s)![0];
+    expect(tegel).toContain('Aandacht nodig');
+    expect(tegel).toContain('1 systeem');
+    expect(tegel).toContain(`/o/${org}/systemen`);
 
     const detail = await (await page(`/o/${org}/systemen/${s.id}`)).text();
     expect(detail).toContain('Wat je kunt doen');
