@@ -13,7 +13,7 @@ export const SUB_STATUS: Record<string, [string, StatusKind]> = {
 };
 
 export const PAYMENT_STATUS: Record<string, [string, StatusKind]> = {
-  open: ['Open', 'warn'],
+  open: ['Openstaand', 'warn'],
   betaald: ['Betaald', 'ok'],
   mislukt: ['Mislukt', 'crit'],
   verlopen: ['Verlopen', 'unk'],
@@ -36,4 +36,15 @@ export function PayStatus(props: { status: string }) {
 export function planName(catalog: Catalog, id: string | null): string {
   if (!id) return '—';
   return catalog.plans.find((p) => p.id === id)?.naam ?? id;
+}
+
+export const METHOD_LABEL: Record<string, string> = { incasso: 'Incasso', factuur: 'Factuur' };
+
+/** Status van een betaling, met terugbetaling erbij. */
+export function PayStatusFull(props: { status: string; refundedAt: Date | null; refundedCents?: number; amountCents?: number }) {
+  if (props.refundedAt) {
+    const deel = props.refundedCents !== undefined && props.amountCents !== undefined && props.refundedCents < props.amountCents;
+    return <Status kind="unk">{deel ? 'Deels terugbetaald' : 'Terugbetaald'}</Status>;
+  }
+  return <PayStatus status={props.status} />;
 }

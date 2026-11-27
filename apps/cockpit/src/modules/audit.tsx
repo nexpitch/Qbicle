@@ -15,6 +15,7 @@ const LABELS: Record<string, string> = {
   'cockpit.medewerker_rol_gewijzigd': 'Rol van medewerker gewijzigd',
   'cockpit.medewerker_ingetrokken': 'Toegang medewerker ingetrokken',
   'cockpit.notitie_toegevoegd': 'Notitie toegevoegd',
+  'cockpit.betaalwijze_gewijzigd': 'Betaalwijze gewijzigd',
   'cockpit.gebruiker_geblokkeerd': 'Gebruiker geblokkeerd',
   'cockpit.gebruiker_gedeblokkeerd': 'Gebruiker gedeblokkeerd',
   'cockpit.gebruiker_uitgelogd': 'Gebruiker overal uitgelogd',

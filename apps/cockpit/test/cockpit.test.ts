@@ -203,7 +203,7 @@ describe.skipIf(!hasDb)('cockpit', () => {
 
   it('placeholders voor onderdelen die nog komen', async () => {
     const c = await login('kijker@qbicle.test', 'lezer');
-    for (const path of ['/incasso', '/facturen', '/gebruik', '/agents']) {
+    for (const path of ['/incasso', '/gebruik', '/agents']) {
       const res = await get(path, c);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('Dit onderdeel wordt nu gebouwd');

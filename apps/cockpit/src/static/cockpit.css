@@ -186,3 +186,12 @@ input.code { font: 700 1.4rem var(--f-mono); letter-spacing: .3em; text-align: c
 }
 @media (prefers-reduced-motion: reduce) { .side { transition: none; } }
 .table .sub.t-crit { color: var(--st-crit); }
+.seg-links { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px; background: var(--surface); }
+.seg-links a { padding: 5px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600; color: var(--muted); text-decoration: none; }
+.seg-links a[aria-current] { background: var(--petrol); color: #fff; }
+.radio { display: flex; align-items: center; gap: 8px; font-weight: 500; border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.radio:has(input:checked) { border-color: var(--petrol); background: var(--petrol-soft); }
+.radio input { accent-color: var(--petrol); }
+.betaalwijze .row { align-items: flex-end; }
+.betaalwijze label:not(.radio) { min-width: 180px; }
+.grow { flex: 1; }

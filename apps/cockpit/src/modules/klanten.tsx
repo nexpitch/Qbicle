@@ -3,7 +3,8 @@ import { PlatformError } from '@qbicle/platform';
 import { z } from 'zod';
 import { can } from '../core/roles.ts';
 import { addNote, getOrganizationDetail, listNotes, listOrganizations, orgTimeline, SUB_FILTERS, type SubFilter } from '../core/customers.ts';
-import { ORG_KIND, PayStatus, planName, SubStatus } from '../labels.tsx';
+import { getPaymentSettings, PAYMENT_METHODS, setPaymentSettings } from '../core/billing-admin.ts';
+import { METHOD_LABEL, ORG_KIND, PayStatusFull, planName, SubStatus } from '../labels.tsx';
 import { datum, datumTijd, Empty, euro, euroKort, FormError, Status } from '../layout.tsx';
 import type { CockpitModule } from '../module.ts';
 import { actionLabel } from './audit.tsx';
@@ -80,6 +81,7 @@ export const klanten: CockpitModule = {
                       <th>Bedrijf</th>
                       <th>Pakket</th>
                       <th>Status</th>
+                      <th>Betaalwijze</th>
                       <th class="num">Per maand</th>
                       <th class="num">Gebruikers</th>
                       <th class="num">Domeinen</th>
@@ -104,6 +106,7 @@ export const klanten: CockpitModule = {
                           <SubStatus status={r.sub_status} />
                           {r.sub_status === 'proef' && r.trial_ends_at ? <span class="sub">tot {datum(r.trial_ends_at)}</span> : null}
                         </td>
+                        <td>{METHOD_LABEL[r.payment_method] ?? r.payment_method}</td>
                         <td class="num">{r.monthly_price_cents != null ? euroKort(r.monthly_price_cents) : '—'}</td>
                         <td class="num">{r.users}</td>
                         <td class="num">{r.domains}</td>
@@ -300,60 +303,111 @@ export const klanten: CockpitModule = {
           </section>
         );
       } else if (tab === 'facturatie') {
+        const ps = await getPaymentSettings(q, id);
+        const magBetaal = can(staff.role, 'facturatie.beheren');
         body = (
-          <div class="cols">
+          <>
             <section class="card">
-              <h2>Betalingen</h2>
-              {d.payments.length === 0 ? (
-                <Empty title="Nog geen betalingen" />
+              <div class="card-head">
+                <h2>Betaalwijze</h2>
+                <span class="small">Standaard automatische incasso. Factuur alleen bij een afspraak (corporate of klantspecifiek project).</span>
+              </div>
+              {magBetaal ? (
+                <form class="stack betaalwijze" data-api={`/api/klanten/${id}/betaalwijze`}>
+                  <FormError />
+                  <div class="row">
+                    {PAYMENT_METHODS.map((m) => (
+                      <label class="radio">
+                        <input type="radio" name="methode" value={m} checked={ps.payment_method === m} />
+                        {m === 'incasso' ? 'Automatische incasso (standaard)' : 'Factuur op rekening'}
+                      </label>
+                    ))}
+                  </div>
+                  <div class="row">
+                    <label>
+                      Betaaltermijn factuur (dagen)
+                      <input type="number" name="termijnDagen" min={0} max={90} value={String(ps.payment_terms_days)} data-getal />
+                    </label>
+                    <label class="grow">
+                      Afspraak of reden (verplicht bij factuur)
+                      <input type="text" name="notitie" maxlength={400} value={ps.payment_method_note ?? ''} placeholder="Bijv. raamovereenkomst, inkoopordernummer verplicht" />
+                    </label>
+                  </div>
+                  <div>
+                    <button class="btn" type="submit">
+                      Opslaan
+                    </button>
+                  </div>
+                </form>
               ) : (
-                <div class="table-wrap">
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th>Omschrijving</th>
-                        <th>Status</th>
-                        <th class="num">Bedrag</th>
-                        <th class="num">Datum</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {d.payments.map((p) => (
+                <dl class="facts">
+                  <dt>Betaalwijze</dt>
+                  <dd>{METHOD_LABEL[ps.payment_method]}</dd>
+                  <dt>Termijn</dt>
+                  <dd>{ps.payment_terms_days} dagen</dd>
+                  {ps.payment_method_note ? (
+                    <>
+                      <dt>Afspraak</dt>
+                      <dd>{ps.payment_method_note}</dd>
+                    </>
+                  ) : null}
+                </dl>
+              )}
+            </section>
+            <div class="cols">
+              <section class="card">
+                <h2>Betalingen</h2>
+                {d.payments.length === 0 ? (
+                  <Empty title="Nog geen betalingen" />
+                ) : (
+                  <div class="table-wrap">
+                    <table class="table">
+                      <thead>
                         <tr>
-                          <td>
-                            {p.description}
-                            {p.provider === 'nep' ? <span class="tag">test</span> : null}
-                          </td>
-                          <td>
-                            <PayStatus status={p.status} />
-                          </td>
-                          <td class="num">{euro(p.amount_incl_cents)}</td>
-                          <td class="num">{datum(p.created_at)}</td>
+                          <th>Omschrijving</th>
+                          <th>Status</th>
+                          <th class="num">Bedrag</th>
+                          <th class="num">Datum</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-            <section class="card">
-              <h2>Facturen</h2>
-              {d.invoices.length === 0 ? (
-                <Empty title="Nog geen facturen" />
-              ) : (
-                <ul class="feed">
-                  {d.invoices.map((i) => (
-                    <li>
-                      <b>
-                        {i.number} · {euro(i.amount_incl_cents)}
-                      </b>
-                      <span>{datum(i.issued_at)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
+                      </thead>
+                      <tbody>
+                        {d.payments.map((p) => (
+                          <tr>
+                            <td>
+                              {p.description}
+                              {p.provider === 'nep' ? <span class="tag">test</span> : null}
+                            </td>
+                            <td>
+                              <PayStatusFull status={p.status} refundedAt={p.refunded_at} />
+                            </td>
+                            <td class="num">{euro(p.amount_incl_cents)}</td>
+                            <td class="num">{datum(p.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+              <section class="card">
+                <h2>Facturen</h2>
+                {d.invoices.length === 0 ? (
+                  <Empty title="Nog geen facturen" />
+                ) : (
+                  <ul class="feed">
+                    {d.invoices.map((i) => (
+                      <li>
+                        <b>
+                          {i.number} · {euro(i.amount_incl_cents)}
+                        </b>
+                        <span>{datum(i.issued_at)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+          </>
         );
       } else if (tab === 'notities') {
         const notes = await listNotes(q, id);
@@ -429,6 +483,16 @@ export const klanten: CockpitModule = {
         tabs: TABS.map((k) => [TAB_LABEL[k], k === 'overzicht' ? `/klanten/${id}` : `/klanten/${id}?tab=${k}`, k === tab]),
         children: body,
       });
+    });
+
+    api.post('/klanten/:id/betaalwijze', async (c) => {
+      ctx.require(c, 'facturatie.beheren');
+      const b = await ctx.body(
+        c,
+        z.object({ methode: z.enum(PAYMENT_METHODS), termijnDagen: z.number().int().min(0).max(90), notitie: z.string().max(400).nullish() }),
+      );
+      await setPaymentSettings(ctx.cockpit.p.pool, idParam(c.req.param('id')), b, c.get('actor'));
+      return c.json({ ok: true });
     });
 
     api.post('/klanten/:id/notities', async (c) => {

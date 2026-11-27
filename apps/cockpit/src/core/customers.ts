@@ -22,6 +22,7 @@ export interface OrgListRow {
   users: number;
   domains: number;
   failed_payments: number;
+  payment_method: string;
 }
 
 export async function listOrganizations(
@@ -50,7 +51,7 @@ export async function listOrganizations(
       LEFT JOIN subscription s ON s.organization_id = o.id AND s.status IN ('proef', 'actief', 'achterstallig', 'opgezegd')`;
   const rows = await many<OrgListRow>(
     q,
-    `SELECT o.id, o.name, o.kind, o.created_at, s.plan, s.billing_interval, s.status AS sub_status,
+    `SELECT o.id, o.name, o.kind, o.created_at, o.payment_method, s.plan, s.billing_interval, s.status AS sub_status,
             s.monthly_price_cents, s.trial_ends_at,
             (SELECT count(*) FROM membership m WHERE m.organization_id = o.id)::int AS users,
             (SELECT count(*) FROM domain d WHERE d.organization_id = o.id)::int AS domains,
@@ -96,7 +97,7 @@ export interface OrgDetail {
   members: Array<{ user_id: string; email: string; display_name: string | null; role: string; last_login_at: Date | null; disabled_at: Date | null }>;
   partners: Array<{ id: string; name: string; access: string }>;
   domains: Array<{ id: string; name: string; verified_at: Date | null; verification_method: string | null; created_at: Date }>;
-  payments: Array<{ id: string; description: string; amount_incl_cents: number; status: string; provider: string; created_at: Date; paid_at: Date | null }>;
+  payments: Array<{ id: string; description: string; amount_incl_cents: number; status: string; provider: string; created_at: Date; paid_at: Date | null; refunded_at: Date | null }>;
   invoices: Array<{ id: string; number: string; issued_at: Date; amount_incl_cents: number; payment_status: string }>;
 }
 
@@ -138,7 +139,7 @@ export async function getOrganizationDetail(q: Queryable, id: string): Promise<O
     ),
     many<OrgDetail['payments'][number]>(
       q,
-      `SELECT id, description, amount_incl_cents, status, provider, created_at, paid_at
+      `SELECT id, description, amount_incl_cents, status, provider, created_at, paid_at, refunded_at
          FROM payment WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 25`,
       [id],
     ),

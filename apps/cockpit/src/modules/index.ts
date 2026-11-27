@@ -1,5 +1,7 @@
 import type { CockpitModule } from '../module.ts';
+import { abonnementen } from './abonnementen.tsx';
 import { audit } from './audit.tsx';
+import { facturen } from './facturen.tsx';
 import { gebruikers } from './gebruikers.tsx';
 import { home } from './home.tsx';
 import { klanten } from './klanten.tsx';
@@ -18,19 +20,13 @@ export const MODULES: CockpitModule[] = [
   gebruikers,
 
   // Financiën
-  placeholder({ key: 'abonnementen', label: 'Abonnementen', href: '/abonnementen', icon: 'abonnement', group: 'financien', order: 10 }, [
-    'Alle abonnementen met pakket, interval, prijs, periode en status',
-    'Per klant: automatische incasso (standaard) of factuur op rekening',
-  ]),
+  abonnementen,
   placeholder({ key: 'incasso', label: "Incasso's", href: '/incasso', icon: 'incasso', group: 'financien', order: 20 }, [
     'Incassobatch automatisch klaargezet per periode',
     'Controleren, regels uitsluiten of aanpassen, daarna met één knop indienen',
     'Mislukte incasso’s (storno, geen dekking, mandaat ingetrokken) met voorgestelde vervolgactie',
   ]),
-  placeholder({ key: 'facturen', label: 'Facturen', href: '/facturen', icon: 'factuur', group: 'financien', order: 30 }, [
-    'Alle facturen met status: betaald, openstaand, mislukt, terugbetaald',
-    'Factuur sturen voor klanten zonder incasso',
-  ]),
+  facturen,
 
   // Techniek en support (worden gebouwd in de thread voor gebruik, support en agents)
   placeholder({ key: 'gebruik', label: 'Gebruik', href: '/gebruik', icon: 'gebruik', group: 'techniek', order: 10 }, [
