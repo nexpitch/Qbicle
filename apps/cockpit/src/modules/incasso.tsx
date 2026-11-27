@@ -324,6 +324,13 @@ export const incasso: CockpitModule = {
                           </td>
                           <td>
                             {it.description}
+                            {it.lines && it.lines.length > 1
+                              ? it.lines.slice(1).map((l) => (
+                                  <span class="sub">
+                                    + {l.aantal}× {l.omschrijving}: {euro(l.totaalExclCenten)}
+                                  </span>
+                                ))
+                              : null}
                             {it.adjust_reason ? (
                               <span class="sub">
                                 Aangepast van {euro(it.original_excl_cents ?? 0)}: {it.adjust_reason}
@@ -413,7 +420,7 @@ export const incasso: CockpitModule = {
       const { incassodatum } = await ctx.body(c, z.object({ incassodatum: z.string().max(10) }));
       const r = await prepareRun(p, { collectionDate: incassodatum }, c.get('actor'));
       if (!r) return c.json({ fout: 'conflict', bericht: 'Er zijn geen abonnementen met incasso die op of vóór deze datum verlengen.' }, 409);
-      return c.json({ batch: r.runId, regels: r.items, overgeslagenFactuur: r.skippedFactuur }, 201);
+      return c.json({ batch: r.runId, regels: r.items, overgeslagenFactuur: r.skippedFactuur, zonderMachtiging: r.skippedMandate }, 201);
     });
     api.post('/incasso/:id/valideren', async (c) => {
       ctx.require(c, 'incasso.indienen');

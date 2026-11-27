@@ -1294,7 +1294,7 @@ function euroText(cents: number): string {
  * Het aantal extra domeinen telt op het moment dat de betaling klaargezet wordt;
  * halverwege een periode bijtellen doen we niet.
  */
-async function periodLines(
+export async function periodLines(
   p: Platform,
   q: Queryable,
   organizationId: string,

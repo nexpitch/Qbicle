@@ -41,6 +41,8 @@ CREATE TABLE collection_item (
   amount_incl_cents integer NOT NULL CHECK (amount_incl_cents = amount_excl_cents + vat_cents),
   -- Oorspronkelijk bedrag als een medewerker het aanpaste (met reden).
   original_excl_cents integer,
+  -- Factuurregels (pakket plus add-ons zoals extra domeinen). NULL = de omschrijving is de enige regel.
+  lines             jsonb,
   adjust_reason     text CHECK (char_length(adjust_reason) <= 400),
   status            text NOT NULL DEFAULT 'klaar' CHECK (status IN ('klaar', 'uitgesloten', 'ingediend', 'betaald', 'mislukt')),
   exclude_reason    text CHECK (char_length(exclude_reason) <= 400),

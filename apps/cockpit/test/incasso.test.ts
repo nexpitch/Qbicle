@@ -146,3 +146,85 @@ describe.skipIf(!hasDb)('cockpit: incassobatch', () => {
     expect((await h.post('/api/incasso', { incassodatum: today() }, fin)).status).toBe(201);
   });
 });
+
+describe.skipIf(!hasDb)('cockpit: incassobatch en klantaccount (pakketwissel, machtiging, extra domeinen)', () => {
+  let h: Awaited<ReturnType<typeof cockpitHarness>>;
+  let fin: string;
+  const E = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'; // downgrade gepland
+  const F = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; // 5 domeinen, limiet 3
+  const G = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'; // machtiging ingetrokken
+  const H = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'; // open bijbetaling voor upgrade
+  const today = () => new Date().toISOString().slice(0, 10);
+  const item = async (org: string) =>
+    (await h.p.pool.query('SELECT id, description, amount_excl_cents, status, failure_reason, lines FROM collection_item WHERE organization_id = $1', [org])).rows;
+
+  beforeAll(async () => {
+    h = await cockpitHarness();
+    const q = h.p.pool;
+    await q.query(
+      `INSERT INTO organization (id, name, kind, payment_method) VALUES
+        ($1, 'Downgrade BV', 'klant', 'incasso'), ($2, 'Veel Domeinen BV', 'klant', 'incasso'),
+        ($3, 'Zonder Machtiging BV', 'klant', 'incasso'), ($4, 'Upgrade BV', 'klant', 'incasso')`,
+      [E, F, G, H],
+    );
+    await q.query(
+      `INSERT INTO subscription (organization_id, plan, billing_interval, monthly_price_cents, status, current_period_start, current_period_end, pending_plan, pending_interval) VALUES
+        ($1, 'business', 'maand', 17900, 'actief', now() - interval '1 month', now() - interval '1 hour', 'mkb', 'maand'),
+        ($2, 'mkb', 'maand', 5900, 'actief', now() - interval '1 month', now() - interval '1 hour', NULL, NULL),
+        ($3, 'mkb', 'maand', 5900, 'actief', now() - interval '1 month', now() - interval '1 hour', NULL, NULL),
+        ($4, 'mkb', 'maand', 5900, 'actief', now() - interval '1 month', now() - interval '1 hour', NULL, NULL)`,
+      [E, F, G, H],
+    );
+    await q.query(`INSERT INTO domain (organization_id, name, verification_token) SELECT $1, 'd' || g || '.nl', 'tok' || g FROM generate_series(1, 5) g`, [F]);
+    await q.query(`INSERT INTO payment_mandate (organization_id, provider, status, revoked_at) VALUES ($1, 'nep', 'ingetrokken', now())`, [G]);
+    await q.query(
+      `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end, amount_excl_cents, vat_cents, amount_incl_cents, status, provider, plan_change)
+       SELECT organization_id, id, 'Bijbetaling upgrade', current_period_end, current_period_end + interval '1 month', 1000, 210, 1210, 'open', 'nep', '{"naar":"business"}'
+         FROM subscription WHERE organization_id = $1`,
+      [H],
+    );
+    fin = await h.login('fin@qbicle.test', 'financieel');
+  });
+  afterAll(async () => h?.close());
+
+  it('zet de juiste regels klaar', async () => {
+    const res = await h.post('/api/incasso', { incassodatum: today() }, fin);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { batch: string; regels: number; zonderMachtiging: number };
+    expect(body).toMatchObject({ regels: 3, zonderMachtiging: 1 });
+
+    // Geplande downgrade gaat in: het nieuwe pakket wordt geïncasseerd.
+    const [e] = await item(E);
+    expect(e.description).toContain('Qbicle MKB');
+    expect(e.amount_excl_cents).toBe(h.p.catalog.plans.find((x) => x.id === 'mkb')!.maandprijsCenten.maand);
+    expect((await h.p.pool.query('SELECT plan, pending_plan FROM subscription WHERE organization_id = $1', [E])).rows[0]).toEqual({ plan: 'mkb', pending_plan: null });
+
+    // Extra domeinen boven de limiet als eigen factuurregel.
+    const [f] = await item(F);
+    const extra = 2 * h.p.catalog.extraDomeinCenten;
+    expect(f.amount_excl_cents).toBe(5900 + extra);
+    expect(f.lines).toHaveLength(2);
+    expect(f.lines[1]).toMatchObject({ aantal: 2, totaalExclCenten: extra });
+
+    // Ingetrokken machtiging: niet incasseren, wel meteen een betaalverzoek klaar.
+    const [g] = await item(G);
+    expect(g).toMatchObject({ status: 'uitgesloten', failure_reason: 'mandaat_ingetrokken' });
+    const fu = (await h.p.pool.query('SELECT suggested_action FROM collection_followup WHERE item_id = $1', [g.id])).rows[0];
+    expect(fu.suggested_action).toBe('factuur_sturen');
+    expect((await h.post(`/api/incasso/${body.batch}/regels/${g.id}/terugzetten`, {}, fin)).status).toBe(409);
+
+    // Een open bijbetaling voor een upgrade is geen verlenging.
+    expect(await item(H)).toHaveLength(1);
+
+    // Opnieuw klaarzetten maakt geen tweede regel of voorstel voor de klant zonder machtiging.
+    expect((await h.post('/api/incasso', { incassodatum: today() }, fin)).status).toBe(409);
+
+    // Factuurregels gaan mee naar betaling en factuur.
+    expect((await h.post(`/api/incasso/${body.batch}/valideren`, {}, fin)).status).toBe(200);
+    expect((await h.post(`/api/incasso/${body.batch}/indienen`, {}, fin)).status).toBe(200);
+    expect((await h.post(`/api/incasso/regels/${f.id}/testuitkomst`, { uitkomst: 'betaald' }, fin)).status).toBe(200);
+    const inv = (await h.p.pool.query('SELECT lines, amount_excl_cents FROM invoice WHERE organization_id = $1', [F])).rows[0];
+    expect(inv.amount_excl_cents).toBe(5900 + extra);
+    expect(inv.lines).toHaveLength(2);
+  });
+});

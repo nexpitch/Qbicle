@@ -1,4 +1,19 @@
-import { audit, isNepProvider, many, one, PlatformError, syncPayment, withTransaction, type Actor, type Platform, type Queryable } from '@qbicle/platform';
+import {
+  applyScheduledChange,
+  audit,
+  findPlan,
+  isNepProvider,
+  many,
+  one,
+  periodLines,
+  PlatformError,
+  syncPayment,
+  withTransaction,
+  type Actor,
+  type InvoiceLine,
+  type Platform,
+  type Queryable,
+} from '@qbicle/platform';
 import { createFollowupSuggestion } from './followups.ts';
 
 /**
@@ -91,6 +106,7 @@ export interface ItemRow {
   payment_id: string | null;
   failure_reason: FailureReason | null;
   result_at: Date | null;
+  lines: InvoiceLine[] | null;
   /** Mislukte incasso's van deze klant in de laatste 180 dagen (signaal bij controleren). */
   recent_failures: number;
 }
@@ -116,7 +132,7 @@ export async function prepareRun(
   p: Platform,
   input: { collectionDate: string; source?: 'medewerker' | 'agent' | 'systeem' },
   actor: Actor,
-): Promise<{ runId: string; items: number; skippedFactuur: number } | undefined> {
+): Promise<{ runId: string; items: number; skippedFactuur: number; skippedMandate: number } | undefined> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.collectionDate) || Number.isNaN(Date.parse(input.collectionDate))) {
     throw new PlatformError('ongeldige_invoer', 'Kies een geldige incassodatum.');
   }
@@ -142,9 +158,12 @@ export async function prepareRun(
           AND s.current_period_end IS NOT NULL
           AND s.current_period_end <= $1
           AND NOT EXISTS (SELECT 1 FROM collection_item i
-                           WHERE i.subscription_id = s.id AND i.period_start = s.current_period_end AND i.status <> 'uitgesloten')
+                           WHERE i.subscription_id = s.id AND i.period_start = s.current_period_end
+                             AND (i.status <> 'uitgesloten' OR i.failure_reason IS NOT NULL))
+          -- Bijbetalingen voor een upgrade (plan_change) zijn geen verlenging.
           AND NOT EXISTS (SELECT 1 FROM payment pm
-                           WHERE pm.subscription_id = s.id AND pm.period_start = s.current_period_end AND pm.status IN ('open', 'betaald'))
+                           WHERE pm.subscription_id = s.id AND pm.period_start = s.current_period_end
+                             AND pm.status IN ('open', 'betaald') AND pm.plan_change IS NULL)
         ORDER BY o.name`,
       [date],
     );
@@ -162,31 +181,63 @@ export async function prepareRun(
       `INSERT INTO collection_run (collection_date, source, provider, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
       [input.collectionDate, input.source ?? 'medewerker', p.payments.name, actor.userId],
     );
-    const planName = (id: string) => p.catalog.plans.find((x) => x.id === id)?.naam ?? id;
-    for (const s of due) {
-      const months = s.billing_interval === 'jaar' ? 12 : 1;
-      const excl = s.monthly_price_cents * months;
+    let noMandate = 0;
+    for (const due1 of due) {
+      // Geplande downgrade of andere betaaltermijn gaat nu in, zodat we het juiste pakket incasseren.
+      const s = (await applyScheduledChange(p, q, due1.id, due1.current_period_end)) ?? {
+        plan: due1.plan,
+        interval: due1.billing_interval as 'maand' | 'jaar',
+        monthlyPriceCents: due1.monthly_price_cents,
+      };
+      const plan = findPlan(p.catalog, s.plan);
+      const label = new Date(due1.current_period_end).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' });
+      const description = `${plan?.naam ?? s.plan}, ${s.interval === 'jaar' ? 'jaar vanaf ' : ''}${label}`;
+      // Pakket plus add-ons (extra domeinen boven de limiet).
+      const lines: InvoiceLine[] = plan
+        ? await periodLines(p, q, due1.organization_id, plan, s.interval, s.monthlyPriceCents, description)
+        : [{ omschrijving: description, aantal: 1, prijsExclCenten: s.monthlyPriceCents * (s.interval === 'jaar' ? 12 : 1), totaalExclCenten: s.monthlyPriceCents * (s.interval === 'jaar' ? 12 : 1) }];
+      const excl = lines.reduce((t, l) => t + l.totaalExclCenten, 0);
       const vat = Math.round((excl * btw) / 100);
-      const label = new Date(s.current_period_end).toLocaleDateString('nl-NL', { month: 'long', year: 'numeric', timeZone: 'Europe/Amsterdam' });
-      const description = `${planName(s.plan)}, ${s.billing_interval === 'jaar' ? 'jaar vanaf ' : ''}${label}`;
+      // Klant heeft de machtiging ingetrokken: niet incasseren, wel meteen een vervolgvoorstel (betaallink).
+      const revoked = await one<{ revoked: boolean }>(
+        q,
+        `SELECT bool_or(status = 'ingetrokken') AND NOT bool_or(status = 'geldig') AS revoked FROM payment_mandate WHERE organization_id = $1`,
+        [due1.organization_id],
+      );
+      const mandateGone = revoked?.revoked === true;
+      if (mandateGone) noMandate++;
       // Periode uit de database zelf (microseconden), zodat de unieke index dubbel incasseren echt tegenhoudt.
-      await q.query(
+      const item = await one<{ id: string }>(
+        q,
         `INSERT INTO collection_item (run_id, organization_id, subscription_id, description, period_start, period_end,
-                                      amount_excl_cents, vat_cents, amount_incl_cents)
+                                      amount_excl_cents, vat_cents, amount_incl_cents, lines, status, exclude_reason, failure_reason)
          SELECT $1, s.organization_id, s.id, $3, s.current_period_end,
                 s.current_period_end + CASE WHEN s.billing_interval = 'jaar' THEN interval '1 year' ELSE interval '1 month' END,
-                $4, $5, $6
-           FROM subscription s WHERE s.id = $2`,
-        [run!.id, s.id, description, excl, vat, excl + vat],
+                $4, $5, $6, $7, $8, $9, $10
+           FROM subscription s WHERE s.id = $2
+         RETURNING id`,
+        [
+          run!.id,
+          due1.id,
+          description,
+          excl,
+          vat,
+          excl + vat,
+          lines.length > 1 ? JSON.stringify(lines) : null,
+          mandateGone ? 'uitgesloten' : 'klaar',
+          mandateGone ? 'Machtiging ingetrokken door de klant; zie Mislukt voor het betaalverzoek.' : null,
+          mandateGone ? 'mandaat_ingetrokken' : null,
+        ],
       );
+      if (mandateGone) await createFollowupSuggestion(q, p.config.appOrigin, item!.id);
     }
     await audit(q, actor, {
       organizationId: null,
       action: 'cockpit.incasso_klaargezet',
       subject: run!.id,
-      detail: { regels: due.length, incassodatum: input.collectionDate, bron: input.source ?? 'medewerker' },
+      detail: { regels: due.length, incassodatum: input.collectionDate, bron: input.source ?? 'medewerker', ...(noMandate ? { zonderMachtiging: noMandate } : {}) },
     });
-    return { runId: run!.id, items: due.length, skippedFactuur: skipped?.n ?? 0 };
+    return { runId: run!.id, items: due.length - noMandate, skippedFactuur: skipped?.n ?? 0, skippedMandate: noMandate };
   });
 }
 
@@ -199,9 +250,9 @@ async function lockRun(q: Queryable, runId: string): Promise<{ status: RunStatus
 async function lockConceptItem(q: Queryable, runId: string, itemId: string) {
   const run = await lockRun(q, runId);
   if (run.status !== 'concept') throw new PlatformError('conflict', 'Deze batch is al gevalideerd. Zet hem eerst terug naar concept.');
-  const item = await one<{ status: ItemStatus; organization_id: string; amount_excl_cents: number; original_excl_cents: number | null; subscription_id: string; period_start: Date }>(
+  const item = await one<{ status: ItemStatus; organization_id: string; amount_excl_cents: number; original_excl_cents: number | null; subscription_id: string; period_start: Date; failure_reason: FailureReason | null }>(
     q,
-    'SELECT status, organization_id, amount_excl_cents, original_excl_cents, subscription_id, period_start FROM collection_item WHERE id = $1 AND run_id = $2 FOR UPDATE',
+    'SELECT status, organization_id, amount_excl_cents, original_excl_cents, subscription_id, period_start, failure_reason FROM collection_item WHERE id = $1 AND run_id = $2 FOR UPDATE',
     [itemId, runId],
   );
   if (!item) throw new PlatformError('niet_gevonden', 'Deze regel bestaat niet.');
@@ -223,6 +274,9 @@ export async function includeItem(p: Platform, runId: string, itemId: string, ac
   await withTransaction(p.pool, async (q) => {
     const item = await lockConceptItem(q, runId, itemId);
     if (item.status !== 'uitgesloten') throw new PlatformError('conflict', 'Deze regel doet al mee.');
+    if (item.failure_reason === 'mandaat_ingetrokken') {
+      throw new PlatformError('conflict', 'De klant heeft de machtiging ingetrokken; incasseren mag niet. Gebruik het betaalverzoek onder Mislukt.');
+    }
     const clash = await one(
       q,
       `SELECT 1 FROM collection_item WHERE subscription_id = $1 AND period_start = $2 AND status <> 'uitgesloten' AND id <> $3`,
@@ -245,7 +299,9 @@ export async function adjustItem(p: Platform, runId: string, itemId: string, exc
     if (item.status !== 'klaar') throw new PlatformError('conflict', 'Pas alleen regels aan die meedoen.');
     await q.query(
       `UPDATE collection_item SET amount_excl_cents = $2, vat_cents = $3, amount_incl_cents = $4,
-              original_excl_cents = coalesce(original_excl_cents, amount_excl_cents), adjust_reason = $5
+              original_excl_cents = coalesce(original_excl_cents, amount_excl_cents), adjust_reason = $5,
+              -- Eigen bedrag: de omschrijving wordt de enige factuurregel.
+              lines = NULL
         WHERE id = $1`,
       [itemId, exclCents, vat, exclCents + vat, why],
     );
@@ -316,9 +372,9 @@ export async function submitRun(p: Platform, runId: string, actor: Actor): Promi
       const pay = await one<{ id: string }>(
         q,
         `INSERT INTO payment (organization_id, subscription_id, description, period_start, period_end,
-                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by)
+                              amount_excl_cents, vat_cents, amount_incl_cents, status, provider, created_by, lines)
          SELECT organization_id, subscription_id, 'Incasso: ' || description, period_start, period_end,
-                amount_excl_cents, vat_cents, amount_incl_cents, 'open', $2, $3
+                amount_excl_cents, vat_cents, amount_incl_cents, 'open', $2, $3, lines
            FROM collection_item WHERE id = $1
          RETURNING id`,
         [it.id, p.payments.name, actor.userId],
