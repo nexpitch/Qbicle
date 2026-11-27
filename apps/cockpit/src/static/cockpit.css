@@ -245,6 +245,16 @@ details.acties { position: relative; display: inline-block; text-align: left; }
 details.acties summary { list-style: none; }
 details.acties summary::-webkit-details-marker { display: none; }
 details.acties .pop { margin-top: 8px; width: 280px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; padding: 14px; display: grid; gap: 16px; box-shadow: 0 8px 24px rgba(11, 42, 59, .12); }
+/* Mislukte incasso's: voorstel en vervolgacties */
+.voorstel { display: grid; gap: 4px; padding: 12px 14px; margin: 4px 0 16px; border-radius: 10px; background: var(--petrol-soft); border-left: 3px solid var(--petrol); }
+.voorstel .tag { justify-self: start; }
+textarea { resize: vertical; line-height: 1.45; }
+details.meer { margin-top: 12px; }
+details.meer summary { list-style: none; cursor: pointer; }
+details.meer summary::-webkit-details-marker { display: none; }
+details.meer[open] summary { margin-bottom: 12px; }
+details.meer .alt { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+details.meer .alt h3 { font-size: .95rem; margin: 0 0 8px; }
 form.inline.end { justify-content: flex-end; }
 input[type=date] { border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 11px; font: 400 .95rem var(--f-ui); }
 .table tr:has(details[open]) td { vertical-align: top; }

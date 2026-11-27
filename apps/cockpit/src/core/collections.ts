@@ -1,4 +1,5 @@
 import { audit, isNepProvider, many, one, PlatformError, syncPayment, withTransaction, type Actor, type Platform, type Queryable } from '@qbicle/platform';
+import { createFollowupSuggestion } from './followups.ts';
 
 /**
  * Incassobatches. Een agent (of geplande taak) zet de verlengingen klaar, een
@@ -368,6 +369,8 @@ export async function syncItem(p: Platform, itemId: string, actor: Actor, failur
         subject: itemId,
         detail: { batch: it.run_id, reden: failureReason ?? 'onbekend' },
       });
+      // Voorstel voor de vervolgactie staat meteen klaar.
+      await createFollowupSuggestion(q, p.config.appOrigin, itemId);
     }
     // Batch afgerond als alles een uitkomst heeft.
     await q.query(

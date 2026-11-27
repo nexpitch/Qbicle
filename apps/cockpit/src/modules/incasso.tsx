@@ -19,6 +19,18 @@ import {
   type ItemStatus,
   type RunStatus,
 } from '../core/collections.ts';
+import {
+  ACTION_LABEL,
+  countOpenFollowups,
+  executeFollowup,
+  FOLLOWUP_ACTIONS,
+  listFollowups,
+  mailDraft,
+  rejectFollowup,
+  settleTestFollowupPayment,
+  type FollowupAction,
+  type FollowupRow,
+} from '../core/followups.ts';
 import { can } from '../core/roles.ts';
 import { datum, datumTijd, Empty, euro, FormError, Kpi, Status, type StatusKind } from '../layout.tsx';
 import type { CockpitModule } from '../module.ts';
@@ -44,6 +56,14 @@ function defaultDate(): string {
   return d.toISOString().slice(0, 10);
 }
 
+async function tabs(p: { pool: import('@qbicle/platform').Queryable }, active: 'batches' | 'mislukt'): Promise<Array<[string, string, boolean]>> {
+  const n = await countOpenFollowups(p.pool);
+  return [
+    ['Batches', '/incasso', active === 'batches'],
+    [n ? `Mislukt · ${n} te doen` : 'Mislukt', '/incasso/mislukt', active === 'mislukt'],
+  ];
+}
+
 function periode(a: Date, b: Date): string {
   const end = new Date(new Date(b).getTime() - 86_400_000);
   return `${datum(a)} t/m ${datum(end)}`;
@@ -63,16 +83,24 @@ export const incasso: CockpitModule = {
       const failed30 = await p.pool.query(
         `SELECT count(*)::int AS n FROM collection_item WHERE status = 'mislukt' AND result_at > now() - interval '30 days'`,
       );
+      const vervolg = await countOpenFollowups(p.pool);
       return ctx.page(c, {
         title: "Incasso's",
         active: 'incasso',
         eyebrow: 'Financiën',
+        tabs: await tabs(p, 'batches'),
         children: (
           <>
             <section class="kpis">
               <Kpi label="Wacht op jouw controle" value={String(open.length)} sub={open.length ? 'batch(es) klaargezet' : 'niets te doen'} tone={open.length ? 'warn' : 'ok'} />
               <Kpi label="Ingediend, wacht op bank" value={String(lopend.length)} />
-              <Kpi label="Mislukt (30 dagen)" value={String(failed30.rows[0].n)} tone={failed30.rows[0].n ? 'crit' : 'ok'} />
+              <Kpi
+                label="Mislukt (30 dagen)"
+                value={String(failed30.rows[0].n)}
+                sub={vervolg ? `${vervolg} vervolgactie${vervolg === 1 ? '' : 's'} klaar voor jou` : 'geen open vervolgacties'}
+                tone={failed30.rows[0].n || vervolg ? 'crit' : 'ok'}
+                href="/incasso/mislukt"
+              />
               <Kpi label="Betaalprovider" value={p.payments.name === 'nep' ? 'Testmodus' : 'Mollie'} sub={p.payments.name === 'nep' ? 'er gaat geen geld over' : undefined} />
             </section>
             <div class="cols">
@@ -151,6 +179,46 @@ export const incasso: CockpitModule = {
             </div>
           </>
         ),
+      });
+    });
+
+    pages.get('/incasso/mislukt', async (c) => {
+      const toon = c.req.query('toon') === 'afgehandeld' ? 'afgehandeld' : 'open';
+      const rows = await listFollowups(p.pool, toon);
+      const mag = can(c.get('staff').role, 'incasso.indienen');
+      const test = isNepProvider(p.payments);
+      return ctx.page(c, {
+        title: "Mislukte incasso's",
+        active: 'incasso',
+        eyebrow: "Incasso's",
+        tabs: await tabs(p, 'mislukt'),
+        actions: (
+          <div class="row">
+            <a class={`btn sm ${toon === 'open' ? '' : 'secondary'}`} href="/incasso/mislukt">
+              Te doen
+            </a>
+            <a class={`btn sm ${toon === 'afgehandeld' ? '' : 'secondary'}`} href="/incasso/mislukt?toon=afgehandeld">
+              Afgehandeld
+            </a>
+          </div>
+        ),
+        children:
+          rows.length === 0 ? (
+            <section class="card">
+              <Empty title={toon === 'open' ? 'Geen mislukte incasso\'s om op te volgen' : 'Nog niets afgehandeld'}>
+                {toon === 'open' ? 'Mislukt er een incasso, dan zet een agent hier meteen een voorstel klaar: wat te doen, waarom, en een conceptmail.' : null}
+              </Empty>
+            </section>
+          ) : (
+            <>
+              {toon === 'open' ? (
+                <p class="small">
+                  Per mislukte incasso staat een voorstel klaar. Er gaat niets naar de klant zonder jouw klik. Kies een andere actie als het voorstel niet past.
+                </p>
+              ) : null}
+              {rows.map((f) => (toon === 'open' ? <FollowupCard f={f} mag={mag} appOrigin={p.config.appOrigin} /> : <DoneCard f={f} mag={mag} test={test} />))}
+            </>
+          ),
       });
     });
 
@@ -385,6 +453,32 @@ export const incasso: CockpitModule = {
       await adjustItem(p, idParam(c.req.param('id'), 'Deze incassobatch'), idParam(c.req.param('item'), 'Deze regel'), cents, b.reden, c.get('actor'));
       return c.json({ ok: true });
     });
+    api.post('/incasso/vervolg/:id/uitvoeren', async (c) => {
+      ctx.require(c, 'incasso.indienen');
+      const b = await ctx.body(
+        c,
+        z.object({
+          actie: z.enum(FOLLOWUP_ACTIONS),
+          onderwerp: z.string().max(200).optional(),
+          tekst: z.string().max(4000).optional(),
+          notitie: z.string().max(400).optional(),
+        }),
+      );
+      const r = await executeFollowup(p, idParam(c.req.param('id'), 'Dit voorstel'), b, c.get('actor'));
+      return c.json({ betaling: r.paymentId ?? null, gemaildAan: r.mailedTo ?? null });
+    });
+    api.post('/incasso/vervolg/:id/afwijzen', async (c) => {
+      ctx.require(c, 'incasso.indienen');
+      const { reden } = await ctx.body(c, z.object({ reden: z.string().max(400) }));
+      await rejectFollowup(p, idParam(c.req.param('id'), 'Dit voorstel'), reden, c.get('actor'));
+      return c.json({ ok: true });
+    });
+    api.post('/incasso/vervolg/:id/testuitkomst', async (c) => {
+      ctx.require(c, 'incasso.indienen');
+      const { uitkomst } = await ctx.body(c, z.object({ uitkomst: z.enum(['betaald', 'mislukt']) }));
+      const status = await settleTestFollowupPayment(p, idParam(c.req.param('id'), 'Dit voorstel'), uitkomst, c.get('actor'));
+      return c.json({ status });
+    });
     api.post('/incasso/regels/:item/testuitkomst', async (c) => {
       ctx.require(c, 'incasso.indienen');
       const b = await ctx.body(c, z.object({ uitkomst: z.enum(['betaald', 'mislukt']), reden: z.enum(FAILURE_REASONS).optional() }));
@@ -393,6 +487,174 @@ export const incasso: CockpitModule = {
     });
   },
 };
+
+const PAY_LABEL: Record<string, [string, StatusKind]> = {
+  open: ['Wacht op betaling', 'warn'],
+  betaald: ['Betaald', 'ok'],
+  mislukt: ['Mislukt', 'crit'],
+  verlopen: ['Verlopen', 'unk'],
+  geannuleerd: ['Geannuleerd', 'unk'],
+};
+
+function FailHead({ f }: { f: FollowupRow }) {
+  return (
+    <div class="card-head">
+      <div>
+        <h2>
+          <a href={`/klanten/${f.organization_id}?tab=facturatie`}>{f.organization_name}</a>
+        </h2>
+        <span class="small">
+          {f.description} · {euro(f.amount_incl_cents)} · mislukt {datumTijd(f.created_at)}
+        </span>
+      </div>
+      <div class="row">
+        <Status kind="crit">{f.failure_reason ? FAILURE_LABEL[f.failure_reason] : 'Mislukt'}</Status>
+        {f.failures > 1 ? <span class="tag">{f.failures}× in 6 maanden</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/** Formulier voor één actie, met de conceptmail vooringevuld. */
+function ActionForm({ f, action, draft, primary }: { f: FollowupRow; action: FollowupAction; draft: { subject: string; body: string } | null; primary: boolean }) {
+  const label = ACTION_LABEL[action];
+  const bevestig =
+    action === 'bellen'
+      ? 'Vastleggen dat je de klant hebt gebeld?'
+      : `${label}: mail naar ${f.recipient ?? '(geen adres)'}${action === 'herpoging' || action === 'factuur_sturen' ? ` en een nieuwe betaling van ${euro(f.amount_incl_cents)}` : ''}?`;
+  return (
+    <form class="stack" data-api={`/api/incasso/vervolg/${f.id}/uitvoeren`} data-bevestig={bevestig}>
+      <FormError />
+      <input type="hidden" name="actie" value={action} />
+      {draft ? (
+        <>
+          <p class="small">
+            Mail aan{' '}
+            {f.recipient ? (
+              <b>{f.recipient}</b>
+            ) : (
+              <b class="t-crit">
+                geen e-mailadres bekend; vul eerst een factuuradres in bij <a href={`/klanten/${f.organization_id}?tab=facturatie`}>de klant</a>
+              </b>
+            )}
+            {action === 'factuur_sturen' ? '. {betaallink} wordt vervangen door de link om te betalen.' : ''}
+          </p>
+          <label>
+            Onderwerp
+            <input type="text" name="onderwerp" value={draft.subject} required maxlength={200} />
+          </label>
+          <label>
+            Tekst
+            <textarea name="tekst" rows={12} required maxlength={4000}>
+              {draft.body}
+            </textarea>
+          </label>
+        </>
+      ) : null}
+      <label>
+        {action === 'bellen' ? 'Wat is er afgesproken? (komt in het audit-log)' : 'Notitie (optioneel)'}
+        <input type="text" name="notitie" maxlength={400} required={action === 'bellen'} />
+      </label>
+      <div>
+        <button class={`btn${primary ? '' : ' secondary'}`} type="submit">
+          {action === 'bellen' ? 'Gebeld, vastleggen' : `${label}: versturen`}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FollowupCard({ f, mag, appOrigin }: { f: FollowupRow; mag: boolean; appOrigin: string }) {
+  const draftOf = (a: FollowupAction) =>
+    a === 'bellen' ? null : a === f.suggested_action && f.mail_subject && f.mail_body ? { subject: f.mail_subject, body: f.mail_body } : mailDraft(f, a, appOrigin);
+  return (
+    <section class="card">
+      <FailHead f={f} />
+      <div class="voorstel">
+        <span class="tag">Voorstel agent</span>
+        <b>{ACTION_LABEL[f.suggested_action]}</b>
+        <span class="small">{f.suggestion_reason}</span>
+      </div>
+      {mag ? (
+        <>
+          <ActionForm f={f} action={f.suggested_action} draft={draftOf(f.suggested_action)} primary />
+          <details class="meer">
+            <summary class="linkbtn">Andere actie kiezen</summary>
+            {FOLLOWUP_ACTIONS.filter((a) => a !== f.suggested_action).map((a) => (
+              <div class="alt">
+                <h3>{ACTION_LABEL[a]}</h3>
+                <ActionForm f={f} action={a} draft={draftOf(a)} primary={false} />
+              </div>
+            ))}
+          </details>
+          <details class="meer">
+            <summary class="linkbtn">Afwijzen, niets doen</summary>
+            <form class="stack" data-api={`/api/incasso/vervolg/${f.id}/afwijzen`}>
+              <FormError />
+              <label>
+                Waarom? (komt in het audit-log)
+                <input type="text" name="reden" required maxlength={400} placeholder="Bijv. klant heeft al overgemaakt" />
+              </label>
+              <div>
+                <button class="btn secondary sm" type="submit">
+                  Afwijzen
+                </button>
+              </div>
+            </form>
+          </details>
+        </>
+      ) : (
+        <p class="small">Een medewerker met de rol financieel of beheerder handelt dit af.</p>
+      )}
+    </section>
+  );
+}
+
+function DoneCard({ f, mag, test }: { f: FollowupRow; mag: boolean; test: boolean }) {
+  const pay = f.result_payment_status ? PAY_LABEL[f.result_payment_status] : undefined;
+  return (
+    <section class="card">
+      <FailHead f={f} />
+      <dl class="facts">
+        <dt>Besluit</dt>
+        <dd>
+          {f.status === 'afgewezen' ? 'Afgewezen' : ACTION_LABEL[f.chosen_action ?? f.suggested_action]}
+          {f.chosen_action && f.chosen_action !== f.suggested_action ? <span class="muted"> (voorstel was: {ACTION_LABEL[f.suggested_action]})</span> : null}
+        </dd>
+        <dt>Door</dt>
+        <dd>
+          {f.decided_by_email ?? 'onbekend'}
+          {f.decided_at ? `, ${datumTijd(f.decided_at)}` : ''}
+        </dd>
+        {f.decision_note ? (
+          <>
+            <dt>Notitie</dt>
+            <dd>{f.decision_note}</dd>
+          </>
+        ) : null}
+        {pay ? (
+          <>
+            <dt>Nieuwe betaling</dt>
+            <dd>
+              <Status kind={pay[1]}>{pay[0]}</Status>
+            </dd>
+          </>
+        ) : null}
+      </dl>
+      {test && mag && f.result_payment_status === 'open' ? (
+        <form class="inline" data-api={`/api/incasso/vervolg/${f.id}/testuitkomst`}>
+          <button class="btn secondary sm" type="submit" name="uitkomst" value="mislukt">
+            Test: mislukt
+          </button>
+          <button class="btn sm" type="submit" name="uitkomst" value="betaald">
+            Test: betaald
+          </button>
+          <FormError />
+        </form>
+      ) : null}
+    </section>
+  );
+}
 
 /** "49,00", "49.5", "1.234,56" of 49 → centen. */
 export function parseEuro(v: string | number): number {

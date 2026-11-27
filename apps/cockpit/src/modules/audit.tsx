@@ -25,6 +25,8 @@ const LABELS: Record<string, string> = {
   'cockpit.incasso_ingediend': 'Incassobatch ingediend',
   'cockpit.incasso_geannuleerd': 'Incassobatch geannuleerd',
   'cockpit.incasso_mislukt': 'Incasso mislukt',
+  'cockpit.incasso_vervolg_uitgevoerd': 'Vervolgactie mislukte incasso uitgevoerd',
+  'cockpit.incasso_vervolg_afgewezen': 'Vervolgactie mislukte incasso afgewezen',
   'cockpit.gebruiker_geblokkeerd': 'Gebruiker geblokkeerd',
   'cockpit.gebruiker_gedeblokkeerd': 'Gebruiker gedeblokkeerd',
   'cockpit.gebruiker_uitgelogd': 'Gebruiker overal uitgelogd',
