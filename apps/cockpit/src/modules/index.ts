@@ -1,6 +1,8 @@
 import type { CockpitModule } from '../module.ts';
 import { audit } from './audit.tsx';
+import { gebruikers } from './gebruikers.tsx';
 import { home } from './home.tsx';
+import { klanten } from './klanten.tsx';
 import { medewerkers } from './medewerkers.tsx';
 import { placeholder } from './placeholder.tsx';
 
@@ -12,15 +14,8 @@ export const MODULES: CockpitModule[] = [
   home,
 
   // Klanten
-  placeholder({ key: 'klanten', label: 'Bedrijven', href: '/klanten', icon: 'bedrijf', group: 'klanten', order: 10 }, [
-    'Alle bedrijven zoeken en filteren op pakket, status en betaalwijze',
-    'Detail per bedrijf: gebruikers, domeinen, abonnement, facturen, notities en tijdlijn',
-    'Status wijzigen (blokkeren, heropenen) met reden in het audit-log',
-  ]),
-  placeholder({ key: 'gebruikers', label: 'Gebruikers', href: '/gebruikers', icon: 'gebruikers', group: 'klanten', order: 20 }, [
-    'Alle gebruikers met organisaties, rol en laatste keer ingelogd',
-    'Account blokkeren of overal uitloggen',
-  ]),
+  klanten,
+  gebruikers,
 
   // Financiën
   placeholder({ key: 'abonnementen', label: 'Abonnementen', href: '/abonnementen', icon: 'abonnement', group: 'financien', order: 10 }, [

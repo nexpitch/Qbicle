@@ -3,6 +3,7 @@ import { getAttention, getKpis, listCockpitAudit, type AttentionItem } from '../
 import { datum, datumTijd, Empty, euroKort, Kpi, Status, type StatusKind } from '../layout.tsx';
 import type { CockpitModule } from '../module.ts';
 import { actionLabel } from './audit.tsx';
+import { planName } from '../labels.tsx';
 
 const ATTENTION: Record<AttentionItem['kind'], [string, StatusKind]> = {
   betaling_mislukt: ['Betaling mislukt', 'crit'],
@@ -67,7 +68,7 @@ export const home: CockpitModule = {
                             <td>
                               <Status kind={ATTENTION[a.kind][1]}>{ATTENTION[a.kind][0]}</Status>
                             </td>
-                            <td class="muted">{a.detail}</td>
+                            <td class="muted">{a.kind === 'betaling_mislukt' ? a.detail : planName(ctx.cockpit.p.catalog, a.detail)}</td>
                             <td class="num">{datum(a.at)}</td>
                           </tr>
                         ))}

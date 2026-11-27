@@ -104,6 +104,14 @@ a.kpi:hover { border-color: var(--line-strong); box-shadow: 0 1px 0 var(--line);
 .kpi-sub { font-size: .8rem; color: var(--muted); }
 .kpi-sub.t-crit { color: var(--st-crit); } .kpi-sub.t-ok { color: var(--st-ok); } .kpi-sub.t-warn { color: var(--st-warn); }
 
+.kpi-value.sm { font-size: 1.25rem; padding: 4px 0; }
+.facts { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: .9rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.t-crit { color: var(--st-crit); }
+.note { white-space: pre-wrap; font-size: .92rem; }
+.row.between { justify-content: space-between; }
+
 /* Tabellen */
 .table-wrap { overflow-x: auto; margin: 0 -20px; padding: 0 20px; }
 .table { width: 100%; border-collapse: collapse; font-size: .9rem; }
@@ -177,3 +185,4 @@ input.code { font: 700 1.4rem var(--f-mono); letter-spacing: .3em; text-align: c
   .cols { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .side { transition: none; } }
+.table .sub.t-crit { color: var(--st-crit); }
