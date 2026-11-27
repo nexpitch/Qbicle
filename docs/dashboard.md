@@ -5,10 +5,15 @@ De hoofdpagina van een organisatie (`/o/<org>/overzicht`). Opbouw, van boven naa
 1. **Volgende stap**: één concrete actie (domein toevoegen, bevestigen, of de zwaarste open actie).
 2. **Kerncijfers**: urgentie 0–100 met band en verschil met 30 dagen geleden, open acties, assets in beeld, opgelost in 30 dagen.
 3. **Direct aandacht**: de acties met niveau urgent of aandacht (hooguit 5), urgente assets en meldingen. De overige acties staan ingeklapt onder "voor later".
-4. **Alles in beeld**: één uitklapbare sectie per soort (domeinen, websites, mail, servers, cloud, netwerk, apparaten) plus extra secties
-   zoals Koppelingen. Elke kop toont teller en status; de inhoud is standaard ingeklapt. Ook zonder data staan alle secties er, met
-   "nog niet gescand" en wanneer de scan komt (`scanPlan`: laatste geslaagde scan + 7 dagen, gelijk aan de planner).
-   Extra secties levert de route aan als `DashSection` (zie `koppelingenSectie`), zodat bijvoorbeeld het systeemregister er los bij kan.
+4. **Alles in beeld**: een tegel per onderdeel (domeinen, websites, mail, servers, cloud, netwerk, apparaten, koppelingen,
+   systemen) met icoon, eerlijke status, aantal assets en bevindingen, en één knop (Bekijk, Koppel, Voeg toe). De tegel opent het
+   detail (`/o/<org>/assets?soort=…`, met "Wat we gecontroleerd hebben").
+   **Eerlijke dekking** (`dekkingVoor`, packages/platform/src/dekking.ts): per onderdeel niet / deels / volledig gecontroleerd.
+   "Geen problemen gevonden" alleen bij volledig. Mail is zonder koppeling altijd deels (alleen DNS: MX, SPF, DKIM, DMARC); de
+   maildienst wordt herkend uit de MX (Google Workspace, Microsoft 365) en de juiste koppeling voorgesteld. Servers zonder
+   gevonden servers: niet gecontroleerd, met "Server toevoegen". Minder dan de helft volledig: de urgentie zegt "Nog onvolledig
+   beeld" in plaats van een geruststellende band, en "Alles in orde" wordt "Maak je beeld compleet".
+   Koppelingen en systemen leveren hun tegel aan als `DashSection` (`koppelingenSectie`, `systemenSectie`).
 5. **Urgentie over tijd**, **Sinds vorige maand** (opgelost en nieuw) en **Activiteit**.
 
 Daarnaast: `/o/<org>/assets` (alle assets, filter per soort), `/o/<org>/assets/<id>` (bevindingen met zekerheid,

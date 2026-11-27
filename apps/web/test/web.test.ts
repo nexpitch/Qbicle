@@ -119,16 +119,24 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(html).toContain('Vul met voorbeelddata');
       // Lege staat toont al alle onderdelen, ingeklapt, met wanneer de scan komt.
       expect(html).toContain('Alles in beeld');
-      expect(html.match(/<details class="sect"/g)?.length).toBe(9);
+      // Tegels per onderdeel; zonder scan is niets gecontroleerd en zegt niets "in orde".
+      expect(html.match(/<article class="tile/g)?.length).toBe(9);
+      expect(html).toContain('Niet gecontroleerd');
+      expect(html).not.toContain('Geen problemen gevonden');
+      expect(html).toContain('0 van de 7');
       expect(html).toContain('Nog niets vastgelegd');
-      expect(html).toContain('Nog niet gescand');
       expect(html).toContain('Voeg een domein toe om te starten');
 
       expect((await json(`/api/v1/organisaties/${org}/demodata`, {}, cookie)).status).toBe(201);
       html = await (await get(`/o/${org}/overzicht`)).text();
       expect(html).toContain('Direct aandacht');
-      expect(html).toContain('id="sectie-koppelingen"');
-      expect(html).not.toMatch(/<details class="sect"[^>]* open/);
+      expect(html).toContain('id="tegel-koppelingen"');
+      // Mail via Microsoft 365, alleen DNS bekeken: gedeeltelijk, met de juiste koppeling als knop.
+      const mail = html.match(/id="tegel-mail".*?<\/article>/s)![0];
+      expect(mail).toContain('Gedeeltelijk');
+      expect(mail).toContain('Koppel Microsoft 365');
+      const soort = await (await get(`/o/${org}/assets?soort=servers`)).text();
+      expect(soort).toContain('Wat we gecontroleerd hebben');
       expect(html).toContain('Urgentie over tijd');
       expect(html).toContain('Netwerkapparatuur');
       expect(html).not.toMatch(/style="/);
@@ -149,6 +157,25 @@ describe.skipIf(!hasDb)('web-app', () => {
       expect(dom).toContain('data-kopieer="_qbicle-verificatie"');
       expect(dom).toMatch(/data-kopieer="qbicle-verificatie=[0-9a-f]{32}"/);
       expect((await get(`/o/${org}/assets/00000000-0000-0000-0000-000000000000`)).status).toBe(404);
+
+      // Domein beheren: waarschuwing met gevolgen, verwijderen alleen met de naam ingetypt.
+      const demoId = dom.match(/voorbeeldbedrijf\.example<\/h2>.*?\/domeinen\/([0-9a-f-]{36})\/beheren/s)![1]!;
+      const beheer = await (await get(`/o/${org}/domeinen/${demoId}/beheren`)).text();
+      expect(beheer).toContain('dit kun je niet ongedaan maken');
+      expect(beheer).toMatch(/assets gaan naar het archief/);
+      expect(beheer).toContain('data-method="DELETE"');
+      expect(beheer).not.toMatch(/style="/);
+      const del = (bevestiging: string) =>
+        web.request(`/api/v1/organisaties/${org}/domeinen/${demoId}`, {
+          method: 'DELETE',
+          headers: { origin: ORIGIN, 'content-type': 'application/json', cookie },
+          body: JSON.stringify({ bevestiging }),
+        });
+      expect((await del('verkeerd.nl')).status).toBe(400);
+      expect((await del('voorbeeldbedrijf.example')).status).toBe(200);
+      const na = await (await get(`/o/${org}/overzicht`)).text();
+      expect(na).toContain('Domein voorbeeldbedrijf.example verwijderd');
+      expect(na).not.toContain('>www.voorbeeldbedrijf.example<');
     } finally {
       delete process.env.QBICLE_DEMODATA;
     }

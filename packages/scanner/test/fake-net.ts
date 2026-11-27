@@ -17,6 +17,7 @@ export interface FakeNetConfig {
   mx?: Record<string, { exchange: string; priority: number }[]>;
   caa?: Record<string, { tag: string; value: string; critical: number }[]>;
   addresses?: Record<string, string[] | Error>;
+  ptr?: Record<string, string[]>;
   dnssec?: Record<string, DnssecStatus | null>;
   tls?: Record<string, TlsInfo | Error>;
   http?: Record<string, Partial<HttpResponse> | Error>;
@@ -39,6 +40,7 @@ export function fakeNet(cfg: FakeNetConfig): Net & { requests: string[] } {
     resolveCaa: (n) => val(cfg.caa?.[follow(n)], []),
     resolveAddresses: (n) => val(cfg.addresses?.[follow(n)], []),
     resolveCname: async (n) => (cfg.cname?.[n] ? [cfg.cname[n]!] : []),
+    reverse: (ip) => val(cfg.ptr?.[ip], []),
     dnssec: async (n) => (cfg.dnssec && n in cfg.dnssec ? cfg.dnssec[n]! : { hasDs: true, validated: true, bogus: false }),
     tlsHandshake: (host) => {
       requests.push(`tls:${host}`);

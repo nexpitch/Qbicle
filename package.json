@@ -25,7 +25,8 @@
     "apparaten": "tsx packages/devices/src/cli.ts",
     "web": "tsx apps/web/src/server.ts",
     "cockpit": "tsx apps/cockpit/src/server.ts",
-    "cockpit:beheer": "tsx apps/cockpit/src/cli.ts"
+    "cockpit:beheer": "tsx apps/cockpit/src/cli.ts",
+    "kennis:bijwerken": "tsx packages/scanner/src/kennis/bijwerken.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.7",

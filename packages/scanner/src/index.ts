@@ -6,3 +6,5 @@ export * from './ip.ts';
 export * from './optout.ts';
 export * from './report.ts';
 export { fingerprint } from './fingerprint.ts';
+export * from './profiel.ts';
+export { detectHosting } from './hosting.ts';
